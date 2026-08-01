@@ -1,0 +1,73 @@
+enum LeaderboardType {
+  TOP_RATED
+  MOST_BOOKED
+  MOST_VISITED
+  MOST_LIKED
+  MOST_ENGAGED
+  TRENDING
+  RISING
+  NEW_TRUCKS
+  OVERALL
+}
+
+enum LeaderboardPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  ALL_TIME
+}
+
+model LeaderboardRule {
+  id                       String            @id @default(uuid()) @db.Uuid
+  type                     LeaderboardType
+  period                   LeaderboardPeriod
+  bookingWeight            Decimal           @default(0) @map("booking_weight") @db.Decimal(8, 4)
+  ratingWeight             Decimal           @default(0) @map("rating_weight") @db.Decimal(8, 4)
+  reliabilityWeight        Decimal           @default(0) @map("reliability_weight") @db.Decimal(8, 4)
+  engagementWeight         Decimal           @default(0) @map("engagement_weight") @db.Decimal(8, 4)
+  checkInWeight            Decimal           @default(0) @map("check_in_weight") @db.Decimal(8, 4)
+  minimumCompletedBookings Int               @default(0) @map("minimum_completed_bookings")
+  algorithmVersion         String            @map("algorithm_version") @db.VarChar(30)
+  isActive                 Boolean           @default(true) @map("is_active")
+  leaderboards             Leaderboard[]
+
+  @@map("leaderboard_rules")
+}
+
+model Leaderboard {
+  id           String           @id @default(uuid()) @db.Uuid
+  marketId     String?          @map("market_id") @db.Uuid
+  ruleId       String           @map("rule_id") @db.Uuid
+  title        String           @db.VarChar(255)
+  startsAt     DateTime         @map("starts_at") @db.Timestamptz(6)
+  endsAt       DateTime         @map("ends_at") @db.Timestamptz(6)
+  calculatedAt DateTime?        @map("calculated_at") @db.Timestamptz(6)
+  isActive     Boolean          @default(true) @map("is_active")
+  market       Market?          @relation(fields: [marketId], references: [id])
+  rule         LeaderboardRule  @relation(fields: [ruleId], references: [id])
+  entries      LeaderboardEntry[]
+
+  @@map("leaderboards")
+}
+
+model LeaderboardEntry {
+  id               String      @id @default(uuid()) @db.Uuid
+  leaderboardId    String      @map("leaderboard_id") @db.Uuid
+  vendorId         String      @map("vendor_id") @db.Uuid
+  foodTruckId      String      @map("food_truck_id") @db.Uuid
+  rank             Int
+  previousRank     Int?        @map("previous_rank")
+  score            Decimal     @default(0) @db.Decimal(16, 4)
+  bookingScore     Decimal     @default(0) @map("booking_score") @db.Decimal(16, 4)
+  ratingScore      Decimal     @default(0) @map("rating_score") @db.Decimal(16, 4)
+  reliabilityScore Decimal     @default(0) @map("reliability_score") @db.Decimal(16, 4)
+  engagementScore  Decimal     @default(0) @map("engagement_score") @db.Decimal(16, 4)
+  checkInScore     Decimal     @default(0) @map("check_in_score") @db.Decimal(16, 4)
+  leaderboard      Leaderboard @relation(fields: [leaderboardId], references: [id])
+  vendor           Vendor      @relation(fields: [vendorId], references: [id])
+  foodTruck        FoodTruck   @relation(fields: [foodTruckId], references: [id])
+
+  @@unique([leaderboardId, foodTruckId])
+  @@unique([leaderboardId, rank])
+  @@map("leaderboard_entries")
+}

@@ -1,0 +1,75 @@
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum PlacementType {
+  DISCOVERY
+  MAP
+  SEARCH
+  HOME_FEED
+  CATEGORY
+}
+
+model Campaign {
+  id             String          @id @default(uuid()) @db.Uuid
+  marketId       String?         @map("market_id") @db.Uuid
+  name           String          @db.VarChar(255)
+  description    String?
+  imageUrl       String?         @map("image_url")
+  actionUrl      String?         @map("action_url")
+  status         CampaignStatus  @default(DRAFT)
+  startsAt       DateTime?       @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime?       @map("ends_at") @db.Timestamptz(6)
+  configuration  Json?
+  createdById    String          @map("created_by") @db.Uuid
+  market         Market?         @relation(fields: [marketId], references: [id])
+  createdBy      User            @relation("CampaignCreatedBy", fields: [createdById], references: [id])
+  campaignTrucks CampaignTruck[]
+
+  @@map("campaigns")
+}
+
+model CampaignTruck {
+  id          String    @id @default(uuid()) @db.Uuid
+  campaignId  String    @map("campaign_id") @db.Uuid
+  foodTruckId String    @map("food_truck_id") @db.Uuid
+  campaign    Campaign  @relation(fields: [campaignId], references: [id])
+  foodTruck   FoodTruck @relation(fields: [foodTruckId], references: [id])
+
+  @@unique([campaignId, foodTruckId])
+  @@map("campaign_trucks")
+}
+
+model FeaturedPlacement {
+  id            String        @id @default(uuid()) @db.Uuid
+  foodTruckId   String        @map("food_truck_id") @db.Uuid
+  marketId      String?       @map("market_id") @db.Uuid
+  placementType PlacementType @map("placement_type")
+  priority      Int           @default(0)
+  startsAt      DateTime      @map("starts_at") @db.Timestamptz(6)
+  endsAt        DateTime      @map("ends_at") @db.Timestamptz(6)
+  isActive      Boolean       @default(true) @map("is_active")
+  createdById   String        @map("created_by") @db.Uuid
+  foodTruck     FoodTruck     @relation(fields: [foodTruckId], references: [id])
+  market        Market?       @relation(fields: [marketId], references: [id])
+  createdBy     User          @relation("FeaturedPlacementCreatedBy", fields: [createdById], references: [id])
+
+  @@map("featured_placements")
+}
+
+model PlatformSetting {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique @db.VarChar(255)
+  value       Json
+  description String?
+  isPublic    Boolean  @default(false) @map("is_public")
+  updatedById String?  @map("updated_by") @db.Uuid
+  updatedBy   User?    @relation("PlatformSettingUpdatedBy", fields: [updatedById], references: [id])
+
+  @@map("platform_settings")
+}

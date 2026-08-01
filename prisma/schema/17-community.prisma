@@ -1,0 +1,146 @@
+enum RequestVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum RequestType {
+  EVENT
+  CATERING
+  CORPORATE
+  SCHOOL
+  HOA
+  NEIGHBORHOOD
+  FOOD_TRUCK_NEAR_ME
+  OTHER
+}
+
+enum RequestStatus {
+  DRAFT
+  OPEN
+  MATCHED
+  CLOSED
+  CANCELLED
+  EXPIRED
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+model CommunityRequest {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  createdById         String                    @map("created_by") @db.Uuid
+  targetFoodTruckId   String?                   @map("target_food_truck_id") @db.Uuid
+  visibility          RequestVisibility         @default(PUBLIC)
+  requestType         RequestType               @map("request_type")
+  status              RequestStatus             @default(OPEN)
+  title               String                    @db.VarChar(255)
+  description         String?
+  eventDate           DateTime?                 @map("event_date") @db.Date
+  startTime           DateTime?                 @map("start_time") @db.Time(6)
+  endTime             DateTime?                 @map("end_time") @db.Time(6)
+  eventTimezone       String?                   @map("event_timezone") @db.VarChar(100)
+  guestCount          Int?                      @map("guest_count")
+  budgetMin           Decimal?                  @map("budget_min") @db.Decimal(12, 2)
+  budgetMax           Decimal?                  @map("budget_max") @db.Decimal(12, 2)
+  address             String?
+  location            Unsupported("geography")?
+  preferredCuisines   Json?                     @map("preferred_cuisines")
+  allowPublicComments Boolean                   @default(true) @map("allow_public_comments")
+  expiresAt           DateTime?                 @map("expires_at") @db.Timestamptz(6)
+  createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt           DateTime?                 @map("deleted_at") @db.Timestamptz(6)
+  createdBy           User                      @relation("CommunityRequestCreatedBy", fields: [createdById], references: [id])
+  targetFoodTruck     FoodTruck?                @relation(fields: [targetFoodTruckId], references: [id])
+  media               CommunityRequestMedia[]
+  comments            CommunityRequestComment[]
+  reactions           CommunityRequestReaction[]
+  vendorOffers        VendorOffer[]
+  bookings            Booking[]
+  conversations       Conversation[]
+
+  @@map("community_requests")
+}
+
+model CommunityRequestMedia {
+  id                 String           @id @default(uuid()) @db.Uuid
+  communityRequestId String           @map("community_request_id") @db.Uuid
+  mediaUrl           String           @map("media_url")
+  mediaType          String           @map("media_type") @db.VarChar(20)
+  communityRequest   CommunityRequest @relation(fields: [communityRequestId], references: [id])
+
+  @@map("community_request_media")
+}
+
+model CommunityRequestComment {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  communityRequestId String                    @map("community_request_id") @db.Uuid
+  userId             String                    @map("user_id") @db.Uuid
+  parentCommentId    String?                   @map("parent_comment_id") @db.Uuid
+  content            String
+  createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt          DateTime?                 @map("deleted_at") @db.Timestamptz(6)
+  communityRequest   CommunityRequest          @relation(fields: [communityRequestId], references: [id])
+  user               User                      @relation(fields: [userId], references: [id])
+  parentComment      CommunityRequestComment?  @relation("CommunityRequestCommentReplies", fields: [parentCommentId], references: [id])
+  replies            CommunityRequestComment[] @relation("CommunityRequestCommentReplies")
+
+  @@map("community_request_comments")
+}
+
+model CommunityRequestReaction {
+  id                 String           @id @default(uuid()) @db.Uuid
+  communityRequestId String           @map("community_request_id") @db.Uuid
+  userId             String           @map("user_id") @db.Uuid
+  reaction           String           @default("LIKE") @db.VarChar(30)
+  communityRequest   CommunityRequest @relation(fields: [communityRequestId], references: [id])
+  user               User             @relation(fields: [userId], references: [id])
+
+  @@unique([communityRequestId, userId])
+  @@map("community_request_reactions")
+}
+
+model VendorOffer {
+  id                 String           @id @default(uuid()) @db.Uuid
+  communityRequestId String           @map("community_request_id") @db.Uuid
+  vendorId           String           @map("vendor_id") @db.Uuid
+  foodTruckId        String           @map("food_truck_id") @db.Uuid
+  message            String?
+  quotedAmount       Decimal          @map("quoted_amount") @db.Decimal(12, 2)
+  serviceFee         Decimal          @default(0) @map("service_fee") @db.Decimal(12, 2)
+  status             OfferStatus      @default(PENDING)
+  expiresAt          DateTime?        @map("expires_at") @db.Timestamptz(6)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  communityRequest   CommunityRequest @relation(fields: [communityRequestId], references: [id])
+  vendor             Vendor           @relation(fields: [vendorId], references: [id])
+  foodTruck          FoodTruck        @relation(fields: [foodTruckId], references: [id])
+  bookings           Booking[]
+  messages           Message[]
+
+  @@map("vendor_offers")
+}
+
+model NewFoodTruckRequest {
+  id            String    @id @default(uuid()) @db.Uuid
+  requestedById String?   @map("requested_by") @db.Uuid
+  truckName     String    @map("truck_name") @db.VarChar(255)
+  ownerName     String?   @map("owner_name") @db.VarChar(255)
+  ownerEmail    String?   @map("owner_email") @db.VarChar(255)
+  ownerPhone    String?   @map("owner_phone") @db.VarChar(30)
+  socialUrl     String?   @map("social_url")
+  city          String?   @db.VarChar(150)
+  state         String?   @db.VarChar(150)
+  notes         String?
+  status        String    @default("PENDING") @db.VarChar(30)
+  reviewedById  String?   @map("reviewed_by") @db.Uuid
+  reviewedAt    DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  requestedBy   User?     @relation("NewFoodTruckRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy    User?     @relation("NewFoodTruckReviewedBy", fields: [reviewedById], references: [id])
+
+  @@map("new_food_truck_requests")
+}

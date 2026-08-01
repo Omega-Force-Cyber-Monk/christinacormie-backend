@@ -1,0 +1,83 @@
+enum VendorStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Vendor {
+  id                   String                       @id @default(uuid()) @db.Uuid
+  userId               String                       @unique @map("user_id") @db.Uuid
+  marketId             String?                      @map("market_id") @db.Uuid
+  businessName         String                       @map("business_name") @db.VarChar(255)
+  businessEmail        String?                      @map("business_email") @db.VarChar(255)
+  businessPhone        String?                      @map("business_phone") @db.VarChar(30)
+  description          String?
+  logoUrl              String?                      @map("logo_url")
+  websiteUrl           String?                      @map("website_url")
+  status               VendorStatus                 @default(DRAFT)
+  isVerified           Boolean                      @default(false) @map("is_verified")
+  verifiedAt           DateTime?                    @map("verified_at") @db.Timestamptz(6)
+  reliabilityScore     Decimal                      @default(0) @map("reliability_score") @db.Decimal(5, 2)
+  approvedById         String?                      @map("approved_by") @db.Uuid
+  approvedAt           DateTime?                    @map("approved_at") @db.Timestamptz(6)
+  rejectionReason      String?                      @map("rejection_reason")
+  createdAt            DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt            DateTime?                    @map("deleted_at") @db.Timestamptz(6)
+  user                 User                         @relation(fields: [userId], references: [id])
+  market               Market?                      @relation(fields: [marketId], references: [id])
+  approvedBy           User?                        @relation("VendorApprovedBy", fields: [approvedById], references: [id])
+  verificationRequests VendorVerificationRequest[]
+  paymentAccount       VendorPaymentAccount?
+  foodTrucks           FoodTruck[]
+  offers               VendorOffer[]
+  bookings             Booking[]
+  bookingQuotes        BookingQuote[]
+  payments             Payment[]
+  commissions          Commission[]
+  payouts              Payout[]
+  reviews              Review[]
+  vendorBadges         VendorBadge[]
+  leaderboardEntries   LeaderboardEntry[]
+  qrKitShipments       QrKitShipment[]
+
+  @@map("vendors")
+}
+
+model VendorVerificationRequest {
+  id              String             @id @default(uuid()) @db.Uuid
+  vendorId        String             @map("vendor_id") @db.Uuid
+  status          VerificationStatus @default(PENDING)
+  documents       Json?
+  notes           String?
+  reviewedById    String?            @map("reviewed_by") @db.Uuid
+  reviewedAt      DateTime?          @map("reviewed_at") @db.Timestamptz(6)
+  rejectionReason String?            @map("rejection_reason")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  vendor          Vendor             @relation(fields: [vendorId], references: [id])
+  reviewedBy      User?              @relation("VendorVerificationReviewedBy", fields: [reviewedById], references: [id])
+
+  @@map("vendor_verification_requests")
+}
+
+model VendorPaymentAccount {
+  id                  String   @id @default(uuid()) @db.Uuid
+  vendorId            String   @unique @map("vendor_id") @db.Uuid
+  stripeAccountId     String   @unique @map("stripe_account_id") @db.VarChar(255)
+  onboardingCompleted Boolean  @default(false) @map("onboarding_completed")
+  chargesEnabled      Boolean  @default(false) @map("charges_enabled")
+  payoutsEnabled      Boolean  @default(false) @map("payouts_enabled")
+  disabledReason      String?  @map("disabled_reason")
+  updatedAt           DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  vendor              Vendor   @relation(fields: [vendorId], references: [id])
+
+  @@map("vendor_payment_accounts")
+}

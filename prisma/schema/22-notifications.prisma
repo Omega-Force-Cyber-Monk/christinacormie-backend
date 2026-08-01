@@ -1,0 +1,59 @@
+enum NotificationType {
+  GENERAL
+  NEARBY_DROP
+  FOLLOWED_TRUCK_UPDATE
+  FAVORITE_TRUCK_UPDATE
+  NEW_TRUCK_IN_AREA
+  PROMOTION
+  BOOKING
+  PAYMENT
+  MESSAGE
+  REVIEW
+  REWARD
+  REFERRAL
+  CHECK_IN
+  BADGE
+  ADMIN
+}
+
+model NotificationPreference {
+  id                   String  @id @default(uuid()) @db.Uuid
+  userId               String  @unique @map("user_id") @db.Uuid
+  nearbyDropAlerts     Boolean @default(true) @map("nearby_drop_alerts")
+  followedTruckUpdates Boolean @default(true) @map("followed_truck_updates")
+  favoriteTruckAlerts  Boolean @default(true) @map("favorite_truck_alerts")
+  promotionAlerts      Boolean @default(true) @map("promotion_alerts")
+  bookingAlerts        Boolean @default(true) @map("booking_alerts")
+  messageAlerts        Boolean @default(true) @map("message_alerts")
+  rewardAlerts         Boolean @default(true) @map("reward_alerts")
+  marketingAlerts      Boolean @default(false) @map("marketing_alerts")
+  user                 User    @relation(fields: [userId], references: [id])
+
+  @@map("notification_preferences")
+}
+
+model Notification {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  actorUserId    String?          @map("actor_user_id") @db.Uuid
+  type           NotificationType
+  title          String           @db.VarChar(255)
+  message        String
+  foodTruckId    String?          @map("food_truck_id") @db.Uuid
+  bookingId      String?          @map("booking_id") @db.Uuid
+  postId         String?          @map("post_id") @db.Uuid
+  conversationId String?          @map("conversation_id") @db.Uuid
+  actionUrl      String?          @map("action_url")
+  metadata       Json?
+  isRead         Boolean          @default(false) @map("is_read")
+  readAt         DateTime?        @map("read_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  user           User             @relation("NotificationUser", fields: [userId], references: [id])
+  actorUser      User?            @relation("NotificationActorUser", fields: [actorUserId], references: [id])
+  foodTruck      FoodTruck?       @relation(fields: [foodTruckId], references: [id])
+  booking        Booking?         @relation(fields: [bookingId], references: [id])
+  post           Post?            @relation(fields: [postId], references: [id])
+  conversation   Conversation?    @relation(fields: [conversationId], references: [id])
+
+  @@map("notifications")
+}

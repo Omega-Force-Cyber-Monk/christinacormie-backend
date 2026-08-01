@@ -1,0 +1,169 @@
+enum TruckStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum OperatingStatus {
+  OPEN
+  CLOSED
+  BUSY
+  UNAVAILABLE
+}
+
+enum DropStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model FoodTruck {
+  id                      String                    @id @default(uuid()) @db.Uuid
+  vendorId                String                    @map("vendor_id") @db.Uuid
+  marketId                String?                   @map("market_id") @db.Uuid
+  name                    String                    @db.VarChar(255)
+  slug                    String                    @unique @db.VarChar(255)
+  description             String?
+  profileImageUrl         String?                   @map("profile_image_url")
+  coverImageUrl           String?                   @map("cover_image_url")
+  status                  TruckStatus               @default(DRAFT)
+  operatingStatus         OperatingStatus           @default(CLOSED) @map("operating_status")
+  minimumBookingAmount    Decimal?                  @map("minimum_booking_amount") @db.Decimal(12, 2)
+  maximumGuestCapacity    Int?                      @map("maximum_guest_capacity")
+  currentAddress          String?                   @map("current_address")
+  currentLocation         Unsupported("geography")? @map("current_location")
+  locationUpdatedAt       DateTime?                 @map("location_updated_at") @db.Timestamptz(6)
+  locationValidUntil      DateTime?                 @map("location_valid_until") @db.Timestamptz(6)
+  averageRating           Decimal                   @default(0) @map("average_rating") @db.Decimal(3, 2)
+  totalReviews            Int                       @default(0) @map("total_reviews")
+  totalBookings           Int                       @default(0) @map("total_bookings")
+  totalCheckIns           Int                       @default(0) @map("total_check_ins")
+  followerCount           Int                       @default(0) @map("follower_count")
+  isFeatured              Boolean                   @default(false) @map("is_featured")
+  createdAt               DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt               DateTime?                 @map("deleted_at") @db.Timestamptz(6)
+  vendor                  Vendor                    @relation(fields: [vendorId], references: [id])
+  market                  Market?                   @relation(fields: [marketId], references: [id])
+  images                  FoodTruckImage[]
+  cuisines                FoodTruckCuisine[]
+  serviceAreas            ServiceArea[]
+  operatingHours          TruckOperatingHour[]
+  availabilityExceptions  TruckAvailabilityException[]
+  drops                   FoodTruckDrop[]
+  menus                   Menu[]
+  follows                 FoodTruckFollow[]
+  favorites               FavoriteTruck[]
+  posts                   Post[]
+  promotions              Promotion[]
+  targetCommunityRequests CommunityRequest[]
+  vendorOffers            VendorOffer[]
+  bookings                Booking[]
+  bookingHolds            BookingHold[]
+  reviews                 Review[]
+  notifications           Notification[]
+  truckQrCodes            TruckQrCode[]
+  qrScans                 QrScan[]
+  checkIns                CheckIn[]
+  qrKitShipments          QrKitShipment[]
+  leaderboardEntries      LeaderboardEntry[]
+  campaignTrucks          CampaignTruck[]
+  featuredPlacements      FeaturedPlacement[]
+
+  @@map("food_trucks")
+}
+
+model FoodTruckImage {
+  id          String    @id @default(uuid()) @db.Uuid
+  foodTruckId String    @map("food_truck_id") @db.Uuid
+  imageUrl    String    @map("image_url")
+  altText     String?   @map("alt_text") @db.VarChar(255)
+  sortOrder   Int       @default(0) @map("sort_order")
+  foodTruck   FoodTruck @relation(fields: [foodTruckId], references: [id])
+
+  @@map("food_truck_images")
+}
+
+model Cuisine {
+  id         String            @id @default(uuid()) @db.Uuid
+  name       String            @unique @db.VarChar(100)
+  slug       String            @unique @db.VarChar(100)
+  iconUrl    String?           @map("icon_url")
+  pinColor   String?           @map("pin_color") @db.VarChar(20)
+  isActive   Boolean           @default(true) @map("is_active")
+  foodTrucks FoodTruckCuisine[]
+
+  @@map("cuisines")
+}
+
+model FoodTruckCuisine {
+  id          String    @id @default(uuid()) @db.Uuid
+  foodTruckId String    @map("food_truck_id") @db.Uuid
+  cuisineId   String    @map("cuisine_id") @db.Uuid
+  isPrimary   Boolean   @default(false) @map("is_primary")
+  foodTruck   FoodTruck @relation(fields: [foodTruckId], references: [id])
+  cuisine     Cuisine   @relation(fields: [cuisineId], references: [id])
+
+  @@unique([foodTruckId, cuisineId])
+  @@map("food_truck_cuisines")
+}
+
+model ServiceArea {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  foodTruckId          String                   @map("food_truck_id") @db.Uuid
+  name                 String?                  @db.VarChar(150)
+  centerAddress        String?                  @map("center_address")
+  centerLocation       Unsupported("geography") @map("center_location")
+  radiusKm             Decimal                  @map("radius_km") @db.Decimal(8, 2)
+  outsideRadiusAllowed Boolean                  @default(false) @map("outside_radius_allowed")
+  outsideRadiusFee     Decimal                  @default(0) @map("outside_radius_fee") @db.Decimal(12, 2)
+  isActive             Boolean                  @default(true) @map("is_active")
+  foodTruck            FoodTruck                @relation(fields: [foodTruckId], references: [id])
+
+  @@map("service_areas")
+}
+
+model TruckOperatingHour {
+  id          String    @id @default(uuid()) @db.Uuid
+  foodTruckId String    @map("food_truck_id") @db.Uuid
+  dayOfWeek   Int       @map("day_of_week")
+  openingTime DateTime? @map("opening_time") @db.Time(6)
+  closingTime DateTime? @map("closing_time") @db.Time(6)
+  isClosed    Boolean   @default(false) @map("is_closed")
+  foodTruck   FoodTruck @relation(fields: [foodTruckId], references: [id])
+
+  @@unique([foodTruckId, dayOfWeek])
+  @@map("truck_operating_hours")
+}
+
+model TruckAvailabilityException {
+  id            String    @id @default(uuid()) @db.Uuid
+  foodTruckId   String    @map("food_truck_id") @db.Uuid
+  exceptionDate DateTime  @map("exception_date") @db.Date
+  isAvailable   Boolean   @map("is_available")
+  openingTime   DateTime? @map("opening_time") @db.Time(6)
+  closingTime   DateTime? @map("closing_time") @db.Time(6)
+  reason        String?
+  foodTruck     FoodTruck @relation(fields: [foodTruckId], references: [id])
+
+  @@unique([foodTruckId, exceptionDate])
+  @@map("truck_availability_exceptions")
+}
+
+model FoodTruckDrop {
+  id          String                   @id @default(uuid()) @db.Uuid
+  foodTruckId String                   @map("food_truck_id") @db.Uuid
+  title       String?                  @db.VarChar(255)
+  message     String?
+  address     String?
+  location    Unsupported("geography")
+  startsAt    DateTime                 @map("starts_at") @db.Timestamptz(6)
+  endsAt      DateTime?                @map("ends_at") @db.Timestamptz(6)
+  status      DropStatus               @default(ACTIVE)
+  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  foodTruck   FoodTruck                @relation(fields: [foodTruckId], references: [id])
+
+  @@map("food_truck_drops")
+}

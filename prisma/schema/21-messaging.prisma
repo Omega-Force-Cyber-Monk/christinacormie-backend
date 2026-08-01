@@ -1,0 +1,65 @@
+enum ConversationType {
+  DIRECT
+  BOOKING
+  COMMUNITY_REQUEST
+  SUPPORT
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+  OFFER
+}
+
+model Conversation {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  type               ConversationType
+  createdById        String                    @map("created_by") @db.Uuid
+  bookingId          String?                   @map("booking_id") @db.Uuid
+  communityRequestId String?                   @map("community_request_id") @db.Uuid
+  title              String?                   @db.VarChar(255)
+  lastMessageAt      DateTime?                 @map("last_message_at") @db.Timestamptz(6)
+  isClosed           Boolean                   @default(false) @map("is_closed")
+  createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy          User                      @relation("ConversationCreatedBy", fields: [createdById], references: [id])
+  booking            Booking?                  @relation(fields: [bookingId], references: [id])
+  communityRequest   CommunityRequest?         @relation(fields: [communityRequestId], references: [id])
+  participants       ConversationParticipant[]
+  messages           Message[]
+  notifications      Notification[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  lastReadAt     DateTime?    @map("last_read_at") @db.Timestamptz(6)
+  isMuted        Boolean      @default(false) @map("is_muted")
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@unique([conversationId, userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
+  senderId       String       @map("sender_id") @db.Uuid
+  messageType    MessageType  @default(TEXT) @map("message_type")
+  content        String?
+  attachmentUrl  String?      @map("attachment_url")
+  vendorOfferId  String?      @map("vendor_offer_id") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  editedAt       DateTime?    @map("edited_at") @db.Timestamptz(6)
+  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz(6)
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  sender         User         @relation(fields: [senderId], references: [id])
+  vendorOffer    VendorOffer? @relation(fields: [vendorOfferId], references: [id])
+
+  @@map("messages")
+}

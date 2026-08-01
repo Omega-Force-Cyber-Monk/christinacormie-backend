@@ -1,0 +1,132 @@
+enum UserRole {
+  CUSTOMER
+  VENDOR
+  ADMIN
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+  BLOCKED
+}
+
+model User {
+  id                                 String                        @id @default(uuid()) @db.Uuid
+  email                              String?                       @unique @db.VarChar(255)
+  phone                              String?                       @unique @db.VarChar(30)
+  passwordHash                       String?                       @map("password_hash") @db.VarChar(255)
+  status                             AccountStatus                 @default(PENDING)
+  emailVerifiedAt                    DateTime?                     @map("email_verified_at") @db.Timestamptz(6)
+  phoneVerifiedAt                    DateTime?                     @map("phone_verified_at") @db.Timestamptz(6)
+  lastLoginAt                        DateTime?                     @map("last_login_at") @db.Timestamptz(6)
+  createdAt                          DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                          DateTime                      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt                          DateTime?                     @map("deleted_at") @db.Timestamptz(6)
+  userRoles                          UserRoleAssignment[]
+  profile                            UserProfile?
+  settings                           UserSetting?
+  deviceTokens                       DeviceToken[]
+  vendor                             Vendor?
+  approvedVendors                    Vendor[]                      @relation("VendorApprovedBy")
+  reviewedVendorVerificationRequests VendorVerificationRequest[]   @relation("VendorVerificationReviewedBy")
+  foodTruckFollows                   FoodTruckFollow[]
+  favoriteTrucks                     FavoriteTruck[]
+  postLikes                          PostLike[]
+  postComments                       PostComment[]
+  savedPosts                         SavedPost[]
+  promotionRedemptions               PromotionRedemption[]
+  communityRequests                  CommunityRequest[]            @relation("CommunityRequestCreatedBy")
+  communityRequestComments           CommunityRequestComment[]
+  communityRequestReactions          CommunityRequestReaction[]
+  newFoodTruckRequests               NewFoodTruckRequest[]         @relation("NewFoodTruckRequestedBy")
+  reviewedNewFoodTruckRequests       NewFoodTruckRequest[]         @relation("NewFoodTruckReviewedBy")
+  customerBookings                   Booking[]                     @relation("BookingCustomer")
+  bookingHolds                       BookingHold[]
+  bookingStatusChanges               BookingStatusHistory[]        @relation("BookingStatusChangedBy")
+  payments                           Payment[]                     @relation("PaymentPayer")
+  customerReviews                    Review[]                      @relation("ReviewCustomer")
+  moderatedReviews                   Review[]                      @relation("ReviewModeratedBy")
+  reviewReportsFiled                 ReviewReport[]                @relation("ReviewReportReportedBy")
+  reviewReportsReviewed              ReviewReport[]                @relation("ReviewReportReviewedBy")
+  createdConversations               Conversation[]                @relation("ConversationCreatedBy")
+  conversationParticipants           ConversationParticipant[]
+  sentMessages                       Message[]
+  notificationPreference             NotificationPreference?
+  notifications                      Notification[]                @relation("NotificationUser")
+  actorNotifications                 Notification[]                @relation("NotificationActorUser")
+  loyaltyAccount                     LoyaltyAccount?
+  createdRewardRules                 RewardRule[]                  @relation("RewardRuleCreatedBy")
+  rewardRedemptions                  RewardRedemption[]
+  userBadges                         UserBadge[]
+  ownedReferralCodes                 ReferralCode[]
+  referralsMade                      Referral[]                    @relation("ReferralReferrerUser")
+  referralReceived                   Referral?                     @relation("ReferralReferredUser")
+  referralRewards                    ReferralReward[]
+  qrScans                            QrScan[]
+  checkIns                           CheckIn[]
+  createdCampaigns                   Campaign[]                    @relation("CampaignCreatedBy")
+  createdFeaturedPlacements          FeaturedPlacement[]           @relation("FeaturedPlacementCreatedBy")
+  updatedPlatformSettings            PlatformSetting[]             @relation("PlatformSettingUpdatedBy")
+
+  @@map("users")
+}
+
+model UserRoleAssignment {
+  id     String   @id @default(uuid()) @db.Uuid
+  userId String   @map("user_id") @db.Uuid
+  role   UserRole
+  user   User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, role])
+  @@map("user_roles")
+}
+
+model UserProfile {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @map("user_id") @db.Uuid
+  firstName   String?  @map("first_name") @db.VarChar(100)
+  lastName    String?  @map("last_name") @db.VarChar(100)
+  displayName String?  @map("display_name") @db.VarChar(150)
+  avatarUrl   String?  @map("avatar_url")
+  bio         String?
+  city        String?  @db.VarChar(150)
+  state       String?  @db.VarChar(150)
+  country     String?  @db.VarChar(100)
+  postalCode  String?  @map("postal_code") @db.VarChar(30)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@map("user_profiles")
+}
+
+model UserSetting {
+  id                        String   @id @default(uuid()) @db.Uuid
+  userId                    String   @unique @map("user_id") @db.Uuid
+  language                  String?  @default("en") @db.VarChar(10)
+  timezone                  String?  @db.VarChar(100)
+  distanceUnit              String?  @default("MILES") @map("distance_unit") @db.VarChar(10)
+  locationPermissionGranted Boolean  @default(false) @map("location_permission_granted")
+  pushPermissionGranted     Boolean  @default(false) @map("push_permission_granted")
+  marketingConsent          Boolean  @default(false) @map("marketing_consent")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user                      User     @relation(fields: [userId], references: [id])
+
+  @@map("user_settings")
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  platform  String?  @db.VarChar(30)
+  deviceId  String?  @map("device_id") @db.VarChar(255)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("device_tokens")
+}

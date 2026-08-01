@@ -1,0 +1,134 @@
+enum LoyaltyTransactionType {
+  EARN
+  REDEEM
+  EXPIRE
+  ADJUSTMENT
+  REFUND
+}
+
+enum RewardType {
+  POINTS
+  CREDIT
+  DISCOUNT
+  FREE_ITEM
+  COMMISSION_REDUCTION
+  FEATURED_PLACEMENT
+  CUSTOM
+}
+
+enum BadgeOwnerType {
+  CUSTOMER
+  VENDOR
+  BOTH
+}
+
+model LoyaltyAccount {
+  id              String               @id @default(uuid()) @db.Uuid
+  userId          String               @unique @map("user_id") @db.Uuid
+  availablePoints Int                  @default(0) @map("available_points")
+  lifetimePoints  Int                  @default(0) @map("lifetime_points")
+  redeemedPoints  Int                  @default(0) @map("redeemed_points")
+  updatedAt       DateTime             @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user            User                 @relation(fields: [userId], references: [id])
+  transactions    LoyaltyTransaction[]
+
+  @@map("loyalty_accounts")
+}
+
+model LoyaltyTransaction {
+  id               String                 @id @default(uuid()) @db.Uuid
+  loyaltyAccountId String                 @map("loyalty_account_id") @db.Uuid
+  transactionType  LoyaltyTransactionType @map("transaction_type")
+  points           Int
+  balanceBefore    Int                    @map("balance_before")
+  balanceAfter     Int                    @map("balance_after")
+  sourceType       String?                @map("source_type") @db.VarChar(100)
+  sourceId         String?                @map("source_id") @db.Uuid
+  idempotencyKey   String?                @unique @map("idempotency_key") @db.VarChar(255)
+  description      String?
+  expiresAt        DateTime?              @map("expires_at") @db.Timestamptz(6)
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  loyaltyAccount   LoyaltyAccount         @relation(fields: [loyaltyAccountId], references: [id])
+
+  @@map("loyalty_transactions")
+}
+
+model RewardRule {
+  id                 String             @id @default(uuid()) @db.Uuid
+  name               String             @db.VarChar(255)
+  description        String?
+  triggerType        String             @map("trigger_type") @db.VarChar(50)
+  rewardType         RewardType         @map("reward_type")
+  pointsRequired     Int?               @map("points_required")
+  rewardValue        Decimal?           @map("reward_value") @db.Decimal(12, 2)
+  configuration      Json?
+  maximumUsesPerUser Int?               @map("maximum_uses_per_user")
+  startsAt           DateTime?          @map("starts_at") @db.Timestamptz(6)
+  endsAt             DateTime?          @map("ends_at") @db.Timestamptz(6)
+  isActive           Boolean            @default(true) @map("is_active")
+  createdById        String?            @map("created_by") @db.Uuid
+  createdBy          User?              @relation("RewardRuleCreatedBy", fields: [createdById], references: [id])
+  redemptions        RewardRedemption[]
+
+  @@map("reward_rules")
+}
+
+model RewardRedemption {
+  id           String      @id @default(uuid()) @db.Uuid
+  rewardRuleId String      @map("reward_rule_id") @db.Uuid
+  userId       String      @map("user_id") @db.Uuid
+  pointsSpent  Int         @default(0) @map("points_spent")
+  rewardValue  Decimal?    @map("reward_value") @db.Decimal(12, 2)
+  status       String      @default("ACTIVE") @db.VarChar(30)
+  redeemedAt   DateTime    @default(now()) @map("redeemed_at") @db.Timestamptz(6)
+  usedAt       DateTime?   @map("used_at") @db.Timestamptz(6)
+  expiresAt    DateTime?   @map("expires_at") @db.Timestamptz(6)
+  rewardRule   RewardRule  @relation(fields: [rewardRuleId], references: [id])
+  user         User        @relation(fields: [userId], references: [id])
+
+  @@map("reward_redemptions")
+}
+
+model Badge {
+  id           String         @id @default(uuid()) @db.Uuid
+  name         String         @db.VarChar(150)
+  slug         String         @unique @db.VarChar(150)
+  description  String?
+  iconUrl      String?        @map("icon_url")
+  ownerType    BadgeOwnerType @map("owner_type")
+  glowColor    String?        @map("glow_color") @db.VarChar(30)
+  criteria     Json?
+  isActive     Boolean        @default(true) @map("is_active")
+  userBadges   UserBadge[]
+  vendorBadges VendorBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  badgeId       String    @map("badge_id") @db.Uuid
+  awardedReason String?   @map("awarded_reason")
+  awardedAt     DateTime  @default(now()) @map("awarded_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  user          User      @relation(fields: [userId], references: [id])
+  badge         Badge     @relation(fields: [badgeId], references: [id])
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}
+
+model VendorBadge {
+  id            String    @id @default(uuid()) @db.Uuid
+  vendorId      String    @map("vendor_id") @db.Uuid
+  badgeId       String    @map("badge_id") @db.Uuid
+  awardedReason String?   @map("awarded_reason")
+  awardedAt     DateTime  @default(now()) @map("awarded_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  vendor        Vendor    @relation(fields: [vendorId], references: [id])
+  badge         Badge     @relation(fields: [badgeId], references: [id])
+
+  @@unique([vendorId, badgeId])
+  @@map("vendor_badges")
+}
