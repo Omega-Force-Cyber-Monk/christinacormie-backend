@@ -38,6 +38,7 @@ model Vendor {
   verificationRequests VendorVerificationRequest[]
   paymentAccount       VendorPaymentAccount?
   foodTrucks           FoodTruck[]
+  posts                Post[]
   offers               VendorOffer[]
   bookings             Booking[]
   bookingQuotes        BookingQuote[]
