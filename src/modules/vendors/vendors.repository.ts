@@ -80,6 +80,15 @@ export class VendorsRepository {
         },
       });
 
+      await (tx as any).adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: 'APPROVE_VENDOR',
+          entityType: 'Vendor',
+          entityId: vendorId,
+        },
+      });
+
       return tx.vendor.update({
         where: { id: vendorId },
         data: {
@@ -111,6 +120,16 @@ export class VendorsRepository {
         },
       });
 
+      await (tx as any).adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: 'REJECT_VENDOR',
+          entityType: 'Vendor',
+          entityId: vendorId,
+          metadata: { rejectionReason },
+        },
+      });
+
       return tx.vendor.update({
         where: { id: vendorId },
         data: {
@@ -122,6 +141,110 @@ export class VendorsRepository {
         include: this.vendorInclude(),
       });
     });
+  }
+
+  async getVendorAnalytics(vendorId: string) {
+    const [
+      totalFoodTrucks,
+      totalBookings,
+      succeededPayments,
+      allPayments,
+      reviewsAggregate,
+      trucksAggregate,
+      recentBookings,
+      topTrucks,
+    ] = await Promise.all([
+      this.prisma.foodTruck.count({
+        where: { vendorId, deletedAt: null },
+      }),
+      this.prisma.booking.count({
+        where: { vendorId },
+      }),
+      this.prisma.payment.aggregate({
+        where: { vendorId, status: 'SUCCEEDED' },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      this.prisma.payment.groupBy({
+        by: ['status'],
+        where: { vendorId },
+        _count: { id: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.review.aggregate({
+        where: { vendorId, status: 'PUBLISHED' },
+        _avg: { rating: true },
+        _count: true,
+      }),
+      this.prisma.foodTruck.aggregate({
+        where: { vendorId, deletedAt: null },
+        _sum: {
+          followerCount: true,
+          totalCheckIns: true,
+        },
+      }),
+      this.prisma.booking.findMany({
+        where: { vendorId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          bookingNumber: true,
+          bookingType: true,
+          status: true,
+          totalAmount: true,
+          startsAt: true,
+          createdAt: true,
+          customer: {
+            select: { id: true, email: true, profile: true },
+          },
+          foodTruck: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+      }),
+      this.prisma.foodTruck.findMany({
+        where: { vendorId, deletedAt: null },
+        orderBy: [{ totalBookings: 'desc' }, { averageRating: 'desc' }],
+        take: 5,
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          status: true,
+          averageRating: true,
+          totalReviews: true,
+          totalBookings: true,
+          totalCheckIns: true,
+          followerCount: true,
+        },
+      }),
+    ]);
+
+    const totalRevenue = Number(succeededPayments._sum.amount ?? 0);
+    const totalReviews = reviewsAggregate._count;
+    const averageRating = Math.round(Number(reviewsAggregate._avg?.rating ?? 0) * 100) / 100;
+    const totalFollowers = trucksAggregate._sum.followerCount ?? 0;
+    const totalCheckIns = trucksAggregate._sum.totalCheckIns ?? 0;
+
+    const paymentSummary = allPayments.map((p) => ({
+      status: p.status,
+      count: p._count.id,
+      totalAmount: Number(p._sum.amount ?? 0),
+    }));
+
+    return {
+      totalFoodTrucks,
+      totalBookings,
+      totalRevenue,
+      totalReviews,
+      averageRating,
+      totalFollowers,
+      totalCheckIns,
+      recentBookings,
+      paymentSummary,
+      topTrucks,
+    };
   }
 
   private vendorInclude() {

@@ -24,8 +24,10 @@ model NotificationPreference {
   favoriteTruckAlerts  Boolean @default(true) @map("favorite_truck_alerts")
   promotionAlerts      Boolean @default(true) @map("promotion_alerts")
   bookingAlerts        Boolean @default(true) @map("booking_alerts")
+  paymentAlerts        Boolean @default(true) @map("payment_alerts")
   messageAlerts        Boolean @default(true) @map("message_alerts")
   rewardAlerts         Boolean @default(true) @map("reward_alerts")
+  checkInAlerts        Boolean @default(true) @map("check_in_alerts")
   marketingAlerts      Boolean @default(false) @map("marketing_alerts")
   user                 User    @relation(fields: [userId], references: [id])
 

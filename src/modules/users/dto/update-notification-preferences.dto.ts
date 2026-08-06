@@ -23,11 +23,19 @@ export class UpdateNotificationPreferencesDto {
 
   @IsOptional()
   @IsBoolean()
+  paymentAlerts?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   messageAlerts?: boolean;
 
   @IsOptional()
   @IsBoolean()
   rewardAlerts?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  checkInAlerts?: boolean;
 
   @IsOptional()
   @IsBoolean()

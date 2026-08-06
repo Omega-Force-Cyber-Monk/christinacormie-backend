@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -22,10 +23,13 @@ import { ToggleFollowNotificationsDto } from './dto/toggle-follow-notifications.
 import { UpdatePostDto } from './dto/update-post.dto';
 import { SocialService } from './social.service';
 
+@ApiTags('Social')
+@ApiBearerAuth()
 @Controller('api/v1/social')
 export class SocialController {
   constructor(private readonly socialService: SocialService) {}
 
+  @ApiOperation({ summary: 'Follow a food truck' })
   @UseGuards(JwtAuthGuard)
   @Post('food-trucks/:foodTruckId/follow')
   followFoodTruck(
@@ -35,6 +39,7 @@ export class SocialController {
     return this.socialService.followFoodTruck(user.sub, foodTruckId);
   }
 
+  @ApiOperation({ summary: 'Unfollow a food truck' })
   @UseGuards(JwtAuthGuard)
   @Delete('food-trucks/:foodTruckId/follow')
   unfollowFoodTruck(
@@ -44,6 +49,7 @@ export class SocialController {
     return this.socialService.unfollowFoodTruck(user.sub, foodTruckId);
   }
 
+  @ApiOperation({ summary: 'Enable or disable push notifications for a followed food truck' })
   @UseGuards(JwtAuthGuard)
   @Patch('food-trucks/:foodTruckId/follow/notifications')
   updateFollowNotifications(
@@ -58,6 +64,7 @@ export class SocialController {
     );
   }
 
+  @ApiOperation({ summary: 'Add a food truck to favorites' })
   @UseGuards(JwtAuthGuard)
   @Post('food-trucks/:foodTruckId/favorite')
   favoriteFoodTruck(
@@ -67,6 +74,7 @@ export class SocialController {
     return this.socialService.favoriteFoodTruck(user.sub, foodTruckId);
   }
 
+  @ApiOperation({ summary: 'Remove a food truck from favorites' })
   @UseGuards(JwtAuthGuard)
   @Delete('food-trucks/:foodTruckId/favorite')
   unfavoriteFoodTruck(
@@ -76,6 +84,7 @@ export class SocialController {
     return this.socialService.unfavoriteFoodTruck(user.sub, foodTruckId);
   }
 
+  @ApiOperation({ summary: 'Create a social post for a food truck (Vendor)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post('posts')
@@ -86,6 +95,7 @@ export class SocialController {
     return this.socialService.createPost(user.sub, dto);
   }
 
+  @ApiOperation({ summary: 'Update a social post (Vendor)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch('posts/:postId')
@@ -97,6 +107,7 @@ export class SocialController {
     return this.socialService.updatePost(user.sub, postId, dto);
   }
 
+  @ApiOperation({ summary: 'Delete a social post (Vendor)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Delete('posts/:postId')
@@ -107,6 +118,7 @@ export class SocialController {
     return this.socialService.deletePost(user.sub, postId);
   }
 
+  @ApiOperation({ summary: 'Like or toggle like on a post' })
   @UseGuards(JwtAuthGuard)
   @Post('posts/:postId/like')
   likePost(
@@ -116,6 +128,7 @@ export class SocialController {
     return this.socialService.likePost(user.sub, postId);
   }
 
+  @ApiOperation({ summary: 'Comment on a post' })
   @UseGuards(JwtAuthGuard)
   @Post('posts/:postId/comments')
   commentOnPost(
@@ -126,6 +139,7 @@ export class SocialController {
     return this.socialService.commentOnPost(user.sub, postId, dto);
   }
 
+  @ApiOperation({ summary: 'Bookmark / save a post' })
   @UseGuards(JwtAuthGuard)
   @Post('posts/:postId/save')
   savePost(
@@ -135,6 +149,7 @@ export class SocialController {
     return this.socialService.savePost(user.sub, postId);
   }
 
+  @ApiOperation({ summary: 'Get personalized social feed from followed food trucks' })
   @UseGuards(JwtAuthGuard)
   @Get('feed/following')
   getFollowedFeed(

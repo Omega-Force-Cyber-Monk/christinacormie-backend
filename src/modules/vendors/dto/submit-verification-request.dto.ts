@@ -1,20 +1,25 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
 
 export class VerificationDocumentDto {
+  @ApiProperty({ example: 'BUSINESS_PERMIT' })
   @IsString()
   type: string;
 
+  @ApiProperty({ example: 'https://cdn.bitedrop.com/documents/permit-2026.pdf' })
   @IsString()
   url: string;
 }
 
 export class SubmitVerificationRequestDto {
+  @ApiProperty({ type: [VerificationDocumentDto] })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => VerificationDocumentDto)
   documents: VerificationDocumentDto[];
 
+  @ApiPropertyOptional({ example: 'Submitted food safety permit and health department license.' })
   @IsOptional()
   @IsString()
   @MaxLength(1000)

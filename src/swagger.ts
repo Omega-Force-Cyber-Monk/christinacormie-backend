@@ -6,6 +6,7 @@ export function setupSwagger(app: INestApplication): void {
     .setTitle('BiteDrop Backend API')
     .setDescription('API documentation for BiteDrop backend')
     .setVersion('1.0')
+    .addBearerAuth()
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

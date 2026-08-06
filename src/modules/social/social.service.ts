@@ -8,15 +8,31 @@ import { CreatePostDto } from './dto/create-post.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
 import { ToggleFollowNotificationsDto } from './dto/toggle-follow-notifications.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { RewardsService } from '../rewards/rewards.service';
 import { SocialRepository } from './social.repository';
 
 @Injectable()
 export class SocialService {
-  constructor(private readonly socialRepository: SocialRepository) {}
+  constructor(
+    private readonly socialRepository: SocialRepository,
+    private readonly notificationsService: NotificationsService,
+    private readonly rewardsService: RewardsService,
+  ) {}
 
   async followFoodTruck(userId: string, foodTruckId: string) {
     await this.ensureFoodTruckExists(foodTruckId);
-    return this.socialRepository.followFoodTruck(userId, foodTruckId);
+    const existing = await this.socialRepository.findFollow(userId, foodTruckId);
+
+    if (existing) {
+      return existing;
+    }
+
+    const follow = await this.socialRepository.followFoodTruck(userId, foodTruckId);
+
+    await this.rewardsService.awardPoints(userId, 'FOLLOW_TRUCK', follow.id);
+
+    return follow;
   }
 
   async unfollowFoodTruck(userId: string, foodTruckId: string) {
@@ -68,7 +84,17 @@ export class SocialService {
 
   async createPost(userId: string, dto: CreatePostDto) {
     const vendor = await this.ensureOwnFoodTruck(userId, dto.foodTruckId);
-    return this.socialRepository.createPost(vendor.id, dto);
+    const post = await this.socialRepository.createPost(vendor.id, dto);
+
+    if (post.status === 'PUBLISHED') {
+      await this.notificationsService.notifyFoodTruckUpdate({
+        actorUserId: userId,
+        foodTruckId: dto.foodTruckId,
+        postId: post.id,
+      });
+    }
+
+    return post;
   }
 
   async updatePost(userId: string, postId: string, dto: UpdatePostDto) {

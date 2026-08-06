@@ -39,5 +39,6 @@ model PromotionRedemption {
   booking        Booking?  @relation(fields: [bookingId], references: [id])
   checkIn        CheckIn?  @relation(fields: [checkInId], references: [id])
 
+  @@unique([promotionId, userId])
   @@map("promotion_redemptions")
 }

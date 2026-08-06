@@ -70,6 +70,7 @@ model User {
   createdCampaigns                   Campaign[]                    @relation("CampaignCreatedBy")
   createdFeaturedPlacements          FeaturedPlacement[]           @relation("FeaturedPlacementCreatedBy")
   updatedPlatformSettings            PlatformSetting[]             @relation("PlatformSettingUpdatedBy")
+  adminAuditLogs                     AdminAuditLog[]               @relation("AdminAuditLogUser")
 
   @@map("users")
 }

@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -37,30 +38,37 @@ import { UpdateTruckLocationDto } from './dto/update-truck-location.dto';
 import { UpdateTruckImageDto } from './dto/update-truck-image.dto';
 import { FoodTrucksService } from './food-trucks.service';
 
+@ApiTags('Food Trucks')
 @Controller('api/v1/food-trucks')
 export class FoodTrucksController {
   constructor(private readonly foodTrucksService: FoodTrucksService) {}
 
+  @ApiOperation({ summary: 'List all cuisine categories' })
   @Get('cuisines')
   listCuisineCategories() {
     return this.foodTrucksService.listCuisineCategories();
   }
 
+  @ApiOperation({ summary: 'Find active nearby food truck pop-up drops' })
   @Get('drops/nearby')
   getNearbyActiveDrops(@Query() query: NearbyDropsQueryDto) {
     return this.foodTrucksService.getNearbyActiveDrops(query);
   }
 
+  @ApiOperation({ summary: "Get today's scheduled food truck drops" })
   @Get('drops/today')
   getTodaysDrops(@Query() query: TodaysDropsQueryDto) {
     return this.foodTrucksService.getTodaysDrops(query);
   }
 
+  @ApiOperation({ summary: 'Get public food truck profile by slug' })
   @Get('profile/:slug')
   getPublicProfile(@Param('slug') slug: string) {
     return this.foodTrucksService.getPublicProfile(slug);
   }
 
+  @ApiOperation({ summary: 'Get all food trucks owned by authenticated vendor' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Get('mine')
@@ -68,6 +76,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.getMyFoodTrucks(user.sub);
   }
 
+  @ApiOperation({ summary: 'Create a new draft food truck profile (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post('draft')
@@ -78,6 +88,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.createDraft(user.sub, dto);
   }
 
+  @ApiOperation({ summary: 'Update draft food truck profile (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/draft')
@@ -89,6 +101,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.updateDraft(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Set cuisines for a food truck (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Put(':id/cuisines')
@@ -100,6 +114,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.setCuisines(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Set up basic menu structure (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post(':id/menus/basic')
@@ -111,6 +127,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.setupBasicMenu(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Create a menu category (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post(':id/menus/:menuId/categories')
@@ -128,6 +146,8 @@ export class FoodTrucksController {
     );
   }
 
+  @ApiOperation({ summary: 'Update a menu category (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/menu-categories/:categoryId')
@@ -145,6 +165,8 @@ export class FoodTrucksController {
     );
   }
 
+  @ApiOperation({ summary: 'Create a menu item in a category (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post(':id/menu-categories/:categoryId/items')
@@ -162,6 +184,8 @@ export class FoodTrucksController {
     );
   }
 
+  @ApiOperation({ summary: 'Update a menu item (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/menu-items/:itemId')
@@ -179,6 +203,8 @@ export class FoodTrucksController {
     );
   }
 
+  @ApiOperation({ summary: 'Set service area radius and location (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/service-area')
@@ -190,6 +216,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.setupServiceArea(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Update maximum guest capacity (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/guest-capacity')
@@ -201,6 +229,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.updateGuestCapacity(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Update operating status (OPEN/CLOSED) (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/operating-status')
@@ -216,6 +246,8 @@ export class FoodTrucksController {
     );
   }
 
+  @ApiOperation({ summary: 'Update current live location (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/location')
@@ -227,6 +259,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.updateLocation(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Create an active pop-up drop (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post(':id/drops')
@@ -238,6 +272,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.createActiveDrop(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Add a photo to food truck gallery (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post(':id/images')
@@ -249,6 +285,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.addImage(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Update a gallery photo (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/images/:imageId')
@@ -261,6 +299,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.updateImage(user.sub, foodTruckId, imageId, dto);
   }
 
+  @ApiOperation({ summary: 'Remove a photo from gallery (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Delete(':id/images/:imageId')
@@ -272,6 +312,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.removeImage(user.sub, foodTruckId, imageId);
   }
 
+  @ApiOperation({ summary: 'Set weekly operating hours (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Put(':id/operating-hours')
@@ -283,6 +325,8 @@ export class FoodTrucksController {
     return this.foodTrucksService.setOperatingHours(user.sub, foodTruckId, dto);
   }
 
+  @ApiOperation({ summary: 'Create an availability exception date (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post(':id/availability-exceptions')
@@ -298,6 +342,8 @@ export class FoodTrucksController {
     );
   }
 
+  @ApiOperation({ summary: 'Update an availability exception date (Vendor)' })
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Patch(':id/availability-exceptions/:exceptionId')

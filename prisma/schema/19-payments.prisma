@@ -82,3 +82,15 @@ model Payout {
 
   @@map("payouts")
 }
+
+model StripeWebhookEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  stripeEventId String  @unique @map("stripe_event_id") @db.VarChar(255)
+  eventType   String    @map("event_type") @db.VarChar(100)
+  status      String    @default("PROCESSING") @db.VarChar(30)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  error       String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("stripe_webhook_events")
+}
