@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -11,16 +12,20 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { UsersService } from './users.service';
 
+@ApiTags('Users')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('api/v1/users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @ApiOperation({ summary: 'Get current authenticated user profile & details' })
   @Get('me')
   getMe(@CurrentUser() user: AuthenticatedUser) {
     return this.usersService.getMe(user.sub);
   }
 
+  @ApiOperation({ summary: 'Update profile info for current user' })
   @Patch('me/profile')
   updateProfile(
     @CurrentUser() user: AuthenticatedUser,
@@ -29,6 +34,7 @@ export class UsersController {
     return this.usersService.updateProfile(user.sub, dto);
   }
 
+  @ApiOperation({ summary: 'Update settings (timezone, language, units) for current user' })
   @Patch('me/settings')
   updateSettings(
     @CurrentUser() user: AuthenticatedUser,
@@ -37,6 +43,7 @@ export class UsersController {
     return this.usersService.updateSettings(user.sub, dto);
   }
 
+  @ApiOperation({ summary: 'Update notification alert preferences for current user' })
   @Patch('me/notification-preferences')
   updateNotificationPreferences(
     @CurrentUser() user: AuthenticatedUser,
@@ -45,11 +52,13 @@ export class UsersController {
     return this.usersService.updateNotificationPreferences(user.sub, dto);
   }
 
+  @ApiOperation({ summary: 'Deactivate current user account' })
   @Patch('me/deactivate')
   deactivateAccount(@CurrentUser() user: AuthenticatedUser) {
     return this.usersService.deactivateAccount(user.sub);
   }
 
+  @ApiOperation({ summary: 'Update account status of a user (Admin)' })
   @Roles(UserRole.ADMIN)
   @Patch(':id/account-status')
   updateAccountStatus(
