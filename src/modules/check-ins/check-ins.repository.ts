@@ -101,6 +101,7 @@ export class CheckInsRepository {
     if (dto.latitude !== undefined && dto.longitude !== undefined) {
       const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
         INSERT INTO qr_scans (
+          id,
           qr_code_id,
           food_truck_id,
           user_id,
@@ -109,6 +110,7 @@ export class CheckInsRepository {
           opened_profile
         )
         VALUES (
+          gen_random_uuid(),
           ${qrCodeId}::uuid,
           ${foodTruckId}::uuid,
           ${userId ?? null}::uuid,
@@ -183,6 +185,7 @@ export class CheckInsRepository {
   ) {
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
       INSERT INTO check_ins (
+        id,
         user_id,
         food_truck_id,
         qr_scan_id,
@@ -198,6 +201,7 @@ export class CheckInsRepository {
         verified_at
       )
       VALUES (
+        gen_random_uuid(),
         ${userId}::uuid,
         ${foodTruckId}::uuid,
         ${dto.qrScanId ?? null}::uuid,
@@ -251,6 +255,7 @@ export class CheckInsRepository {
   ) {
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
       INSERT INTO check_ins (
+        id,
         user_id,
         food_truck_id,
         qr_scan_id,
@@ -264,6 +269,7 @@ export class CheckInsRepository {
         rejection_reason
       )
       VALUES (
+        gen_random_uuid(),
         ${userId}::uuid,
         ${foodTruckId}::uuid,
         ${dto.qrScanId ?? null}::uuid,

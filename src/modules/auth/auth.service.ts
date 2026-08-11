@@ -3,6 +3,8 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -15,12 +17,17 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
+import { VerifyEmailCodeDto } from './dto/verify-email-code.dto';
 
 const PASSWORD_SALT_ROUNDS = 12;
+const VERIFICATION_CODE_TTL = '10m';
+const VERIFICATION_CODE_LENGTH = 6;
 type JwtDuration = `${number}${'s' | 'm' | 'h' | 'd'}`;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -36,7 +43,7 @@ export class AuthService {
           email: dto.email.toLowerCase(),
           phone: dto.phone,
           passwordHash,
-          status: AccountStatus.ACTIVE,
+          status: AccountStatus.PENDING,
           userRoles: {
             create: [{ role: UserRole.CUSTOMER }],
           },
@@ -45,6 +52,7 @@ export class AuthService {
               firstName: dto.firstName,
               lastName: dto.lastName,
               displayName: dto.displayName,
+              dateOfBirth: dto.dateOfBirth,
             },
           },
           settings: {
@@ -62,7 +70,8 @@ export class AuthService {
       return createdUser;
     });
 
-    return this.createAuthResponse(user);
+    await this.issueEmailVerificationCode(user.id, user.email);
+    return this.toPendingVerificationResponse(user.email);
   }
 
   async registerVendor(dto: RegisterVendorDto) {
@@ -75,7 +84,7 @@ export class AuthService {
           email: dto.email.toLowerCase(),
           phone: dto.phone,
           passwordHash,
-          status: AccountStatus.ACTIVE,
+          status: AccountStatus.PENDING,
           userRoles: {
             create: [{ role: UserRole.VENDOR }],
           },
@@ -84,6 +93,7 @@ export class AuthService {
               firstName: dto.firstName,
               lastName: dto.lastName,
               displayName: dto.displayName,
+              dateOfBirth: dto.dateOfBirth,
             },
           },
           settings: {
@@ -111,7 +121,84 @@ export class AuthService {
       return createdUser;
     });
 
-    return this.createAuthResponse(user);
+    await this.issueEmailVerificationCode(user.id, user.email);
+    return this.toPendingVerificationResponse(user.email);
+  }
+
+  async verifyEmailCode(dto: VerifyEmailCodeDto) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: dto.email.toLowerCase(),
+        deletedAt: null,
+      },
+      include: this.authUserInclude(),
+    });
+
+    if (!user) {
+      throw new NotFoundException('Account not found');
+    }
+
+    const verificationCode = await this.prisma.emailVerificationCode.findFirst({
+      where: {
+        userId: user.id,
+        consumedAt: null,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    if (!verificationCode || verificationCode.expiresAt <= new Date()) {
+      throw new BadRequestException('Verification code is invalid or expired');
+    }
+
+    const codeMatches = await bcrypt.compare(dto.code, verificationCode.codeHash);
+
+    if (!codeMatches) {
+      throw new BadRequestException('Verification code is invalid or expired');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.emailVerificationCode.update({
+        where: { id: verificationCode.id },
+        data: { consumedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          status: AccountStatus.ACTIVE,
+          emailVerifiedAt: new Date(),
+        },
+      }),
+    ]);
+
+    const activatedUser = await this.prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      include: this.authUserInclude(),
+    });
+
+    return this.createAuthResponse(activatedUser);
+  }
+
+  async resendVerificationCode(email: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        deletedAt: null,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Account not found');
+    }
+
+    if (user.emailVerifiedAt) {
+      throw new BadRequestException('Email is already verified');
+    }
+
+    await this.issueEmailVerificationCode(user.id, user.email);
+
+    return this.toPendingVerificationResponse(user.email);
   }
 
   async login(dto: LoginDto) {
@@ -273,6 +360,52 @@ export class AuthService {
     if (existingUser) {
       throw new ConflictException('An account already exists with this email or phone');
     }
+  }
+
+  private async issueEmailVerificationCode(userId: string, email: string | null) {
+    if (!email) {
+      throw new BadRequestException('Email verification requires an email address');
+    }
+
+    const code = this.createVerificationCode();
+    const codeHash = await bcrypt.hash(code, PASSWORD_SALT_ROUNDS);
+
+    await this.prisma.$transaction([
+      this.prisma.emailVerificationCode.updateMany({
+        where: {
+          userId,
+          consumedAt: null,
+        },
+        data: {
+          consumedAt: new Date(),
+        },
+      }),
+      this.prisma.emailVerificationCode.create({
+        data: {
+          userId,
+          codeHash,
+          expiresAt: addDuration(new Date(), VERIFICATION_CODE_TTL),
+        },
+      }),
+    ]);
+
+    this.logger.log(`Email verification code for ${email}: ${code}`);
+  }
+
+  private createVerificationCode() {
+    return Math.floor(
+      10 ** (VERIFICATION_CODE_LENGTH - 1) +
+        Math.random() * 9 * 10 ** (VERIFICATION_CODE_LENGTH - 1),
+    ).toString();
+  }
+
+  private toPendingVerificationResponse(email: string | null) {
+    return {
+      success: true,
+      status: AccountStatus.PENDING,
+      message: 'Registration successful. Verify the 6-digit code sent to your email.',
+      email,
+    };
   }
 
   private ensureAccountCanAuthenticate(status: string) {

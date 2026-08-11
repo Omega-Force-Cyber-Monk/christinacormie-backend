@@ -94,6 +94,7 @@ model Cuisine {
   pinColor   String?           @map("pin_color") @db.VarChar(20)
   isActive   Boolean           @default(true) @map("is_active")
   foodTrucks FoodTruckCuisine[]
+  userInterests UserCuisineInterest[]
 
   @@map("cuisines")
 }

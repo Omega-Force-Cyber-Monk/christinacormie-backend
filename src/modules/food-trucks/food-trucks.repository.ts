@@ -205,6 +205,7 @@ export class FoodTrucksRepository {
 
     const rows = await this.prisma.$queryRaw<Array<Record<string, unknown>>>`
       INSERT INTO service_areas (
+        id,
         food_truck_id,
         name,
         center_address,
@@ -215,6 +216,7 @@ export class FoodTrucksRepository {
         is_active
       )
       VALUES (
+        gen_random_uuid(),
         ${foodTruckId}::uuid,
         ${dto.name ?? null},
         ${dto.centerAddress ?? null},
@@ -493,6 +495,7 @@ export class FoodTrucksRepository {
 
       const rows = await tx.$queryRaw<Array<Record<string, unknown>>>`
         INSERT INTO food_truck_drops (
+          id,
           food_truck_id,
           title,
           message,
@@ -502,6 +505,7 @@ export class FoodTrucksRepository {
           ends_at
         )
         VALUES (
+          gen_random_uuid(),
           ${foodTruckId}::uuid,
           ${dto.title ?? null},
           ${dto.message ?? null},

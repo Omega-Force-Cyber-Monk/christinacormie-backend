@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -18,6 +19,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { UpdateAccountStatusDto } from '../users/dto/update-account-status.dto';
 import { ModerateReviewDto } from '../reviews/dto/moderate-review.dto';
+import { VendorsService } from '../vendors/vendors.service';
 import { AdminService } from './admin.service';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 import { CreateMarketDto } from './dto/create-market.dto';
@@ -33,7 +35,10 @@ import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
 @Roles(UserRole.ADMIN)
 @Controller('api/v1/admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly vendorsService: VendorsService,
+  ) {}
 
   @ApiOperation({ summary: 'List all users with pagination and search' })
   @Get('users')
@@ -43,7 +48,7 @@ export class AdminController {
 
   @ApiOperation({ summary: 'Get user details by user ID' })
   @Get('users/:userId')
-  getUser(@Param('userId') userId: string) {
+  getUser(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.adminService.getUser(userId);
   }
 
@@ -51,10 +56,16 @@ export class AdminController {
   @Patch('users/:userId/account-status')
   updateUserStatus(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateAccountStatusDto,
   ) {
     return this.adminService.updateUserStatus(user.sub, userId, dto);
+  }
+
+  @ApiOperation({ summary: 'List vendors pending approval' })
+  @Get('vendors/pending-approval')
+  getPendingApprovalVendors() {
+    return this.vendorsService.getPendingApprovalVendors();
   }
 
   @ApiOperation({ summary: 'List all vendors with filtering and pagination' })
@@ -65,7 +76,7 @@ export class AdminController {
 
   @ApiOperation({ summary: 'Get vendor details by vendor ID' })
   @Get('vendors/:vendorId')
-  getVendor(@Param('vendorId') vendorId: string) {
+  getVendor(@Param('vendorId', ParseUUIDPipe) vendorId: string) {
     return this.adminService.getVendor(vendorId);
   }
 
@@ -83,7 +94,7 @@ export class AdminController {
 
   @ApiOperation({ summary: 'Get food truck details' })
   @Get('food-trucks/:foodTruckId')
-  getFoodTruck(@Param('foodTruckId') foodTruckId: string) {
+  getFoodTruck(@Param('foodTruckId', ParseUUIDPipe) foodTruckId: string) {
     return this.adminService.getFoodTruck(foodTruckId);
   }
 
@@ -91,7 +102,7 @@ export class AdminController {
   @Patch('food-trucks/:foodTruckId')
   updateFoodTruck(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('foodTruckId') foodTruckId: string,
+    @Param('foodTruckId', ParseUUIDPipe) foodTruckId: string,
     @Body() dto: UpdateFoodTruckAdminDto,
   ) {
     return this.adminService.updateFoodTruck(user.sub, foodTruckId, dto);
@@ -105,7 +116,7 @@ export class AdminController {
 
   @ApiOperation({ summary: 'Get booking details by ID' })
   @Get('bookings/:bookingId')
-  getBooking(@Param('bookingId') bookingId: string) {
+  getBooking(@Param('bookingId', ParseUUIDPipe) bookingId: string) {
     return this.adminService.getBooking(bookingId);
   }
 
@@ -137,7 +148,7 @@ export class AdminController {
   @Patch('reviews/:reviewId/moderation')
   moderateReview(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('reviewId') reviewId: string,
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
     @Body() dto: ModerateReviewDto,
   ) {
     return this.adminService.moderateReview(user.sub, reviewId, dto);
@@ -153,7 +164,7 @@ export class AdminController {
   @Patch('community/requests/:requestId')
   moderateCommunityRequest(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId') requestId: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
     @Body() dto: ModerateCommunityRequestDto,
   ) {
     return this.adminService.moderateCommunityRequest(user.sub, requestId, dto);
@@ -163,7 +174,7 @@ export class AdminController {
   @Delete('community/comments/:commentId')
   deleteCommunityComment(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('commentId') commentId: string,
+    @Param('commentId', ParseUUIDPipe) commentId: string,
   ) {
     return this.adminService.deleteCommunityComment(user.sub, commentId);
   }
@@ -187,7 +198,7 @@ export class AdminController {
   @Patch('markets/:marketId')
   updateMarket(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('marketId') marketId: string,
+    @Param('marketId', ParseUUIDPipe) marketId: string,
     @Body() dto: UpdateMarketDto,
   ) {
     return this.adminService.updateMarket(user.sub, marketId, dto);
@@ -228,7 +239,7 @@ export class AdminController {
   @Patch('leaderboard-rules/:ruleId')
   updateLeaderboardRule(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('ruleId') ruleId: string,
+    @Param('ruleId', ParseUUIDPipe) ruleId: string,
     @Body() dto: UpsertLeaderboardRuleDto,
   ) {
     return this.adminService.updateLeaderboardRule(user.sub, ruleId, dto);

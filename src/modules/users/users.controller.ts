@@ -9,6 +9,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/authenticated-re
 import { UpdateAccountStatusDto } from './dto/update-account-status.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { SetInterestCuisinesDto } from './dto/set-interest-cuisines.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { UsersService } from './users.service';
 
@@ -23,6 +24,21 @@ export class UsersController {
   @Get('me')
   getMe(@CurrentUser() user: AuthenticatedUser) {
     return this.usersService.getMe(user.sub);
+  }
+
+  @ApiOperation({ summary: 'List available cuisine interests for onboarding' })
+  @Get('interest-cuisines')
+  listInterestCuisines() {
+    return this.usersService.listInterestCuisines();
+  }
+
+  @ApiOperation({ summary: 'Save selected cuisine interests for current user' })
+  @Patch('me/interests')
+  setInterestCuisines(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SetInterestCuisinesDto,
+  ) {
+    return this.usersService.setInterestCuisines(user.sub, dto);
   }
 
   @ApiOperation({ summary: 'Update profile info for current user' })

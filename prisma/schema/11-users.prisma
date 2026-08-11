@@ -26,6 +26,8 @@ model User {
   deletedAt                          DateTime?                     @map("deleted_at") @db.Timestamptz(6)
   userRoles                          UserRoleAssignment[]
   refreshTokens                      RefreshToken[]
+  emailVerificationCodes             EmailVerificationCode[]
+  cuisineInterests                   UserCuisineInterest[]
   profile                            UserProfile?
   settings                           UserSetting?
   deviceTokens                       DeviceToken[]
@@ -104,6 +106,7 @@ model UserProfile {
   firstName   String?  @map("first_name") @db.VarChar(100)
   lastName    String?  @map("last_name") @db.VarChar(100)
   displayName String?  @map("display_name") @db.VarChar(150)
+  dateOfBirth DateTime? @map("date_of_birth") @db.Date
   avatarUrl   String?  @map("avatar_url")
   bio         String?
   city        String?  @db.VarChar(150)
@@ -115,6 +118,19 @@ model UserProfile {
   user        User     @relation(fields: [userId], references: [id])
 
   @@map("user_profiles")
+}
+
+model EmailVerificationCode {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  codeHash    String    @map("code_hash") @db.VarChar(255)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt])
+  @@map("email_verification_codes")
 }
 
 model UserSetting {
@@ -144,4 +160,16 @@ model DeviceToken {
   user      User     @relation(fields: [userId], references: [id])
 
   @@map("device_tokens")
+}
+
+model UserCuisineInterest {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  cuisineId String   @map("cuisine_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id])
+  cuisine   Cuisine  @relation(fields: [cuisineId], references: [id])
+
+  @@unique([userId, cuisineId])
+  @@map("user_cuisine_interests")
 }

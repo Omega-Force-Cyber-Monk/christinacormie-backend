@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsPhoneNumber, IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsDate,
+  IsEmail,
+  IsOptional,
+  IsPhoneNumber,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class RegisterCustomerDto {
   @ApiProperty({ example: 'customer@example.com' })
@@ -11,6 +20,11 @@ export class RegisterCustomerDto {
   @MinLength(8)
   @MaxLength(128)
   password: string;
+
+  @ApiProperty({ example: '1998-05-20' })
+  @Type(() => Date)
+  @IsDate()
+  dateOfBirth: Date;
 
   @ApiPropertyOptional({ example: '+12025550143' })
   @IsOptional()

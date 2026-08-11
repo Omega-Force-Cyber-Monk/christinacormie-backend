@@ -3,6 +3,7 @@ import { AccountStatus } from '../../common/enums/account-status.enum';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { SetInterestCuisinesDto } from './dto/set-interest-cuisines.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 
 @Injectable()
@@ -20,6 +21,20 @@ export class UsersService {
     }
 
     return this.toUserResponse(user);
+  }
+
+  listInterestCuisines() {
+    return this.prisma.cuisine.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        iconUrl: true,
+        pinColor: true,
+      },
+    });
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -50,6 +65,45 @@ export class UsersService {
     });
 
     return settings;
+  }
+
+  async setInterestCuisines(userId: string, dto: SetInterestCuisinesDto) {
+    await this.ensureUserExists(userId);
+
+    const uniqueCuisineIds = [...new Set(dto.cuisineIds)];
+    const cuisineCount = await this.prisma.cuisine.count({
+      where: {
+        id: { in: uniqueCuisineIds },
+        isActive: true,
+      },
+    });
+
+    if (cuisineCount !== uniqueCuisineIds.length) {
+      throw new NotFoundException('One or more cuisines were not found');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.userCuisineInterest.deleteMany({
+        where: { userId },
+      }),
+      this.prisma.userCuisineInterest.createMany({
+        data: uniqueCuisineIds.map((cuisineId) => ({
+          userId,
+          cuisineId,
+        })),
+      }),
+    ]);
+
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      include: this.userInclude(),
+    }).then((user) => {
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      return this.toUserResponse(user);
+    });
   }
 
   async updateNotificationPreferences(
@@ -147,6 +201,7 @@ export class UsersService {
       profile: user.profile,
       settings: user.settings,
       notificationPreference: user.notificationPreference,
+      interestCuisines: (user.cuisineInterests ?? []).map((interest) => interest.cuisine),
       vendor: user.vendor,
     };
   }
@@ -157,6 +212,11 @@ export class UsersService {
       profile: true,
       settings: true,
       notificationPreference: true,
+      cuisineInterests: {
+        include: {
+          cuisine: true,
+        },
+      },
       vendor: true,
     };
   }

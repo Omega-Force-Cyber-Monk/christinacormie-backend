@@ -274,6 +274,7 @@ export class CommunityRepository {
   ) {
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
       INSERT INTO community_requests (
+        id,
         created_by,
         target_food_truck_id,
         visibility,
@@ -294,6 +295,7 @@ export class CommunityRepository {
         expires_at
       )
       VALUES (
+        gen_random_uuid(),
         ${userId}::uuid,
         ${targetFoodTruckId ?? null}::uuid,
         ${visibility}::"RequestVisibility",

@@ -118,6 +118,7 @@ export class BookingsRepository {
 
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
       INSERT INTO bookings (
+        id,
         booking_number,
         customer_id,
         vendor_id,
@@ -140,6 +141,7 @@ export class BookingsRepository {
         special_instructions
       )
       VALUES (
+        gen_random_uuid(),
         ${bookingNumber},
         ${customerId}::uuid,
         ${vendorId}::uuid,
