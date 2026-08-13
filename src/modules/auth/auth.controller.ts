@@ -5,6 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { GoogleAuthDto } from './dto/google-auth.dto';
 import { ResendEmailCodeDto } from './dto/resend-email-code.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
@@ -44,6 +45,12 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @ApiOperation({ summary: 'Login or register with Google ID token' })
+  @Post('google')
+  loginWithGoogle(@Body() dto: GoogleAuthDto) {
+    return this.authService.loginWithGoogle(dto);
   }
 
   @ApiOperation({ summary: 'Refresh access token using refresh token' })

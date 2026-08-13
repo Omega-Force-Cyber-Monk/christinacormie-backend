@@ -14,7 +14,9 @@ import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { addDuration } from '../../common/utils/date.util';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { GoogleAuthDto } from './dto/google-auth.dto';
 import { LoginDto } from './dto/login.dto';
+import { GoogleTokenVerifierService } from './google-token-verifier.service';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
 import { VerifyEmailCodeDto } from './dto/verify-email-code.dto';
@@ -31,6 +33,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly googleTokenVerifier: GoogleTokenVerifierService,
   ) {}
 
   async registerCustomer(dto: RegisterCustomerDto) {
@@ -221,6 +224,119 @@ export class AuthService {
     }
 
     this.ensureAccountCanAuthenticate(user.status);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    return this.createAuthResponse(user);
+  }
+
+  async loginWithGoogle(dto: GoogleAuthDto) {
+    const googleProfile = await this.googleTokenVerifier.verifyIdToken(dto.idToken);
+
+    let user = await this.prisma.user.findFirst({
+      where: {
+        email: googleProfile.email,
+        deletedAt: null,
+      },
+      include: this.authUserInclude(),
+    });
+
+    if (!user) {
+      const requestedRole = dto.role ?? UserRole.CUSTOMER;
+
+      if (requestedRole === UserRole.ADMIN) {
+        throw new ForbiddenException('Admin accounts cannot be created with Google sign-in');
+      }
+
+      if (requestedRole === UserRole.VENDOR && !dto.businessName) {
+        throw new BadRequestException(
+          'businessName is required for vendor Google sign-in registration',
+        );
+      }
+
+      user = await this.prisma.user.create({
+        data: {
+          email: googleProfile.email,
+          status: AccountStatus.ACTIVE,
+          emailVerifiedAt: new Date(),
+          userRoles: {
+            create: [{ role: requestedRole }],
+          },
+          profile: {
+            create: {
+              firstName: googleProfile.firstName ?? undefined,
+              lastName: googleProfile.lastName ?? undefined,
+              displayName: googleProfile.displayName ?? undefined,
+              avatarUrl: googleProfile.avatarUrl ?? undefined,
+              dateOfBirth: dto.dateOfBirth,
+            },
+          },
+          settings: {
+            create: {},
+          },
+          notificationPreference: {
+            create: {},
+          },
+          ...(requestedRole === UserRole.VENDOR
+            ? {
+                vendor: {
+                  create: {
+                    businessName: dto.businessName!,
+                    businessEmail: googleProfile.email,
+                    status: 'DRAFT',
+                  },
+                },
+              }
+            : {}),
+        },
+        include: this.authUserInclude(),
+      });
+    } else {
+      this.ensureAccountCanAuthenticate(user.status);
+
+      const shouldUpdateProfile =
+        !user.profile?.firstName ||
+        !user.profile?.lastName ||
+        !user.profile?.displayName ||
+        !user.profile?.avatarUrl;
+
+      if (shouldUpdateProfile || !user.emailVerifiedAt) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+            profile: {
+              upsert: {
+                create: {
+                  firstName: googleProfile.firstName ?? undefined,
+                  lastName: googleProfile.lastName ?? undefined,
+                  displayName: googleProfile.displayName ?? undefined,
+                  avatarUrl: googleProfile.avatarUrl ?? undefined,
+                  dateOfBirth: dto.dateOfBirth,
+                },
+                update: {
+                  ...(user.profile?.firstName ? {} : { firstName: googleProfile.firstName ?? undefined }),
+                  ...(user.profile?.lastName ? {} : { lastName: googleProfile.lastName ?? undefined }),
+                  ...(user.profile?.displayName ? {} : { displayName: googleProfile.displayName ?? undefined }),
+                  ...(user.profile?.avatarUrl ? {} : { avatarUrl: googleProfile.avatarUrl ?? undefined }),
+                  ...(user.profile?.dateOfBirth || !dto.dateOfBirth
+                    ? {}
+                    : { dateOfBirth: dto.dateOfBirth }),
+                },
+              },
+            },
+          },
+        });
+
+        user = await this.prisma.user.findUniqueOrThrow({
+          where: { id: user.id },
+          include: this.authUserInclude(),
+        });
+      }
+    }
 
     await this.prisma.user.update({
       where: { id: user.id },
