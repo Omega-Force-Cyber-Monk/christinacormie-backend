@@ -9,6 +9,7 @@ import { AcceptBookingQuoteDto } from './dto/accept-booking-quote.dto';
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
+import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RewardsService } from '../rewards/rewards.service';
 import { BookingsRepository } from './bookings.repository';
@@ -84,6 +85,7 @@ export class BookingsService {
       userId,
       updatedBooking,
       'Booking accepted',
+      NotificationEventType.BOOKING_ACCEPTED,
     );
 
     return updatedBooking;
@@ -113,6 +115,7 @@ export class BookingsService {
       userId,
       updatedBooking,
       'Booking rejected',
+      NotificationEventType.BOOKING_REJECTED,
     );
 
     return updatedBooking;
@@ -163,6 +166,7 @@ export class BookingsService {
       userId,
       quoteResult.booking,
       'New booking quote',
+      NotificationEventType.QUOTE_CREATED,
     );
 
     return quoteResult;

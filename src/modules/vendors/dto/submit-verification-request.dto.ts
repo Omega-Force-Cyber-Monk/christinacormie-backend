@@ -1,11 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+import { VendorVerificationDocumentType } from '../enums/vendor-verification-document-type.enum';
 
 export class VerificationDocumentDto {
-  @ApiProperty({ example: 'BUSINESS_PERMIT' })
-  @IsString()
-  type: string;
+  @ApiProperty({
+    enum: VendorVerificationDocumentType,
+    example: VendorVerificationDocumentType.FOOD_MANAGER_CERTIFICATION,
+  })
+  @IsEnum(VendorVerificationDocumentType)
+  type: VendorVerificationDocumentType;
 
   @ApiProperty({ example: 'https://cdn.bitedrop.com/documents/permit-2026.pdf' })
   @IsString()

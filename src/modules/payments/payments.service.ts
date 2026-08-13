@@ -7,6 +7,7 @@ import {
 import { CreateBookingPaymentDto } from './dto/create-booking-payment.dto';
 import { CreateConnectAccountDto } from './dto/create-connect-account.dto';
 import { CreateRefundDto } from './dto/create-refund.dto';
+import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsRepository } from './payments.repository';
 import { StripeClientService } from './stripe-client.service';
@@ -375,12 +376,14 @@ export class PaymentsService {
       updatedPayment,
       'Payment succeeded',
       `Payment for booking ${updatedPayment.booking.bookingNumber} succeeded.`,
+      NotificationEventType.PAYMENT_SUCCEEDED,
     );
 
     await this.notificationsService.notifyVendorPaymentUpdate(
       updatedPayment,
       'Payment received',
       `Payment for booking ${updatedPayment.booking.bookingNumber} succeeded.`,
+      NotificationEventType.PAYMENT_SUCCEEDED,
     );
   }
 
@@ -403,6 +406,7 @@ export class PaymentsService {
       updatedPayment,
       'Payment update',
       `Payment for booking ${updatedPayment.booking.bookingNumber} is ${status}.`,
+      NotificationEventType.PAYMENT_FAILED,
     );
   }
 

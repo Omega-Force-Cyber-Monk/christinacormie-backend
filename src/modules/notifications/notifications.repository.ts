@@ -19,7 +19,10 @@ export type NotificationInput = {
 export class NotificationsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findForUser(userId: string, options: { unreadOnly?: boolean; limit: number }) {
+  findForUser(
+    userId: string,
+    options: { unreadOnly?: boolean; limit: number; offset?: number },
+  ) {
     return this.prisma.notification.findMany({
       where: {
         userId,
@@ -27,6 +30,7 @@ export class NotificationsRepository {
       },
       orderBy: { createdAt: 'desc' },
       take: options.limit,
+      skip: options.offset ?? 0,
       include: {
         foodTruck: {
           select: {
@@ -90,6 +94,36 @@ export class NotificationsRepository {
       where: { userId },
       create: { userId },
       update: {},
+    });
+  }
+
+  findActiveDeviceTokens(userId: string) {
+    return this.prisma.deviceToken.findMany({
+      where: {
+        userId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        token: true,
+        platform: true,
+        deviceId: true,
+      },
+    });
+  }
+
+  deactivateDeviceTokensByValue(tokens: string[]) {
+    if (!tokens.length) {
+      return Promise.resolve({ count: 0 });
+    }
+
+    return this.prisma.deviceToken.updateMany({
+      where: {
+        token: { in: tokens },
+      },
+      data: {
+        isActive: false,
+      },
     });
   }
 

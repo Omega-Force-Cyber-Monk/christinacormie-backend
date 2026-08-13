@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
+import { MailModule } from './infrastructure/mail/mail.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -21,6 +22,7 @@ import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
 
 @Module({
   imports: [
+    MailModule,
     PrismaModule,
     AdminModule,
     AuthModule,

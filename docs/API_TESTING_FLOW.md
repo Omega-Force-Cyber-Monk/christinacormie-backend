@@ -2,6 +2,13 @@
 
 This guide explains the practical order for testing the APIs. Test in this order because later modules depend on IDs, tokens, statuses, and records created by earlier modules.
 
+Related docs:
+
+```text
+Notification end-to-end testing: docs/NOTIFICATION_TESTING_FLOW.md
+Frontend notification integration handoff: docs/FRONTEND_NOTIFICATION_INTEGRATION_PROMPT.md
+```
+
 Base URL:
 
 ```text
@@ -19,6 +26,10 @@ Use these variables in Postman/Insomnia:
 
 ```text
 {{baseUrl}} = http://localhost:3000
+{{customerEmailVerificationCode}}
+{{vendorEmailVerificationCode}}
+{{customerDeviceTokenId}}
+{{vendorDeviceTokenId}}
 {{customerToken}}
 {{vendorToken}}
 {{adminToken}}
@@ -83,6 +94,7 @@ POST {{baseUrl}}/api/v1/auth/register/customer
 {
   "email": "customer1@example.com",
   "password": "Password123!",
+  "dateOfBirth": "1998-05-20",
   "phone": "+12025550143",
   "firstName": "John",
   "lastName": "Customer",
@@ -94,12 +106,51 @@ POST {{baseUrl}}/api/v1/auth/register/customer
 Save:
 
 ```text
+email -> customer1@example.com
+status -> PENDING
+```
+
+Important:
+
+```text
+Registration no longer returns accessToken immediately.
+It now creates a pending account and sends/logs a 6-digit verification code.
+```
+
+### 1.2 Verify Customer Email
+
+```http
+POST {{baseUrl}}/api/v1/auth/verify-email
+```
+
+```json
+{
+  "email": "customer1@example.com",
+  "code": "{{customerEmailVerificationCode}}"
+}
+```
+
+Save:
+
+```text
 accessToken -> {{customerToken}}
 refreshToken
 user.id -> {{customerId}}
 ```
 
-### 1.2 Register Vendor
+If code expires, test resend:
+
+```http
+POST /api/v1/auth/resend-verification-code
+```
+
+```json
+{
+  "email": "customer1@example.com"
+}
+```
+
+### 1.3 Register Vendor
 
 ```http
 POST {{baseUrl}}/api/v1/auth/register/vendor
@@ -109,6 +160,7 @@ POST {{baseUrl}}/api/v1/auth/register/vendor
 {
   "email": "vendor1@example.com",
   "password": "Password123!",
+  "dateOfBirth": "1994-08-12",
   "phone": "+12025550199",
   "businessName": "Tasty Tacos Food Truck",
   "businessEmail": "contact@tastytacos.com",
@@ -125,12 +177,45 @@ POST {{baseUrl}}/api/v1/auth/register/vendor
 Save:
 
 ```text
+email -> vendor1@example.com
+status -> PENDING
+```
+
+### 1.4 Verify Vendor Email
+
+```http
+POST {{baseUrl}}/api/v1/auth/verify-email
+```
+
+```json
+{
+  "email": "vendor1@example.com",
+  "code": "{{vendorEmailVerificationCode}}"
+}
+```
+
+Save:
+
+```text
 accessToken -> {{vendorToken}}
+refreshToken
 user.id -> {{vendorUserId}}
 vendor.id -> {{vendorId}}
 ```
 
-### 1.3 Login Admin
+If code expires, test resend:
+
+```http
+POST /api/v1/auth/resend-verification-code
+```
+
+```json
+{
+  "email": "vendor1@example.com"
+}
+```
+
+### 1.5 Login Admin
 
 ```http
 POST {{baseUrl}}/api/v1/auth/login
@@ -149,7 +234,7 @@ Save:
 accessToken -> {{adminToken}}
 ```
 
-### 1.4 Token Refresh And Logout
+### 1.6 Token Refresh And Logout
 
 Test after login works.
 
@@ -165,17 +250,58 @@ refresh requires refreshToken.
 logout requires auth token.
 ```
 
-## 2. User Profile And Preferences
+## 2. User Profile, Interests And Preferences
 
 Use `{{customerToken}}` and `{{vendorToken}}`.
 
 ```http
 GET /api/v1/users/me
+GET /api/v1/users/interest-cuisines
+PATCH /api/v1/users/me/interests
+POST /api/v1/users/me/device-tokens
+DELETE /api/v1/users/me/device-tokens/{{deviceTokenId}}
 PATCH /api/v1/users/me/profile
 PATCH /api/v1/users/me/settings
 PATCH /api/v1/users/me/notification-preferences
 PATCH /api/v1/users/me/deactivate
 ```
+
+Recommended first-login onboarding flow for customer:
+
+1. Login or verify email.
+2. Call `GET /api/v1/users/interest-cuisines`.
+3. Show the cuisine list in UI.
+4. Submit selected items to `PATCH /api/v1/users/me/interests`.
+5. Confirm saved values from `GET /api/v1/users/me`.
+
+Example interest save body:
+
+```json
+{
+  "cuisineIds": [
+    "{{cuisineId1}}",
+    "{{cuisineId2}}"
+  ]
+}
+```
+
+Example device token registration:
+
+```json
+{
+  "token": "customer-fcm-test-token",
+  "platform": "WEB",
+  "deviceId": "customer-web-test"
+}
+```
+
+Recommended notification setup after login:
+
+1. Login or verify email.
+2. Register a device token with `POST /api/v1/users/me/device-tokens`.
+3. Trigger a business event later in the flow.
+4. Check `GET /api/v1/notifications`.
+5. Check `GET /api/v1/notifications/unread-count`.
 
 Example notification preferences:
 
@@ -238,22 +364,79 @@ PATCH /api/v1/vendors/me
 }
 ```
 
+Before document submission, make sure the vendor state exists on the user profile. The verification requirement set is detected from `user.profile.state`.
+
+```http
+PATCH /api/v1/users/me/profile
+```
+
+Texas example:
+
+```json
+{
+  "city": "Austin",
+  "state": "TX",
+  "country": "USA"
+}
+```
+
 ### 3.3 Submit Verification Documents
+
+Call `GET /api/v1/vendors/me` first. The response now includes `verificationRequirements` so the frontend can show the correct document list automatically.
 
 ```http
 POST /api/v1/vendors/me/verification-requests
 ```
 
+Texas vendor required documents:
+
 ```json
 {
   "documents": [
     {
-      "type": "BUSINESS_LICENSE",
-      "url": "https://example.com/license.pdf"
+      "type": "DSHS_MOBILE_FOOD_VENDOR_LICENSE",
+      "url": "https://example.com/dshs-license.pdf"
+    },
+    {
+      "type": "FOOD_MANAGER_CERTIFICATION",
+      "url": "https://example.com/food-manager-certification.pdf"
+    },
+    {
+      "type": "CERTIFICATE_OF_INSURANCE",
+      "url": "https://example.com/certificate-of-insurance.pdf"
     }
   ],
   "notes": "Ready for approval"
 }
+```
+
+Non-Texas vendor required documents:
+
+```json
+{
+  "documents": [
+    {
+      "type": "STATE_OR_LOCAL_FOOD_VENDOR_PERMIT",
+      "url": "https://example.com/state-food-permit.pdf"
+    },
+    {
+      "type": "FOOD_MANAGER_CERTIFICATION",
+      "url": "https://example.com/food-manager-certification.pdf"
+    },
+    {
+      "type": "CERTIFICATE_OF_INSURANCE",
+      "url": "https://example.com/certificate-of-insurance.pdf"
+    }
+  ],
+  "notes": "Ready for approval"
+}
+```
+
+Expected response includes:
+
+```text
+message = Thank you for submitting your documents. Our team will review and get back to you shortly.
+vendor.status = PENDING_APPROVAL
 ```
 
 ### 3.4 Admin Reviews Vendor
@@ -1067,12 +1250,47 @@ This should award referral points and create notifications.
 
 Use any authenticated user after actions above generate notifications.
 
+Important:
+
+```text
+Push notifications depend on device token registration.
+In-app notifications come from the database and APIs below.
+```
+
+Register device/browser token first if you want to test push-enabled flow:
+
+```http
+POST /api/v1/users/me/device-tokens
+```
+
+Customer example:
+
+```json
+{
+  "token": "customer-fcm-test-token",
+  "platform": "WEB",
+  "deviceId": "customer-web-test"
+}
+```
+
+Vendor example:
+
+```json
+{
+  "token": "vendor-fcm-test-token",
+  "platform": "ANDROID",
+  "deviceId": "vendor-android-test"
+}
+```
+
 ```http
 GET /api/v1/notifications
 GET /api/v1/notifications?unreadOnly=true&limit=20
+GET /api/v1/notifications?unreadOnly=true&limit=20&offset=0
 GET /api/v1/notifications/unread-count
 PATCH /api/v1/notifications/{{notificationId}}/read
 PATCH /api/v1/notifications/read-all
+DELETE /api/v1/users/me/device-tokens/{{deviceTokenId}}
 ```
 
 Notifications are created by:
@@ -1085,6 +1303,36 @@ reward points/redemption
 referral qualification
 badge awards
 check-in updates
+```
+
+First-phase push-oriented notification events currently emphasized:
+
+```text
+BOOKING_CREATED
+BOOKING_ACCEPTED
+BOOKING_REJECTED
+QUOTE_CREATED
+PAYMENT_SUCCEEDED
+PAYMENT_FAILED
+TRUCK_POST_PUBLISHED
+REWARD_EARNED
+CHECK_IN_VERIFIED
+```
+
+Recommended quick notification verification:
+
+1. Register a device token.
+2. Trigger a booking or social post event.
+3. Check `GET /api/v1/notifications`.
+4. Save `id -> {{notificationId}}`.
+5. Check `GET /api/v1/notifications/unread-count`.
+6. Mark it read.
+7. Check unread count again.
+
+For full cross-platform testing details:
+
+```text
+See docs/NOTIFICATION_TESTING_FLOW.md
 ```
 
 ## 15. Leaderboards And Analytics
@@ -1222,37 +1470,40 @@ Platform setting:
 Run this exact sequence for the first complete test:
 
 1. Register customer.
-2. Register vendor.
-3. Login admin.
-4. Vendor updates profile.
-5. Vendor creates food truck draft.
-6. Vendor configures menu, service area, guest capacity.
-7. Vendor submits verification request.
-8. Admin approves vendor.
-9. Vendor sets truck status/location/open status and creates drop.
-10. Customer tests discovery nearby.
-11. Customer follows and favorites truck.
-12. Vendor creates post.
-13. Customer checks notifications/feed.
-14. Vendor creates promotion.
-15. Customer redeems promotion.
-16. Customer creates booking.
-17. Vendor accepts booking.
-18. Vendor creates quote.
-19. Customer accepts quote.
-20. Customer creates payment intent.
-21. Stripe webhook marks payment succeeded.
-22. Manually complete booking if no complete endpoint exists.
-23. Customer creates review.
-24. Vendor responds to review.
-25. Admin moderates review.
-26. Customer scans QR and checks in.
-27. Customer checks loyalty points and notifications.
-28. Customer creates referral code.
-29. Second customer applies referral code.
-30. Admin qualifies referral.
-31. Admin checks analytics, payments, commissions, refunds.
-32. Test leaderboards after enough truck activity exists.
+2. Verify customer email.
+3. Register vendor.
+4. Verify vendor email.
+5. Login admin.
+6. Customer saves onboarding interests.
+7. Vendor updates profile.
+8. Vendor creates food truck draft.
+9. Vendor configures menu, service area, guest capacity.
+10. Vendor submits verification request.
+11. Admin approves vendor.
+12. Vendor sets truck status/location/open status and creates drop.
+13. Customer tests discovery nearby.
+14. Customer follows and favorites truck.
+15. Vendor creates post.
+16. Customer checks notifications/feed.
+17. Vendor creates promotion.
+18. Customer redeems promotion.
+19. Customer creates booking.
+20. Vendor accepts booking.
+21. Vendor creates quote.
+22. Customer accepts quote.
+23. Customer creates payment intent.
+24. Stripe webhook marks payment succeeded.
+25. Manually complete booking if no complete endpoint exists.
+26. Customer creates review.
+27. Vendor responds to review.
+28. Admin moderates review.
+29. Customer scans QR and checks in.
+30. Customer checks loyalty points and notifications.
+31. Customer creates referral code.
+32. Second customer applies referral code.
+33. Admin qualifies referral.
+34. Admin checks analytics, payments, commissions, refunds.
+35. Test leaderboards after enough truck activity exists.
 
 ## 18. Common Dependency Errors
 
@@ -1298,6 +1549,13 @@ If admin API returns forbidden:
 Check token belongs to a user with ADMIN role.
 ```
 
+If verify-email fails:
+
+```text
+Check the latest 6-digit verification code and whether it has expired.
+If expired, call resend-verification-code first.
+```
+
 ## 19. Testing Notes
 
 - Do not test payment webhooks with normal JSON requests. Use Stripe CLI or proper signed webhook payload.
@@ -1305,3 +1563,6 @@ Check token belongs to a user with ADMIN role.
 - Keep IDs from every response. Most later APIs depend on IDs from earlier APIs.
 - Use Swagger for exact DTO fields if a request fails validation.
 - For PostGIS-related APIs, latitude and longitude must be valid and near configured service/live locations.
+- Current email verification code is generated by backend and logged from the auth service. If SMTP is not connected yet, use the logged code for testing.
+
+

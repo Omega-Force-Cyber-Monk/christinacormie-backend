@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { RegisterDeviceTokenDto } from './dto/register-device-token.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { SetInterestCuisinesDto } from './dto/set-interest-cuisines.dto';
@@ -65,6 +66,64 @@ export class UsersService {
     });
 
     return settings;
+  }
+
+  async registerDeviceToken(userId: string, dto: RegisterDeviceTokenDto) {
+    await this.ensureUserExists(userId);
+
+    const existing = await this.prisma.deviceToken.findFirst({
+      where: {
+        token: dto.token,
+      },
+    });
+
+    if (existing) {
+      return this.prisma.deviceToken.update({
+        where: { id: existing.id },
+        data: {
+          userId,
+          platform: dto.platform,
+          deviceId: dto.deviceId,
+          isActive: true,
+        },
+      });
+    }
+
+    return this.prisma.deviceToken.create({
+      data: {
+        userId,
+        token: dto.token,
+        platform: dto.platform,
+        deviceId: dto.deviceId,
+        isActive: true,
+      },
+    });
+  }
+
+  async removeDeviceToken(userId: string, deviceTokenId: string) {
+    await this.ensureUserExists(userId);
+
+    const deviceToken = await this.prisma.deviceToken.findFirst({
+      where: {
+        id: deviceTokenId,
+        userId,
+      },
+    });
+
+    if (!deviceToken) {
+      throw new NotFoundException('Device token not found');
+    }
+
+    await this.prisma.deviceToken.update({
+      where: { id: deviceTokenId },
+      data: {
+        isActive: false,
+      },
+    });
+
+    return {
+      removed: true,
+    };
   }
 
   async setInterestCuisines(userId: string, dto: SetInterestCuisinesDto) {

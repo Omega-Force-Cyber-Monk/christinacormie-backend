@@ -1,18 +1,35 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { FirebaseService } from '../../infrastructure/firebase/firebase.service';
 import { NotificationQueryDto } from './dto/notification-query.dto';
+import { NotificationEventType } from './enums/notification-event-type.enum';
 import {
   NotificationInput,
   NotificationsRepository,
 } from './notifications.repository';
 
+type NotifyInput = NotificationInput & {
+  pushPreferenceKey?:
+    | 'bookingAlerts'
+    | 'paymentAlerts'
+    | 'followedTruckUpdates'
+    | 'favoriteTruckAlerts'
+    | 'rewardAlerts'
+    | 'checkInAlerts';
+  pushData?: Record<string, string>;
+};
+
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly notificationsRepository: NotificationsRepository) {}
+  constructor(
+    private readonly notificationsRepository: NotificationsRepository,
+    private readonly firebaseService: FirebaseService,
+  ) {}
 
   getMyNotifications(userId: string, query: NotificationQueryDto) {
     return this.notificationsRepository.findForUser(userId, {
       unreadOnly: query.unreadOnly,
       limit: Math.min(query.limit ?? 20, 50),
+      offset: query.offset ?? 0,
     });
   }
 
@@ -48,13 +65,42 @@ export class NotificationsService {
   }
 
   async createNotification(data: NotificationInput) {
+    return this.notificationsRepository.create(data);
+  }
+
+  async notify(data: NotifyInput) {
+    const notification = await this.createNotification(data);
     const preferences = await this.notificationsRepository.getPreferences(data.userId);
 
-    if (!this.isAllowedByPreference(data.type, preferences)) {
-      return null;
+    if (
+      data.pushPreferenceKey &&
+      preferences[data.pushPreferenceKey] === false
+    ) {
+      return notification;
     }
 
-    return this.notificationsRepository.create(data);
+    const deviceTokens = await this.notificationsRepository.findActiveDeviceTokens(
+      data.userId,
+    );
+
+    const tokens = deviceTokens.map((token) => token.token);
+    const result = await this.firebaseService.sendToTokens(tokens, {
+      title: data.title,
+      body: data.message,
+      data: {
+        notificationId: notification.id,
+        type: data.type,
+        ...(data.pushData ?? {}),
+      },
+    });
+
+    if (result.invalidTokens.length) {
+      await this.notificationsRepository.deactivateDeviceTokensByValue(
+        result.invalidTokens,
+      );
+    }
+
+    return notification;
   }
 
   async notifyFoodTruckUpdate(data: {
@@ -80,7 +126,7 @@ export class NotificationsService {
 
     let sentCount = 0;
     for (const recipient of recipients) {
-      const notification = await this.createNotification({
+      const notification = await this.notify({
         userId: recipient.userId,
         actorUserId: data.actorUserId,
         type: recipient.type,
@@ -89,6 +135,20 @@ export class NotificationsService {
         foodTruckId: foodTruck.id,
         postId: data.postId,
         actionUrl: `/api/v1/food-trucks/profile/${foodTruck.slug}`,
+        metadata: {
+          eventType: NotificationEventType.TRUCK_POST_PUBLISHED,
+          foodTruckId: foodTruck.id,
+          postId: data.postId,
+        },
+        pushPreferenceKey:
+          recipient.type === 'FOLLOWED_TRUCK_UPDATE'
+            ? 'followedTruckUpdates'
+            : 'favoriteTruckAlerts',
+        pushData: {
+          eventType: NotificationEventType.TRUCK_POST_PUBLISHED,
+          foodTruckId: foodTruck.id,
+          postId: data.postId ?? '',
+        },
       });
 
       if (notification) {
@@ -104,7 +164,7 @@ export class NotificationsService {
       return null;
     }
 
-    return this.createNotification({
+    return this.notify({
       userId: booking.vendor.userId,
       actorUserId,
       type: 'BOOKING',
@@ -113,11 +173,31 @@ export class NotificationsService {
       foodTruckId: booking.foodTruckId,
       bookingId: booking.id,
       actionUrl: `/api/v1/bookings/${booking.id}`,
+      metadata: {
+        eventType: NotificationEventType.BOOKING_CREATED,
+        bookingId: booking.id,
+        foodTruckId: booking.foodTruckId,
+        status: booking.status,
+      },
+      pushPreferenceKey: 'bookingAlerts',
+      pushData: {
+        eventType: NotificationEventType.BOOKING_CREATED,
+        bookingId: booking.id,
+        foodTruckId: booking.foodTruckId,
+      },
     });
   }
 
-  notifyCustomerBookingUpdate(actorUserId: string, booking: any, title: string) {
-    return this.createNotification({
+  notifyCustomerBookingUpdate(
+    actorUserId: string,
+    booking: any,
+    title: string,
+    eventType:
+      | NotificationEventType.BOOKING_ACCEPTED
+      | NotificationEventType.BOOKING_REJECTED
+      | NotificationEventType.QUOTE_CREATED,
+  ) {
+    return this.notify({
       userId: booking.customerId,
       actorUserId,
       type: 'BOOKING',
@@ -126,6 +206,18 @@ export class NotificationsService {
       foodTruckId: booking.foodTruckId,
       bookingId: booking.id,
       actionUrl: `/api/v1/bookings/${booking.id}`,
+      metadata: {
+        eventType,
+        bookingId: booking.id,
+        foodTruckId: booking.foodTruckId,
+        status: booking.status,
+      },
+      pushPreferenceKey: 'bookingAlerts',
+      pushData: {
+        eventType,
+        bookingId: booking.id,
+        foodTruckId: booking.foodTruckId,
+      },
     });
   }
 
@@ -146,46 +238,105 @@ export class NotificationsService {
     });
   }
 
-  notifyPaymentUpdate(payment: any, title: string, message: string) {
-    return this.createNotification({
+  notifyPaymentUpdate(
+    payment: any,
+    title: string,
+    message: string,
+    eventType?:
+      | NotificationEventType.PAYMENT_SUCCEEDED
+      | NotificationEventType.PAYMENT_FAILED,
+  ) {
+    const basePayload = {
       userId: payment.payerUserId,
       type: 'PAYMENT',
       title,
       message,
       bookingId: payment.bookingId,
       actionUrl: `/api/v1/payments/${payment.id}`,
-      metadata: { paymentId: payment.id, status: payment.status },
+      metadata: {
+        eventType,
+        paymentId: payment.id,
+        bookingId: payment.bookingId,
+        status: payment.status,
+      },
+    };
+
+    if (!eventType) {
+      return this.createNotification(basePayload);
+    }
+
+    return this.notify({
+      ...basePayload,
+      pushPreferenceKey: 'paymentAlerts',
+      pushData: {
+        eventType,
+        paymentId: payment.id,
+        bookingId: payment.bookingId,
+      },
     });
   }
 
-  notifyVendorPaymentUpdate(payment: any, title: string, message: string) {
+  notifyVendorPaymentUpdate(
+    payment: any,
+    title: string,
+    message: string,
+    eventType?:
+      | NotificationEventType.PAYMENT_SUCCEEDED
+      | NotificationEventType.PAYMENT_FAILED,
+  ) {
     if (!payment?.vendor?.userId) {
       return null;
     }
 
-    return this.createNotification({
+    const basePayload = {
       userId: payment.vendor.userId,
       type: 'PAYMENT',
       title,
       message,
       bookingId: payment.bookingId,
       actionUrl: `/api/v1/payments/${payment.id}`,
-      metadata: { paymentId: payment.id, status: payment.status },
+      metadata: {
+        eventType,
+        paymentId: payment.id,
+        bookingId: payment.bookingId,
+        status: payment.status,
+      },
+    };
+
+    if (!eventType) {
+      return this.createNotification(basePayload);
+    }
+
+    return this.notify({
+      ...basePayload,
+      pushPreferenceKey: 'paymentAlerts',
+      pushData: {
+        eventType,
+        paymentId: payment.id,
+        bookingId: payment.bookingId,
+      },
     });
   }
 
   notifyReward(userId: string, title: string, message: string, metadata?: Record<string, unknown>) {
-    return this.createNotification({
+    return this.notify({
       userId,
       type: 'REWARD',
       title,
       message,
-      metadata,
+      metadata: {
+        eventType: NotificationEventType.REWARD_EARNED,
+        ...(metadata ?? {}),
+      },
+      pushPreferenceKey: 'rewardAlerts',
+      pushData: {
+        eventType: NotificationEventType.REWARD_EARNED,
+      },
     });
   }
 
   notifyCheckIn(userId: string, checkIn: any) {
-    return this.createNotification({
+    return this.notify({
       userId,
       type: 'CHECK_IN',
       title: checkIn.status === 'VERIFIED' ? 'Check-in verified' : 'Check-in update',
@@ -195,35 +346,18 @@ export class NotificationsService {
           : checkIn.rejectionReason ?? 'Your check-in could not be verified.',
       foodTruckId: checkIn.foodTruckId,
       actionUrl: `/api/v1/food-trucks/profile/${checkIn.foodTruck?.slug ?? ''}`,
-      metadata: { checkInId: checkIn.id, status: checkIn.status },
+      metadata: {
+        eventType: NotificationEventType.CHECK_IN_VERIFIED,
+        checkInId: checkIn.id,
+        foodTruckId: checkIn.foodTruckId,
+        status: checkIn.status,
+      },
+      pushPreferenceKey: 'checkInAlerts',
+      pushData: {
+        eventType: NotificationEventType.CHECK_IN_VERIFIED,
+        checkInId: checkIn.id,
+        foodTruckId: checkIn.foodTruckId,
+      },
     });
-  }
-
-  private isAllowedByPreference(type: string, preferences: any) {
-    switch (type) {
-      case 'NEARBY_DROP':
-      case 'NEW_TRUCK_IN_AREA':
-        return preferences.nearbyDropAlerts;
-      case 'FOLLOWED_TRUCK_UPDATE':
-        return preferences.followedTruckUpdates;
-      case 'FAVORITE_TRUCK_UPDATE':
-        return preferences.favoriteTruckAlerts;
-      case 'PROMOTION':
-        return preferences.promotionAlerts;
-      case 'BOOKING':
-        return preferences.bookingAlerts;
-      case 'PAYMENT':
-        return preferences.paymentAlerts;
-      case 'MESSAGE':
-        return preferences.messageAlerts;
-      case 'REWARD':
-      case 'REFERRAL':
-      case 'BADGE':
-        return preferences.rewardAlerts;
-      case 'CHECK_IN':
-        return preferences.checkInAlerts;
-      default:
-        return true;
-    }
   }
 }
