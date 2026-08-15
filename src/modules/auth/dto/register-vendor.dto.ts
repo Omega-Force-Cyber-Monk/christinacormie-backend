@@ -16,26 +16,27 @@ export class RegisterVendorDto {
   @IsEmail()
   email: string;
 
+  @ApiProperty({ example: '+12025550199' })
+  @IsPhoneNumber()
+  phone: string;
+
   @ApiProperty({ example: 'Password123!' })
   @IsString()
   @MinLength(8)
   @MaxLength(128)
   password: string;
 
-  @ApiProperty({ example: '1994-08-12' })
+  @ApiPropertyOptional({ example: '1994-08-12' })
+  @IsOptional()
   @Type(() => Date)
   @IsDate()
-  dateOfBirth: Date;
+  dateOfBirth?: Date;
 
-  @ApiPropertyOptional({ example: '+12025550199' })
+  @ApiPropertyOptional({ example: 'Tasty Tacos Food Truck' })
   @IsOptional()
-  @IsPhoneNumber()
-  phone?: string;
-
-  @ApiProperty({ example: 'Tasty Tacos Food Truck' })
   @IsString()
   @MaxLength(255)
-  businessName: string;
+  businessName?: string;
 
   @ApiPropertyOptional({ example: 'contact@tastytacos.com' })
   @IsOptional()

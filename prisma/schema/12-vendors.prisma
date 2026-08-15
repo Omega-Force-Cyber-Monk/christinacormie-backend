@@ -12,6 +12,21 @@ enum VerificationStatus {
   REJECTED
 }
 
+enum VendorPlan {
+  FREE
+  STARTER
+  PRO
+  ELITE
+}
+
+enum PhotoShootRequestStatus {
+  PENDING
+  CONTACTED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
 model Vendor {
   id                   String                       @id @default(uuid()) @db.Uuid
   userId               String                       @unique @map("user_id") @db.Uuid
@@ -22,6 +37,7 @@ model Vendor {
   description          String?
   logoUrl              String?                      @map("logo_url")
   websiteUrl           String?                      @map("website_url")
+  selectedPlan         VendorPlan                   @default(FREE) @map("selected_plan")
   status               VendorStatus                 @default(DRAFT)
   isVerified           Boolean                      @default(false) @map("is_verified")
   verifiedAt           DateTime?                    @map("verified_at") @db.Timestamptz(6)
@@ -49,6 +65,7 @@ model Vendor {
   vendorBadges         VendorBadge[]
   leaderboardEntries   LeaderboardEntry[]
   qrKitShipments       QrKitShipment[]
+  photoShootRequests   VendorPhotoShootRequest[]
 
   @@map("vendors")
 }
@@ -81,4 +98,27 @@ model VendorPaymentAccount {
   vendor              Vendor   @relation(fields: [vendorId], references: [id])
 
   @@map("vendor_payment_accounts")
+}
+
+model VendorPhotoShootRequest {
+  id            String                  @id @default(uuid()) @db.Uuid
+  vendorId      String                  @map("vendor_id") @db.Uuid
+  userId        String                  @map("user_id") @db.Uuid
+  foodTruckId   String?                 @map("food_truck_id") @db.Uuid
+  contactName   String?                 @map("contact_name") @db.VarChar(150)
+  contactEmail  String?                 @map("contact_email") @db.VarChar(255)
+  contactPhone  String?                 @map("contact_phone") @db.VarChar(30)
+  city          String?                 @db.VarChar(150)
+  preferredDate DateTime?               @map("preferred_date") @db.Date
+  notes         String?
+  status        PhotoShootRequestStatus @default(PENDING)
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                @default(now()) @map("updated_at") @db.Timestamptz(6)
+  vendor        Vendor                  @relation(fields: [vendorId], references: [id])
+  user          User                    @relation(fields: [userId], references: [id])
+  foodTruck     FoodTruck?              @relation(fields: [foodTruckId], references: [id])
+
+  @@index([vendorId])
+  @@index([status])
+  @@map("vendor_photo_shoot_requests")
 }

@@ -80,6 +80,11 @@ export class AuthService {
   async registerVendor(dto: RegisterVendorDto) {
     await this.ensureUniqueAccount(dto.email, dto.phone);
     const passwordHash = await bcrypt.hash(dto.password, PASSWORD_SALT_ROUNDS);
+    const businessName =
+      (dto.businessName ??
+        dto.displayName ??
+        `${dto.firstName ?? 'Vendor'} ${dto.lastName ?? ''}`.trim()) ||
+      dto.email.split('@')[0];
 
     const user = await this.prisma.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
@@ -109,7 +114,7 @@ export class AuthService {
           },
           vendor: {
             create: {
-              businessName: dto.businessName,
+              businessName,
               businessEmail: dto.businessEmail ?? dto.email.toLowerCase(),
               businessPhone: dto.businessPhone ?? dto.phone,
               description: dto.description,

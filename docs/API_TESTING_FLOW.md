@@ -156,12 +156,23 @@ POST /api/v1/auth/resend-verification-code
 POST {{baseUrl}}/api/v1/auth/register/vendor
 ```
 
+Minimal required payload:
+
 ```json
 {
   "email": "vendor1@example.com",
-  "password": "Password123!",
-  "dateOfBirth": "1994-08-12",
   "phone": "+12025550199",
+  "password": "Password123!"
+}
+```
+
+Optional signup payload fields:
+
+```json
+{
+  "email": "vendor1@example.com",
+  "phone": "+12025550199",
+  "password": "Password123!",
   "businessName": "Tasty Tacos Food Truck",
   "businessEmail": "contact@tastytacos.com",
   "businessPhone": "+12025550199",

@@ -2,11 +2,14 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { MailService } from '../../infrastructure/mail/mail.service';
 import { CheckInsService } from '../check-ins/check-ins.service';
+import { CompleteVendorOnboardingDto } from './dto/complete-vendor-onboarding.dto';
 import { SubmitVerificationRequestDto } from './dto/submit-verification-request.dto';
+import { UpdatePhotoShootRequestDto } from './dto/update-photo-shoot-request.dto';
 import { VendorVerificationDocumentType } from './enums/vendor-verification-document-type.enum';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import {
@@ -19,6 +22,8 @@ import { VendorsRepository } from './vendors.repository';
 
 @Injectable()
 export class VendorsService {
+  private readonly logger = new Logger(VendorsService.name);
+
   constructor(
     private readonly vendorsRepository: VendorsRepository,
     private readonly checkInsService: CheckInsService,
@@ -41,6 +46,47 @@ export class VendorsService {
   async updateMyVendorProfile(userId: string, dto: UpdateVendorProfileDto) {
     const vendor = await this.getMyVendorProfile(userId);
     return this.vendorsRepository.updateProfile(vendor.id, dto);
+  }
+
+  async completeOnboarding(userId: string, dto: CompleteVendorOnboardingDto) {
+    const vendor = await this.getMyVendorProfile(userId);
+    const result = await this.vendorsRepository.completeOnboarding(
+      userId,
+      vendor.id,
+      dto,
+    );
+
+    if (result.photoShootRequest) {
+      try {
+        const contactName = dto.contactName ?? dto.contact?.name ?? 'Vendor';
+        const contactCity = dto.city ?? dto.contact?.city ?? dto.primaryCity ?? 'Austin';
+        const contactEmail = dto.email ?? dto.contact?.email ?? '';
+        const contactPhone = dto.phoneNumber ?? dto.phone ?? dto.contact?.phoneNumber ?? '';
+
+        await this.mailService.send({
+          to: process.env.VENDOR_REVIEW_NOTIFICATION_EMAIL || 'vendors@bitedropapp.com',
+          subject: `Photo shoot requested: ${dto.truckName}`,
+          text: [
+            `Vendor: ${contactName}`,
+            `Truck: ${dto.truckName}`,
+            `City: ${contactCity}`,
+            `Email: ${contactEmail}`,
+            `Phone: ${contactPhone}`,
+            `Request ID: ${result.photoShootRequest.id}`,
+          ].join('\n'),
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to send photo shoot notification email: ${error.message}`);
+      }
+    }
+
+    return {
+      ...result,
+      message: 'Vendor onboarding saved successfully.',
+      photoShootMessage: result.photoShootRequest
+        ? 'Thank you. Our team will contact you about professional photos shortly.'
+        : null,
+    };
   }
 
   async submitVerificationRequest(userId: string, dto: SubmitVerificationRequestDto) {
@@ -66,20 +112,24 @@ export class VendorsService {
       dto.notes,
     );
 
-    await this.mailService.send({
-      to: process.env.VENDOR_REVIEW_NOTIFICATION_EMAIL || 'vendors@bitedropapp.com',
-      subject: `Vendor verification submitted: ${vendor.businessName}`,
-      text: [
-        `Vendor: ${vendor.businessName}`,
-        `Vendor ID: ${vendor.id}`,
-        `State: ${requirements.state}`,
-        `Requirement set: ${requirements.requirementSet}`,
-        `Submitted document types: ${dto.documents.map((document) => document.type).join(', ')}`,
-        dto.notes ? `Notes: ${dto.notes}` : null,
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    });
+    try {
+      await this.mailService.send({
+        to: process.env.VENDOR_REVIEW_NOTIFICATION_EMAIL || 'vendors@bitedropapp.com',
+        subject: `Vendor verification submitted: ${vendor.businessName}`,
+        text: [
+          `Vendor: ${vendor.businessName}`,
+          `Vendor ID: ${vendor.id}`,
+          `State: ${requirements.state}`,
+          `Requirement set: ${requirements.requirementSet}`,
+          `Submitted document types: ${dto.documents.map((document) => document.type).join(', ')}`,
+          dto.notes ? `Notes: ${dto.notes}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to send vendor verification notification email: ${error.message}`);
+    }
 
     return {
       ...result,
@@ -90,6 +140,17 @@ export class VendorsService {
 
   getPendingApprovalVendors() {
     return this.vendorsRepository.findPendingApproval();
+  }
+
+  getPhotoShootRequests() {
+    return this.vendorsRepository.findPhotoShootRequests();
+  }
+
+  async updatePhotoShootRequest(
+    requestId: string,
+    dto: UpdatePhotoShootRequestDto,
+  ) {
+    return this.vendorsRepository.updatePhotoShootRequest(requestId, dto);
   }
 
   async approveVendor(vendorId: string, adminUserId: string) {

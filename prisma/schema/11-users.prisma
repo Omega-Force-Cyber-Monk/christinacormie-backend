@@ -73,6 +73,7 @@ model User {
   createdFeaturedPlacements          FeaturedPlacement[]           @relation("FeaturedPlacementCreatedBy")
   updatedPlatformSettings            PlatformSetting[]             @relation("PlatformSettingUpdatedBy")
   adminAuditLogs                     AdminAuditLog[]               @relation("AdminAuditLogUser")
+  photoShootRequests                 VendorPhotoShootRequest[]
 
   @@map("users")
 }

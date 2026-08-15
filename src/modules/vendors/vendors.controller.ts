@@ -6,8 +6,10 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
+import { CompleteVendorOnboardingDto } from './dto/complete-vendor-onboarding.dto';
 import { RejectVendorDto } from './dto/reject-vendor.dto';
 import { SubmitVerificationRequestDto } from './dto/submit-verification-request.dto';
+import { UpdatePhotoShootRequestDto } from './dto/update-photo-shoot-request.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { VendorsService } from './vendors.service';
 
@@ -42,6 +44,16 @@ export class VendorsController {
     return this.vendorsService.updateMyVendorProfile(user.sub, dto);
   }
 
+  @ApiOperation({ summary: 'Complete vendor onboarding in one request' })
+  @Roles(UserRole.VENDOR)
+  @Post('api/v1/vendors/me/onboarding')
+  completeOnboarding(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CompleteVendorOnboardingDto,
+  ) {
+    return this.vendorsService.completeOnboarding(user.sub, dto);
+  }
+
   @ApiOperation({ summary: 'Submit vendor verification documents' })
   @Roles(UserRole.VENDOR)
   @Post('api/v1/vendors/me/verification-requests')
@@ -52,11 +64,21 @@ export class VendorsController {
     return this.vendorsService.submitVerificationRequest(user.sub, dto);
   }
 
-  @ApiOperation({ summary: 'List vendors pending approval (Admin)' })
+  @ApiOperation({ summary: 'List vendor photo shoot requests (Admin)' })
   @Roles(UserRole.ADMIN)
-  @Get('api/v1/admin/vendors/pending-approval')
-  getPendingApprovalVendors() {
-    return this.vendorsService.getPendingApprovalVendors();
+  @Get('api/v1/admin/photo-shoot-requests')
+  getPhotoShootRequests() {
+    return this.vendorsService.getPhotoShootRequests();
+  }
+
+  @ApiOperation({ summary: 'Update a vendor photo shoot request (Admin)' })
+  @Roles(UserRole.ADMIN)
+  @Patch('api/v1/admin/photo-shoot-requests/:id')
+  updatePhotoShootRequest(
+    @Param('id') requestId: string,
+    @Body() dto: UpdatePhotoShootRequestDto,
+  ) {
+    return this.vendorsService.updatePhotoShootRequest(requestId, dto);
   }
 
   @ApiOperation({ summary: 'Approve a vendor application (Admin)' })
