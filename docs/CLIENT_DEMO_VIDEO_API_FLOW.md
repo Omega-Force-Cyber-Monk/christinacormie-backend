@@ -45,6 +45,16 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 ```
 
+## Demo Accounts
+
+```text
+Vendor email: arifdev257@gmail.com
+Vendor phone: 01402667768
+
+Customer email: arifurrahmanarif223@gmail.com
+Customer phone: 01612767382
+```
+
 ## 1. Vendor Signup And Onboarding
 
 ### 1.1 Register Vendor
@@ -55,8 +65,8 @@ POST /api/v1/auth/register/vendor
 
 ```json
 {
-  "email": "demo.vendor@example.com",
-  "phone": "+12025550199",
+  "email": "arifdev257@gmail.com",
+  "phone": "01402667768",
   "password": "Password123!"
 }
 ```
@@ -76,7 +86,7 @@ POST /api/v1/auth/verify-email
 
 ```json
 {
-  "email": "demo.vendor@example.com",
+  "email": "arifdev257@gmail.com",
   "code": "123456"
 }
 ```
@@ -103,8 +113,8 @@ Use `{{vendorToken}}`.
     "name": "Demo Vendor",
     "city": "Austin",
     "state": "TX",
-    "email": "demo.vendor@example.com",
-    "phoneNumber": "+12025550199"
+    "email": "arifdev257@gmail.com",
+    "phoneNumber": "01402667768"
   },
   "truckName": "Demo Tacos Express",
   "truckCallName": "Demo Tacos",
@@ -278,6 +288,16 @@ Use any working customer test account and save:
 accessToken -> {{customerToken}}
 ```
 
+Customer example login/register data:
+
+```json
+{
+  "email": "arifurrahmanarif223@gmail.com",
+  "phone": "01612767382",
+  "password": "Password123!"
+}
+```
+
 ### 4.3 Customer Creates Need-A-Truck Request
 
 ```http
@@ -302,7 +322,7 @@ Use a future date, for example August 25, 2026.
   "budgetMin": 500,
   "budgetMax": 800,
   "address": "100 Congress Ave, Austin, TX 78701",
-  "contactPhone": "+12025550143",
+  "contactPhone": "01612767382",
   "latitude": 30.2672,
   "longitude": -97.7431,
   "preferredMenuItems": [

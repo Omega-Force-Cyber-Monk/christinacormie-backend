@@ -12,11 +12,11 @@ import {
 } from 'class-validator';
 
 export class RegisterVendorDto {
-  @ApiProperty({ example: 'vendor@example.com' })
+  @ApiProperty({ example: 'arifdev257@gmail.com' })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: '+12025550199' })
+  @ApiProperty({ example: '01402667768' })
   @IsPhoneNumber()
   phone: string;
 
@@ -32,18 +32,18 @@ export class RegisterVendorDto {
   @IsDate()
   dateOfBirth?: Date;
 
-  @ApiPropertyOptional({ example: 'Tasty Tacos Food Truck' })
+  @ApiPropertyOptional({ example: 'Demo Tacos Express' })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   businessName?: string;
 
-  @ApiPropertyOptional({ example: 'contact@tastytacos.com' })
+  @ApiPropertyOptional({ example: 'arifdev257@gmail.com' })
   @IsOptional()
   @IsEmail()
   businessEmail?: string;
 
-  @ApiPropertyOptional({ example: '+12025550199' })
+  @ApiPropertyOptional({ example: '01402667768' })
   @IsOptional()
   @IsPhoneNumber()
   businessPhone?: string;

@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateBookingPaymentDto {
-  @ApiProperty({ example: 'idemp_key_booking_12345' })
+  @ApiProperty({ example: 'booking-{{bookingId}}-deposit-1' })
   @IsString()
   @MaxLength(255)
   idempotencyKey: string;

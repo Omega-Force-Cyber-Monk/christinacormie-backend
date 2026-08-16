@@ -6,7 +6,7 @@ import { VendorVerificationDocumentType } from '../enums/vendor-verification-doc
 export class VerificationDocumentDto {
   @ApiProperty({
     enum: VendorVerificationDocumentType,
-    example: VendorVerificationDocumentType.FOOD_MANAGER_CERTIFICATION,
+    example: VendorVerificationDocumentType.DSHS_MOBILE_FOOD_VENDOR_LICENSE,
   })
   @IsEnum(VendorVerificationDocumentType)
   type: VendorVerificationDocumentType;
@@ -28,7 +28,7 @@ export class SubmitVerificationRequestDto {
   @Type(() => VerificationDocumentDto)
   documents: VerificationDocumentDto[];
 
-  @ApiPropertyOptional({ example: 'Submitted food safety permit and health department license.' })
+  @ApiPropertyOptional({ example: 'Demo verification documents submitted for review.' })
   @IsOptional()
   @IsString()
   @MaxLength(1000)

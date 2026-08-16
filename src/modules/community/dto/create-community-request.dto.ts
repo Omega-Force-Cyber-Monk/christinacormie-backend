@@ -54,7 +54,7 @@ export class CreateCommunityRequestDto {
 
   @ApiPropertyOptional({
     enum: CommunityEventTypeDto,
-    example: CommunityEventTypeDto.BIRTHDAY_PARTY,
+    example: CommunityEventTypeDto.CORPORATE_EVENT,
     description: 'Event type selected from the customer request form.',
   })
   @IsOptional()
@@ -62,7 +62,7 @@ export class CreateCommunityRequestDto {
   eventType?: CommunityEventTypeDto;
 
   @ApiPropertyOptional({
-    example: 'Need Gourmet Tacos for Neighborhood Block Party',
+    example: 'Corporate Lunch Catering Request',
     description: 'Optional title. If omitted, the backend generates one from event type and location.',
   })
   @IsOptional()
@@ -70,7 +70,7 @@ export class CreateCommunityRequestDto {
   @MaxLength(255)
   title?: string;
 
-  @ApiPropertyOptional({ example: 'Hosting 75 residents. Looking for taco & dessert trucks!' })
+  @ApiPropertyOptional({ example: 'Backend walkthrough request for a taco truck lunch service' })
   @IsOptional()
   @IsString()
   description?: string;
@@ -126,7 +126,7 @@ export class CreateCommunityRequestDto {
   @IsString()
   address?: string;
 
-  @ApiPropertyOptional({ example: '+12025550143' })
+  @ApiPropertyOptional({ example: '01612767382' })
   @IsOptional()
   @IsPhoneNumber(undefined)
   contactPhone?: string;
@@ -150,7 +150,7 @@ export class CreateCommunityRequestDto {
   preferredCuisines?: string[];
 
   @ApiPropertyOptional({
-    example: ['Tacos', 'Burgers', 'Vegan Options'],
+    example: ['Tacos', 'Caesar Salad Cups'],
     description: 'Preferred menu item tags selected by the customer.',
   })
   @IsOptional()

@@ -32,11 +32,11 @@ export class OnboardingContactDto {
   @MaxLength(150)
   state: string;
 
-  @ApiProperty({ example: 'demo.vendor@example.com' })
+  @ApiProperty({ example: 'arifdev257@gmail.com' })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: '+12025550199' })
+  @ApiProperty({ example: '01402667768' })
   @IsString()
   @MaxLength(30)
   phoneNumber: string;
@@ -113,7 +113,7 @@ export class CompleteVendorOnboardingDto {
   @MaxLength(150)
   state?: string;
 
-  @ApiPropertyOptional({ example: 'demo.vendor@example.com' })
+  @ApiPropertyOptional({ example: 'arifdev257@gmail.com' })
   @IsOptional()
   @IsEmail()
   email?: string;

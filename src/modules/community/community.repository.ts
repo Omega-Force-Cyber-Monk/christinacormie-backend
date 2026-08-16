@@ -282,115 +282,122 @@ export class CommunityRepository {
   }
 
   acceptOffer(offerId: string, requestId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      await tx.vendorOffer.updateMany({
-        where: {
-          communityRequestId: requestId,
-          id: { not: offerId },
-          status: 'PENDING' as any,
-        },
-        data: { status: 'REJECTED' as any },
-      });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.vendorOffer.updateMany({
+          where: {
+            communityRequestId: requestId,
+            id: { not: offerId },
+            status: 'PENDING' as any,
+          },
+          data: { status: 'REJECTED' as any },
+        });
 
-      const offer = await tx.vendorOffer.update({
-        where: { id: offerId },
-        data: { status: 'ACCEPTED' as any },
-        include: this.offerInclude(),
-      });
+        const offer = await tx.vendorOffer.update({
+          where: { id: offerId },
+          data: { status: 'ACCEPTED' as any },
+          include: this.offerInclude(),
+        });
 
-      await tx.communityRequest.update({
-        where: { id: requestId },
-        data: { status: 'MATCHED' as any },
-      });
+        await tx.communityRequest.update({
+          where: { id: requestId },
+          data: { status: 'MATCHED' as any },
+        });
 
-      const existingBooking = await tx.booking.findFirst({
-        where: { vendorOfferId: offerId },
-        include: {
-          vendorOffer: true,
-          foodTruck: true,
-          vendor: true,
-          statusHistory: { orderBy: { createdAt: 'asc' } },
-        },
-      });
+        const existingBooking = await tx.booking.findFirst({
+          where: { vendorOfferId: offerId },
+          include: {
+            vendorOffer: true,
+            foodTruck: true,
+            vendor: true,
+            statusHistory: { orderBy: { createdAt: 'asc' } },
+          },
+        });
 
-      if (existingBooking) {
-        return { offer, booking: existingBooking };
-      }
+        if (existingBooking) {
+          return { offer, booking: existingBooking };
+        }
 
-      const bookingNumber = await this.createBookingNumber();
-      const startsAt = this.combineRequestDateAndTime(
-        offer.communityRequest.eventDate,
-        offer.communityRequest.startTime,
-      );
-      const endsAt = this.combineRequestDateAndTime(
-        offer.communityRequest.eventDate,
-        offer.communityRequest.endTime,
-      );
-      const holdExpiresAt = new Date(Date.now() + 30 * 60_000);
+        const bookingNumber = await this.createBookingNumber();
+        const startsAt = this.combineRequestDateAndTime(
+          offer.communityRequest.eventDate,
+          offer.communityRequest.startTime,
+        );
+        const endsAt = this.combineRequestDateAndTime(
+          offer.communityRequest.eventDate,
+          offer.communityRequest.endTime,
+        );
+        const holdExpiresAt = new Date(Date.now() + 30 * 60_000);
 
-      const booking = await tx.booking.create({
-        data: {
-          bookingNumber,
-          customerId: offer.communityRequest.createdById,
-          vendorId: offer.vendorId,
-          foodTruckId: offer.foodTruckId,
-          communityRequestId: offer.communityRequestId,
-          vendorOfferId: offer.id,
-          bookingType: 'EVENT' as any,
-          eventType: offer.communityRequest.eventType as any,
-          status: 'PAYMENT_PENDING' as any,
-          eventName: offer.communityRequest.title,
-          eventDescription: offer.communityRequest.description,
-          startsAt,
-          endsAt,
-          guestCount: offer.communityRequest.guestCount ?? 0,
-          address: offer.communityRequest.address ?? '',
-          contactPhone: offer.communityRequest.contactPhone,
-          budgetAmount: offer.communityRequest.budgetMax ?? offer.communityRequest.budgetMin,
-          subtotal: offer.baseServiceFee,
-          outsideRadiusFee: offer.transportFee,
-          serviceFee: offer.serviceFee,
-          taxAmount: offer.taxAmount,
-          discountAmount: offer.discountAmount,
-          totalAmount: offer.quotedAmount,
-          paymentPreference: offer.paymentPreference ?? 'NO_PREFERENCE',
-          specialInstructions: offer.communityRequest.description,
-          acceptedAt: new Date(),
-        },
-      });
+        const booking = await tx.booking.create({
+          data: {
+            bookingNumber,
+            customerId: offer.communityRequest.createdById,
+            vendorId: offer.vendorId,
+            foodTruckId: offer.foodTruckId,
+            communityRequestId: offer.communityRequestId,
+            vendorOfferId: offer.id,
+            bookingType: 'EVENT' as any,
+            eventType: offer.communityRequest.eventType as any,
+            status: 'PAYMENT_PENDING' as any,
+            eventName: offer.communityRequest.title,
+            eventDescription: offer.communityRequest.description,
+            startsAt,
+            endsAt,
+            guestCount: offer.communityRequest.guestCount ?? 0,
+            address: offer.communityRequest.address ?? '',
+            contactPhone: offer.communityRequest.contactPhone,
+            budgetAmount:
+              offer.communityRequest.budgetMax ?? offer.communityRequest.budgetMin,
+            subtotal: offer.baseServiceFee,
+            outsideRadiusFee: offer.transportFee,
+            serviceFee: offer.serviceFee,
+            taxAmount: offer.taxAmount,
+            discountAmount: offer.discountAmount,
+            totalAmount: offer.quotedAmount,
+            paymentPreference: offer.paymentPreference ?? 'NO_PREFERENCE',
+            specialInstructions: offer.communityRequest.description,
+            acceptedAt: new Date(),
+          },
+        });
 
-      await tx.bookingHold.create({
-        data: {
-          foodTruckId: offer.foodTruckId,
-          userId: offer.communityRequest.createdById,
-          startsAt,
-          endsAt,
-          expiresAt: holdExpiresAt,
-        },
-      });
+        await tx.bookingHold.create({
+          data: {
+            foodTruckId: offer.foodTruckId,
+            userId: offer.communityRequest.createdById,
+            startsAt,
+            endsAt,
+            expiresAt: holdExpiresAt,
+          },
+        });
 
-      await tx.bookingStatusHistory.create({
-        data: {
-          bookingId: booking.id,
-          previousStatus: null,
-          newStatus: 'PAYMENT_PENDING' as any,
-          changedById: offer.communityRequest.createdById,
-          reason: 'Customer accepted vendor offer',
-        },
-      });
+        await tx.bookingStatusHistory.create({
+          data: {
+            bookingId: booking.id,
+            previousStatus: null,
+            newStatus: 'PAYMENT_PENDING' as any,
+            changedById: offer.communityRequest.createdById,
+            reason: 'Customer accepted vendor offer',
+          },
+        });
 
-      const fullBooking = await tx.booking.findUnique({
-        where: { id: booking.id },
-        include: {
-          vendorOffer: true,
-          foodTruck: true,
-          vendor: true,
-          statusHistory: { orderBy: { createdAt: 'asc' } },
-        },
-      });
+        const fullBooking = await tx.booking.findUnique({
+          where: { id: booking.id },
+          include: {
+            vendorOffer: true,
+            foodTruck: true,
+            vendor: true,
+            statusHistory: { orderBy: { createdAt: 'asc' } },
+          },
+        });
 
-      return { offer, booking: fullBooking };
-    });
+        return { offer, booking: fullBooking };
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
+      },
+    );
   }
 
   rejectOffer(offerId: string) {
@@ -438,6 +445,7 @@ export class CommunityRepository {
         target_food_truck_id,
         visibility,
         request_type,
+        event_type,
         title,
         description,
         event_date,
@@ -448,8 +456,10 @@ export class CommunityRepository {
         budget_min,
         budget_max,
         address,
+        contact_phone,
         location,
         preferred_cuisines,
+        preferred_menu_items,
         allow_public_comments,
         expires_at
       )
@@ -459,6 +469,7 @@ export class CommunityRepository {
         ${targetFoodTruckId ?? null}::uuid,
         ${visibility}::"RequestVisibility",
         ${dto.requestType}::"RequestType",
+        ${dto.eventType ?? null}::"CommunityEventType",
         ${dto.title},
         ${dto.description ?? null},
         ${dto.eventDate ? this.toDateOnly(dto.eventDate) : null},
@@ -469,8 +480,10 @@ export class CommunityRepository {
         ${dto.budgetMin ?? null},
         ${dto.budgetMax ?? null},
         ${dto.address ?? null},
+        ${dto.contactPhone ?? null},
         ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography,
         ${JSON.stringify(dto.preferredCuisines ?? null)}::jsonb,
+        ${JSON.stringify(dto.preferredMenuItems ?? null)}::jsonb,
         ${dto.allowPublicComments ?? true},
         ${dto.expiresAt ? new Date(dto.expiresAt) : null}
       )

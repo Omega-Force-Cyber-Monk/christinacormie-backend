@@ -31,16 +31,16 @@ export class OfferExtraChargeDto {
 }
 
 export class CreateVendorOfferDto {
-  @ApiProperty({ example: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' })
+  @ApiProperty({ example: '{{foodTruckId}}' })
   @IsUUID()
   foodTruckId: string;
 
-  @ApiPropertyOptional({ example: 'We can cater your event with full menu options for 75 guests!' })
+  @ApiPropertyOptional({ example: 'Quote for full catering service' })
   @IsOptional()
   @IsString()
   message?: string;
 
-  @ApiPropertyOptional({ example: 'We can provide a full-service taco station and setup staff.' })
+  @ApiPropertyOptional({ example: 'Menu includes setup and serving station.' })
   @IsOptional()
   @IsString()
   noteToClient?: string;
@@ -55,7 +55,7 @@ export class CreateVendorOfferDto {
 
   @ApiPropertyOptional({
     type: [String],
-    example: ['Burger', 'Caesar Salad Cups', 'Veggie Pizzas'],
+    example: ['Burger', 'Caesar Salad Cups', 'Garlic Breadsticks'],
   })
   @IsOptional()
   @IsArray()
@@ -86,14 +86,14 @@ export class CreateVendorOfferDto {
   @Type(() => OfferExtraChargeDto)
   extraCharges?: OfferExtraChargeDto[];
 
-  @ApiPropertyOptional({ example: 40.0 })
+  @ApiPropertyOptional({ example: 30.0 })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   taxAmount?: number;
 
-  @ApiPropertyOptional({ example: 20.0 })
+  @ApiPropertyOptional({ example: 0.0 })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
@@ -123,7 +123,7 @@ export class CreateVendorOfferDto {
   depositPercent?: number;
 
   @ApiPropertyOptional({
-    example: 1080.0,
+    example: 1280.0,
     description: 'Total contract amount for the quote. If omitted, the backend derives it from the quote breakdown.',
   })
   @IsOptional()
@@ -132,21 +132,21 @@ export class CreateVendorOfferDto {
   @Min(0)
   quotedAmount?: number;
 
-  @ApiPropertyOptional({ example: 30.0 })
+  @ApiPropertyOptional({ example: 0.0 })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   serviceFee?: number;
 
-  @ApiPropertyOptional({ example: 600.0 })
+  @ApiPropertyOptional({ example: 1040.0 })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   balanceDueAtEvent?: number;
 
-  @ApiPropertyOptional({ example: '2026-08-22T23:59:59.000Z' })
+  @ApiPropertyOptional({ example: '2026-08-25T16:00:00.000Z' })
   @IsOptional()
   @IsISO8601({ strict: true })
   expiresAt?: string;
