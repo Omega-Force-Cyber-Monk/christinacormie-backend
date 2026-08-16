@@ -10,6 +10,7 @@ import {
   IsLongitude,
   IsNumber,
   IsOptional,
+  IsPhoneNumber,
   IsString,
   Matches,
   MaxLength,
@@ -31,15 +32,43 @@ export enum RequestTypeDto {
   OTHER = 'OTHER',
 }
 
-export class CreateCommunityRequestDto {
-  @ApiProperty({ enum: RequestTypeDto, example: RequestTypeDto.NEIGHBORHOOD })
-  @IsEnum(RequestTypeDto)
-  requestType: RequestTypeDto;
+export enum CommunityEventTypeDto {
+  CORPORATE_EVENT = 'CORPORATE_EVENT',
+  BIRTHDAY_PARTY = 'BIRTHDAY_PARTY',
+  WEDDING_RECEPTION = 'WEDDING_RECEPTION',
+  GRADUATION_PARTY = 'GRADUATION_PARTY',
+  COMMUNITY_EVENT = 'COMMUNITY_EVENT',
+  FUNDRAISER = 'FUNDRAISER',
+  OTHER = 'OTHER',
+}
 
-  @ApiProperty({ example: 'Need Gourmet Tacos for Neighborhood Block Party' })
+export class CreateCommunityRequestDto {
+  @ApiPropertyOptional({
+    enum: RequestTypeDto,
+    example: RequestTypeDto.EVENT,
+    description: 'High-level request category. Defaults to EVENT for the need-a-truck flow.',
+  })
+  @IsOptional()
+  @IsEnum(RequestTypeDto)
+  requestType?: RequestTypeDto;
+
+  @ApiPropertyOptional({
+    enum: CommunityEventTypeDto,
+    example: CommunityEventTypeDto.BIRTHDAY_PARTY,
+    description: 'Event type selected from the customer request form.',
+  })
+  @IsOptional()
+  @IsEnum(CommunityEventTypeDto)
+  eventType?: CommunityEventTypeDto;
+
+  @ApiPropertyOptional({
+    example: 'Need Gourmet Tacos for Neighborhood Block Party',
+    description: 'Optional title. If omitted, the backend generates one from event type and location.',
+  })
+  @IsOptional()
   @IsString()
   @MaxLength(255)
-  title: string;
+  title?: string;
 
   @ApiPropertyOptional({ example: 'Hosting 75 residents. Looking for taco & dessert trucks!' })
   @IsOptional()
@@ -97,6 +126,11 @@ export class CreateCommunityRequestDto {
   @IsString()
   address?: string;
 
+  @ApiPropertyOptional({ example: '+12025550143' })
+  @IsOptional()
+  @IsPhoneNumber(undefined)
+  contactPhone?: string;
+
   @ApiPropertyOptional({ example: 30.2672 })
   @IsOptional()
   @Type(() => Number)
@@ -114,6 +148,15 @@ export class CreateCommunityRequestDto {
   @IsArray()
   @IsString({ each: true })
   preferredCuisines?: string[];
+
+  @ApiPropertyOptional({
+    example: ['Tacos', 'Burgers', 'Vegan Options'],
+    description: 'Preferred menu item tags selected by the customer.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  preferredMenuItems?: string[];
 
   @ApiPropertyOptional({ example: true, default: true })
   @IsOptional()

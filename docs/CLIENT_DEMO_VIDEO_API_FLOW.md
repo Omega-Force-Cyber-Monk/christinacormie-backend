@@ -1,6 +1,6 @@
-# Client Demo Video API Flow
+# Client Demo Video Flow
 
-Use this guide to record the short backend walkthrough requested by the client. Keep Swagger open and show the request/response for each important step.
+Use this guide to record a short backend demo for the client. Keep it focused. Show only the flows the client asked to see.
 
 Demo API docs:
 
@@ -8,30 +8,29 @@ Demo API docs:
 https://christina-backend.onrender.com/api/v1/docs
 ```
 
-Local base URL if testing locally:
+Local base URL:
 
 ```text
 http://localhost:3000
 ```
 
-## Demo Goal
+## Demo Scope
 
-Show these client-requested flows with test data:
+Show only these 4 things:
 
-1. Test vendor registers and submits verification documents.
-2. Admin receives and approves the verification.
-3. Test booking is created and processed.
-4. Photo shoot request status.
-5. Stripe integration status and required credentials.
+1. Vendor registers and submits verification documents.
+2. Admin receives and approves the vendor verification.
+3. One booking is created and processed.
+4. Photo shoot request is created and visible to admin.
 
-## Important Demo Tokens
+Explain Stripe status briefly at the end. Do not try to fully demo live Stripe unless already configured.
 
-Prepare these before recording:
+## Tokens To Prepare
 
 ```text
-{{customerToken}}
 {{vendorToken}}
 {{adminToken}}
+{{customerToken}}
 {{vendorId}}
 {{foodTruckId}}
 {{bookingId}}
@@ -39,22 +38,20 @@ Prepare these before recording:
 {{photoShootRequestId}}
 ```
 
-Use this header for protected APIs:
+Protected header:
 
 ```text
 Authorization: Bearer {{token}}
 Content-Type: application/json
 ```
 
-## 1. Vendor Registration And Verification
+## 1. Vendor Signup And Onboarding
 
 ### 1.1 Register Vendor
 
 ```http
 POST /api/v1/auth/register/vendor
 ```
-
-Minimal payload:
 
 ```json
 {
@@ -64,35 +61,14 @@ Minimal payload:
 }
 ```
 
-Optional payload fields (if provided during signup):
-
-```json
-{
-  "email": "demo.vendor@example.com",
-  "phone": "+12025550199",
-  "password": "Password123!",
-  "businessName": "Demo Tacos Food Truck",
-  "businessEmail": "demo.vendor@example.com",
-  "businessPhone": "+12025550199",
-  "description": "Demo food truck for Bite Drop walkthrough",
-  "websiteUrl": "https://demotacos.example.com",
-  "firstName": "Demo",
-  "lastName": "Vendor",
-  "displayName": "Demo Vendor",
-  "timezone": "America/Chicago"
-}
-```
-
 Expected:
 
 ```text
 status = PENDING
-message says verify 6-digit email code
+message says verify 6-digit code
 ```
 
 ### 1.2 Verify Vendor Email
-
-Use the 6-digit code from backend logs/test email.
 
 ```http
 POST /api/v1/auth/verify-email
@@ -114,8 +90,6 @@ user.vendor.id -> {{vendorId}}
 
 ### 1.3 Complete Vendor Onboarding
 
-This one API matches the current vendor onboarding UI after registration. It saves the selected plan, contact details, truck details, logo/image URLs, photo shoot request, first menu item, cuisine, truck type, primary city, and service radius.
-
 ```http
 POST /api/v1/vendors/me/onboarding
 ```
@@ -124,7 +98,7 @@ Use `{{vendorToken}}`.
 
 ```json
 {
-  "plan": "FREE",
+  "selectedPlan": "FREE",
   "contact": {
     "name": "Demo Vendor",
     "city": "Austin",
@@ -134,19 +108,19 @@ Use `{{vendorToken}}`.
   },
   "truckName": "Demo Tacos Express",
   "truckCallName": "Demo Tacos",
-  "truckLogoUrl": "https://cdn.example.com/trucks/demo-logo.jpg",
-  "truckImageUrl": "https://cdn.example.com/trucks/demo-profile.jpg",
+  "truckLogoUrl": "https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/logo.jpg",
+  "truckImageUrl": "https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/truck.jpg",
   "needsProfessionalPhotos": true,
-  "menuItem": {
-    "photoUrl": "https://cdn.example.com/menu/birria.jpg",
+  "firstMenuItem": {
     "name": "Birria Tacos",
     "price": 14.99,
-    "description": "Slow-cooked beef tacos with consomme"
+    "description": "Slow-cooked beef tacos with consomme",
+    "photoUrl": "https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/birria.jpg"
   },
   "cuisineType": "Mexican",
   "primaryCity": "Austin",
   "truckType": "FOOD_TRUCK",
-  "serviceRadiusKm": 20,
+  "serviceRadius": 20,
   "serviceAddress": "100 Congress Ave, Austin, TX 78701",
   "latitude": 30.2672,
   "longitude": -97.7431
@@ -160,22 +134,16 @@ foodTruck.id -> {{foodTruckId}}
 photoShootRequest.id -> {{photoShootRequestId}}
 ```
 
-Expected:
+Show in response:
 
 ```text
 message = Vendor onboarding saved successfully.
 photoShootMessage = Thank you. Our team will contact you about professional photos shortly.
-vendor.selectedPlan = FREE
-foodTruck.name = Demo Tacos Express
-foodTruck.truckType = FOOD_TRUCK
-menu contains the submitted menu item
-serviceArea radius is saved
-photoShootRequest.status = PENDING when needsProfessionalPhotos is true
 ```
 
-The separate APIs below still exist and can be used later for editing. For the video, the one onboarding API is the better match for the UI.
+## 2. Verification Document Submission
 
-### 1.4 Show Verification Requirements
+### 2.1 Show Vendor Verification Requirements
 
 ```http
 GET /api/v1/vendors/me
@@ -183,7 +151,7 @@ GET /api/v1/vendors/me
 
 Use `{{vendorToken}}`.
 
-Expected:
+Show:
 
 ```text
 verificationRequirements.requirementSet = TEXAS
@@ -193,19 +161,7 @@ FOOD_MANAGER_CERTIFICATION
 CERTIFICATE_OF_INSURANCE
 ```
 
-For non-Texas vendors, set `state` to another state such as `CA`. Expected:
-
-```text
-requirementSet = NON_TEXAS
-requiredDocumentTypes includes:
-STATE_OR_LOCAL_FOOD_VENDOR_PERMIT
-FOOD_MANAGER_CERTIFICATION
-CERTIFICATE_OF_INSURANCE
-```
-
-The state comes from the onboarding `contact.state` value. You only need `PATCH /api/v1/users/me/profile` if you want to manually change the vendor state after onboarding.
-
-### 1.5 Submit Verification Documents
+### 2.2 Submit Texas Verification Documents
 
 ```http
 POST /api/v1/vendors/me/verification-requests
@@ -213,51 +169,27 @@ POST /api/v1/vendors/me/verification-requests
 
 Use `{{vendorToken}}`.
 
-Texas example (when vendor state is TX):
-
 ```json
 {
   "documents": [
     {
       "type": "DSHS_MOBILE_FOOD_VENDOR_LICENSE",
-      "url": "https://example.com/demo-dshs-license.pdf"
+      "url": "https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/dshs-license.pdf"
     },
     {
       "type": "FOOD_MANAGER_CERTIFICATION",
-      "url": "https://example.com/demo-food-manager-certification.pdf"
+      "url": "https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/food-manager-certification.pdf"
     },
     {
       "type": "CERTIFICATE_OF_INSURANCE",
-      "url": "https://example.com/demo-coi.pdf"
+      "url": "https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/certificate-of-insurance.pdf"
     }
   ],
   "notes": "Demo verification documents submitted for review."
 }
 ```
 
-Non-Texas example (when vendor state is NOT Texas):
-
-```json
-{
-  "documents": [
-    {
-      "type": "STATE_OR_LOCAL_FOOD_VENDOR_PERMIT",
-      "url": "https://example.com/demo-local-permit.pdf"
-    },
-    {
-      "type": "FOOD_MANAGER_CERTIFICATION",
-      "url": "https://example.com/demo-food-manager-certification.pdf"
-    },
-    {
-      "type": "CERTIFICATE_OF_INSURANCE",
-      "url": "https://example.com/demo-coi.pdf"
-    }
-  ],
-  "notes": "Demo verification documents submitted for review."
-}
-```
-
-Expected:
+Show in response:
 
 ```text
 message = Thank you for submitting your documents. Our team will review and get back to you shortly.
@@ -265,15 +197,9 @@ vendor.status = PENDING_APPROVAL
 verificationRequest.status = PENDING
 ```
 
-Demo talking point:
+## 3. Admin Review
 
-```text
-The backend detects the vendor state and enforces the correct required document set before allowing submission.
-```
-
-## 2. Admin Review And Approval
-
-### 2.1 Login Admin
+### 3.1 Login Admin
 
 ```http
 POST /api/v1/auth/login
@@ -292,7 +218,7 @@ Save:
 accessToken -> {{adminToken}}
 ```
 
-### 2.2 Show Pending Vendors
+### 3.2 Show Pending Vendor Queue
 
 ```http
 GET /api/v1/admin/vendors/pending-approval
@@ -300,27 +226,19 @@ GET /api/v1/admin/vendors/pending-approval
 
 Use `{{adminToken}}`.
 
-Expected:
+Show that the demo vendor appears in the pending queue.
 
-```text
-Demo vendor appears with status PENDING_APPROVAL.
-```
-
-### 2.3 Show Verification Requests
+### 3.3 Show Submitted Verification Documents
 
 ```http
-GET /api/v1/admin/verification-requests
+GET /api/v1/admin/verification-requests?status=PENDING
 ```
 
 Use `{{adminToken}}`.
 
-Expected:
+Show that the vendor submission and documents are visible.
 
-```text
-Submitted documents are visible in the verification request payload.
-```
-
-### 2.4 Approve Vendor
+### 3.4 Approve Vendor
 
 ```http
 PATCH /api/v1/admin/vendors/{{vendorId}}/approve
@@ -328,87 +246,20 @@ PATCH /api/v1/admin/vendors/{{vendorId}}/approve
 
 Use `{{adminToken}}`.
 
-Expected:
+Show in response:
 
 ```text
 vendor.status = APPROVED
 vendor.isVerified = true
-verification request becomes APPROVED
-QR codes may be generated for existing trucks
 ```
 
-## 3. Food Truck Setup Needed Before Booking
+## 4. Request, Quote, And Booking Demo
 
-Bookings need a food truck, service area, and guest capacity. Because the demo uses `POST /api/v1/vendors/me/onboarding`, this setup is already done. Use this section only if you skipped the composite onboarding API or need to show the older individual endpoints.
-
-### 3.1 Create Draft Food Truck
-
-```http
-POST /api/v1/food-trucks/draft
-```
-
-Use `{{vendorToken}}`.
-
-```json
-{
-  "name": "Demo Tacos Express",
-  "description": "Demo truck for booking walkthrough",
-  "profileImageUrl": "https://cdn.example.com/demo-tacos-profile.jpg",
-  "coverImageUrl": "https://cdn.example.com/demo-tacos-cover.jpg",
-  "minimumBookingAmount": 300,
-  "maximumGuestCapacity": 100
-}
-```
-
-Save:
-
-```text
-id -> {{foodTruckId}}
-```
-
-### 3.2 Configure Service Area
-
-```http
-PATCH /api/v1/food-trucks/{{foodTruckId}}/service-area
-```
-
-Use `{{vendorToken}}`.
-
-```json
-{
-  "name": "Austin Downtown",
-  "centerAddress": "100 Congress Ave, Austin, TX 78701",
-  "latitude": 30.2672,
-  "longitude": -97.7431,
-  "radiusKm": 20,
-  "outsideRadiusAllowed": true,
-  "outsideRadiusFee": 50
-}
-```
-
-### 3.3 Configure Guest Capacity
-
-```http
-PATCH /api/v1/food-trucks/{{foodTruckId}}/guest-capacity
-```
-
-Use `{{vendorToken}}`.
-
-```json
-{
-  "maximumGuestCapacity": 100
-}
-```
-
-### 3.4 Make Truck Active For Demo
-
-If needed, use admin to activate/feature the truck:
+### 4.1 Make Truck Active
 
 ```http
 PATCH /api/v1/admin/food-trucks/{{foodTruckId}}
 ```
-
-For the demo booking flow, make the truck `ACTIVE` before creating the booking.
 
 Use `{{adminToken}}`.
 
@@ -419,221 +270,178 @@ Use `{{adminToken}}`.
 }
 ```
 
-## 4. Booking Flow
+### 4.2 Login Or Register Customer
 
-### 4.1 Register Or Login Customer
-
-```http
-POST /api/v1/auth/register/customer
-POST /api/v1/auth/verify-email
-```
-
-Or login an existing test customer:
-
-```http
-POST /api/v1/auth/login
-```
-
-Save:
+Use any working customer test account and save:
 
 ```text
 accessToken -> {{customerToken}}
 ```
 
-### 4.2 Create Booking Request
+### 4.3 Customer Creates Need-A-Truck Request
 
 ```http
-POST /api/v1/bookings
+POST /api/v1/community/requests
 ```
 
 Use `{{customerToken}}`.
 
-Use an absolute future date. Example date: `2026-08-25`.
+Use a future date, for example August 25, 2026.
+
+```json
+{
+  "requestType": "EVENT",
+  "eventType": "CORPORATE_EVENT",
+  "title": "Corporate Lunch Catering Request",
+  "description": "Backend walkthrough request for a taco truck lunch service",
+  "eventDate": "2026-08-25T00:00:00.000Z",
+  "startTime": "18:00",
+  "endTime": "21:00",
+  "eventTimezone": "America/Chicago",
+  "guestCount": 50,
+  "budgetMin": 500,
+  "budgetMax": 800,
+  "address": "100 Congress Ave, Austin, TX 78701",
+  "contactPhone": "+12025550143",
+  "latitude": 30.2672,
+  "longitude": -97.7431,
+  "preferredMenuItems": [
+    "Tacos",
+    "Caesar Salad Cups"
+  ],
+  "media": [
+    {
+      "mediaUrl": "https://res.cloudinary.com/demo/image/upload/v1/bitedrop/bookings/reference-1.jpg",
+      "mediaType": "IMAGE"
+    }
+  ],
+  "allowPublicComments": true
+}
+```
+
+Save:
+
+```text
+id -> {{communityRequestId}}
+```
+
+### 4.4 Vendor Sends Quote
+
+```http
+POST /api/v1/community/requests/{{communityRequestId}}/offers
+```
+
+Use `{{vendorToken}}`.
 
 ```json
 {
   "foodTruckId": "{{foodTruckId}}",
-  "bookingType": "CATERING",
-  "eventName": "Demo Corporate Lunch",
-  "eventDescription": "Backend walkthrough booking test",
-  "startsAt": "2026-08-25T18:00:00.000Z",
-  "endsAt": "2026-08-25T21:00:00.000Z",
-  "guestCount": 50,
-  "address": "100 Congress Ave, Austin, TX 78701",
-  "latitude": 30.2672,
-  "longitude": -97.7431,
-  "subtotal": 500,
-  "specialInstructions": "Demo booking for client walkthrough"
-}
-```
-
-Save:
-
-```text
-id -> {{bookingId}}
-```
-
-Expected:
-
-```text
-booking.status = PENDING
-vendor notification is created
-```
-
-### 4.3 Vendor Accepts Booking
-
-```http
-PATCH /api/v1/bookings/{{bookingId}}/accept
-```
-
-Use `{{vendorToken}}`.
-
-```json
-{
-  "reason": "Available for this demo booking."
-}
-```
-
-Expected:
-
-```text
-booking.status = ACCEPTED
-customer notification is created
-```
-
-### 4.4 Vendor Creates Quote
-
-```http
-POST /api/v1/bookings/{{bookingId}}/quotes
-```
-
-Use `{{vendorToken}}`.
-
-```json
-{
-  "subtotal": 500,
-  "outsideRadiusFee": 0,
-  "serviceFee": 50,
-  "taxAmount": 40,
+  "pricingModel": "FLAT_FEE",
+  "selectedMenuItems": [
+    "Burger",
+    "Caesar Salad Cups",
+    "Garlic Breadsticks"
+  ],
+  "baseServiceFee": 1200,
+  "transportFee": 50,
+  "serviceFee": 0,
+  "taxAmount": 30,
   "discountAmount": 0,
-  "message": "Demo quote for full catering service",
-  "terms": "Payment required within 30 minutes",
-  "expiresAt": "2026-08-24T23:59:59.000Z"
+  "quotedAmount": 1280,
+  "paymentPreference": "DEPOSIT_ONLY",
+  "depositAmount": 240,
+  "depositPercent": 20,
+  "noteToClient": "Menu includes setup and serving station.",
+  "message": "Quote for full catering service",
+  "expiresAt": "2026-08-25T16:00:00.000Z"
 }
 ```
 
 Save:
 
 ```text
-quote.id -> {{quoteId}}
+id -> {{quoteId}}
 ```
 
-### 4.5 Customer Accepts Quote
+### 4.5 Customer Accepts Quote And Booking Is Created
 
 ```http
-PATCH /api/v1/bookings/quotes/{{quoteId}}/accept
+PATCH /api/v1/community/offers/{{quoteId}}/accept
+```
+
+Use `{{customerToken}}`.
+
+Expected:
+
+```text
+offer.status = ACCEPTED
+communityRequest.status = MATCHED
+booking.status = PAYMENT_PENDING
+booking.vendorOfferId = {{quoteId}}
+```
+
+Save:
+
+```text
+booking.id -> {{bookingId}}
+```
+
+### 4.6 Customer Creates Payment Intent
+
+```http
+POST /api/v1/payments/bookings/{{bookingId}}/payment-intent
 ```
 
 Use `{{customerToken}}`.
 
 ```json
 {
-  "paymentWindowMinutes": 30
+  "idempotencyKey": "booking-{{bookingId}}-deposit-1",
+  "currency": "USD"
 }
 ```
 
 Expected:
 
 ```text
-booking.status = PAYMENT_PENDING
-booking hold is created
+For deposit-only quotes, the amount charged now uses the accepted offer deposit amount.
 ```
 
-### 4.6 Admin Shows Booking
+### 4.7 Customer Views Order Details
 
 ```http
-GET /api/v1/admin/bookings/{{bookingId}}
+GET /api/v1/bookings/{{bookingId}}
 ```
 
-Use `{{adminToken}}`.
+Use `{{customerToken}}`.
 
-Expected:
-
-```text
-Admin can monitor booking details and current status.
-```
-
-## 5. Stripe Status To Explain In Video
-
-Stripe backend APIs exist, but production Stripe is not connected until Bite Drop LLC credentials are provided.
-
-Existing Stripe-related APIs:
+### 4.8 Vendor Views Orders
 
 ```http
-POST /api/v1/payments/connect/accounts
-GET /api/v1/payments/connect/account
-GET /api/v1/payments/payouts/mine
-POST /api/v1/payments/bookings/{{bookingId}}/payment-intent
-GET /api/v1/payments/{{paymentId}}
-POST /api/v1/payments/{{paymentId}}/refunds
-POST /api/v1/payments/webhooks/stripe
+GET /api/v1/bookings/vendor/mine
 ```
 
-Credentials needed from client before production:
+Use `{{vendorToken}}`.
 
-```text
-STRIPE_SECRET_KEY
-STRIPE_WEBHOOK_SECRET
-Stripe Connect account setup under Bite Drop LLC
-Production return URL
-Production refresh URL
-```
+## 5. Photo Shoot Request
 
-Demo talking point:
-
-```text
-During development we use Stripe test credentials. Once frontend/backend integration is complete, production credentials from Bite Drop LLC will be added and the same payment flow will run under the client's Stripe account.
-```
-
-## 6. Photo Shoot Request Flow
-
-Client asked to see:
-
-```text
-Need professional photos? Request a photo shoot
-```
-
-The photo shoot request is created by:
-
-```http
-POST /api/v1/vendors/me/onboarding
-```
-
-Use this field:
-
-```json
-{
-  "needsProfessionalPhotos": true
-}
-```
-
-Admin can view requests:
+### 5.1 Show Photo Shoot Request In Admin
 
 ```http
 GET /api/v1/admin/photo-shoot-requests
 ```
 
-Save:
+Use `{{adminToken}}`.
 
-```text
-id -> {{photoShootRequestId}}
-```
+Show the request created from onboarding.
 
-Admin can update request status:
+### 5.2 Update Photo Shoot Request
 
 ```http
 PATCH /api/v1/admin/photo-shoot-requests/{{photoShootRequestId}}
 ```
+
+Use `{{adminToken}}`.
 
 ```json
 {
@@ -642,63 +450,47 @@ PATCH /api/v1/admin/photo-shoot-requests/{{photoShootRequestId}}
 }
 ```
 
-Expected:
+## 6. Stripe Talking Point
+
+Explain only:
 
 ```text
-Photo shoot request is saved.
-Admin can view it.
-Notification/email is attempted to vendors@bitedropapp.com.
-Vendor receives confirmation message in the onboarding response.
+Stripe backend endpoints exist, but production Stripe is not connected yet.
+Development uses test credentials.
+Production credentials needed later:
+- STRIPE_SECRET_KEY
+- STRIPE_WEBHOOK_SECRET
+- Stripe Connect setup under Bite Drop LLC
 ```
 
-## 7. Notifications To Show
-
-After each trigger, show notification APIs:
-
-```http
-GET /api/v1/notifications
-GET /api/v1/notifications/unread-count
-PATCH /api/v1/notifications/{{notificationId}}/read
-PATCH /api/v1/notifications/read-all
-```
-
-Use the affected user's token:
-
-```text
-Booking created -> use vendor token
-Booking accepted -> use customer token
-Quote created -> use customer token
-Payment updates -> use customer/vendor token depending on event
-```
-
-## 8. Suggested Video Recording Order
+## 7. Recording Order
 
 Record in this order:
 
-1. Open Swagger docs URL.
-2. Register vendor.
-3. Verify vendor email.
-4. Complete vendor onboarding with `needsProfessionalPhotos = true`.
-5. Show `GET /api/v1/vendors/me` verification requirements.
-6. Submit Texas verification documents.
-7. Login admin.
-8. Show pending vendor and verification request.
+1. Register vendor.
+2. Verify vendor email.
+3. Complete vendor onboarding with `needsProfessionalPhotos = true`.
+4. Show vendor verification requirements.
+5. Submit Texas verification documents.
+6. Login admin.
+7. Show pending vendor queue.
+8. Show verification request list.
 9. Approve vendor.
-10. Confirm food truck/menu/service radius were created from onboarding.
-11. Make the truck `ACTIVE` through admin if it is still `DRAFT`.
-12. Register/login customer.
-13. Customer creates booking.
-14. Vendor accepts booking.
-15. Vendor creates quote.
-16. Customer accepts quote.
-17. Show admin booking details.
-18. Explain Stripe test vs production status.
-19. Show admin photo shoot request list and update request status.
+10. Activate the food truck.
+11. Login/register customer.
+12. Customer creates need-a-truck request.
+13. Vendor sends quote.
+14. Customer accepts quote and receives booking.
+15. Create payment intent for the booking.
+16. Show booking details and vendor order list.
+17. Show photo shoot request list.
+18. Update photo shoot request status.
+19. Briefly explain Stripe status.
 
-## 9. Demo Notes
+## 8. Demo Notes
 
+- Keep the demo short.
 - Use test data only.
 - Keep tokens hidden if recording publicly.
-- Use absolute dates in all booking/payment examples.
-- If an endpoint returns validation error, show that validation is working, then correct the payload.
-- Do not test Stripe live mode during the demo.
+- Do not show unnecessary APIs.
+- Do not test live Stripe in the video.

@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -64,8 +64,8 @@ export class AdminController {
 
   @ApiOperation({ summary: 'List vendors pending approval' })
   @Get('vendors/pending-approval')
-  getPendingApprovalVendors() {
-    return this.vendorsService.getPendingApprovalVendors();
+  getPendingApprovalVendors(@Query() query: AdminListQueryDto) {
+    return this.vendorsService.getPendingApprovalVendors(query);
   }
 
   @ApiOperation({ summary: 'List all vendors with filtering and pagination' })
@@ -81,6 +81,12 @@ export class AdminController {
   }
 
   @ApiOperation({ summary: 'List vendor verification requests' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+    description: 'Filter verification requests by verification status',
+  })
   @Get('verification-requests')
   listVerificationRequests(@Query() query: AdminListQueryDto) {
     return this.adminService.listVerificationRequests(query);

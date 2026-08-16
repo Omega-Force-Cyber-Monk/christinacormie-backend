@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { VerificationStatus } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 import { CreateMarketDto } from './dto/create-market.dto';
@@ -143,8 +144,10 @@ export class AdminRepository {
   }
 
   listVerificationRequests(query: AdminListQueryDto) {
+    const status = this.toVerificationStatus(query.status);
+
     return this.prisma.vendorVerificationRequest.findMany({
-      where: query.status ? { status: query.status as any } : {},
+      where: status ? { status } : {},
       include: {
         vendor: {
           select: {
@@ -518,6 +521,24 @@ export class AdminRepository {
 
   private limit(query: AdminListQueryDto) {
     return Math.min(query.limit ?? 20, 100);
+  }
+
+  private toVerificationStatus(status?: string): VerificationStatus | undefined {
+    if (!status) {
+      return undefined;
+    }
+
+    const normalizedStatus = status.trim().toUpperCase();
+
+    if (
+      normalizedStatus === VerificationStatus.PENDING ||
+      normalizedStatus === VerificationStatus.APPROVED ||
+      normalizedStatus === VerificationStatus.REJECTED
+    ) {
+      return normalizedStatus as VerificationStatus;
+    }
+
+    return undefined;
   }
 
   private foodTruckSelect() {

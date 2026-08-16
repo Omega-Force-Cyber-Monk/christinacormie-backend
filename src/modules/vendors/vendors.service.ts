@@ -5,8 +5,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { CloudinaryService } from '../../infrastructure/cloudinary/cloudinary.service';
 import { MailService } from '../../infrastructure/mail/mail.service';
 import { CheckInsService } from '../check-ins/check-ins.service';
+import { AdminListQueryDto } from '../admin/dto/admin-list-query.dto';
 import { CompleteVendorOnboardingDto } from './dto/complete-vendor-onboarding.dto';
 import { SubmitVerificationRequestDto } from './dto/submit-verification-request.dto';
 import { UpdatePhotoShootRequestDto } from './dto/update-photo-shoot-request.dto';
@@ -28,6 +30,7 @@ export class VendorsService {
     private readonly vendorsRepository: VendorsRepository,
     private readonly checkInsService: CheckInsService,
     private readonly mailService: MailService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async getMyVendorProfile(userId: string) {
@@ -61,7 +64,7 @@ export class VendorsService {
         const contactName = dto.contactName ?? dto.contact?.name ?? 'Vendor';
         const contactCity = dto.city ?? dto.contact?.city ?? dto.primaryCity ?? 'Austin';
         const contactEmail = dto.email ?? dto.contact?.email ?? '';
-        const contactPhone = dto.phoneNumber ?? dto.phone ?? dto.contact?.phoneNumber ?? '';
+        const contactPhone = dto.contact?.phoneNumber ?? '';
 
         await this.mailService.send({
           to: process.env.VENDOR_REVIEW_NOTIFICATION_EMAIL || 'vendors@bitedropapp.com',
@@ -138,8 +141,8 @@ export class VendorsService {
     };
   }
 
-  getPendingApprovalVendors() {
-    return this.vendorsRepository.findPendingApproval();
+  getPendingApprovalVendors(query: AdminListQueryDto) {
+    return this.vendorsRepository.findPendingApproval(query);
   }
 
   getPhotoShootRequests() {
@@ -173,6 +176,48 @@ export class VendorsService {
   async getMyVendorAnalytics(userId: string) {
     const vendor = await this.getMyVendorProfile(userId);
     return this.vendorsRepository.getVendorAnalytics(vendor.id);
+  }
+
+  async uploadOnboardingAsset(userId: string, file: Express.Multer.File) {
+    await this.getMyVendorProfile(userId);
+    this.ensureCloudinaryReady();
+    this.ensureFileProvided(file);
+    this.ensureImageFile(file);
+
+    const upload = await this.cloudinaryService.uploadBuffer(file.buffer, {
+      folder: 'bitedrop/vendors/onboarding',
+      resourceType: 'image',
+    });
+
+    return {
+      url: upload.secure_url,
+      publicId: upload.public_id,
+      width: upload.width,
+      height: upload.height,
+      format: upload.format,
+      resourceType: upload.resource_type,
+      originalFilename: file.originalname,
+    };
+  }
+
+  async uploadVerificationDocument(userId: string, file: Express.Multer.File) {
+    const vendor = await this.getMyVendorProfile(userId);
+    this.ensureCloudinaryReady();
+    this.ensureFileProvided(file);
+
+    const upload = await this.cloudinaryService.uploadBuffer(file.buffer, {
+      folder: `bitedrop/vendors/${vendor.id}/verification-documents`,
+      resourceType: 'raw',
+    });
+
+    return {
+      url: upload.secure_url,
+      publicId: upload.public_id,
+      format: upload.format,
+      bytes: upload.bytes,
+      resourceType: upload.resource_type,
+      originalFilename: file.originalname,
+    };
   }
 
   private async ensureVendorExists(vendorId: string) {
@@ -232,5 +277,25 @@ export class VendorsService {
     }
 
     return state.trim().toUpperCase();
+  }
+
+  private ensureCloudinaryReady() {
+    if (!this.cloudinaryService.isConfigured()) {
+      throw new BadRequestException(
+        'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.',
+      );
+    }
+  }
+
+  private ensureFileProvided(file?: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('File upload is required');
+    }
+  }
+
+  private ensureImageFile(file: Express.Multer.File) {
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('Only image files are allowed for onboarding assets');
+    }
   }
 }

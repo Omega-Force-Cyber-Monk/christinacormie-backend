@@ -84,6 +84,7 @@ export class PaymentsRepository {
         vendor: {
           include: { paymentAccount: true },
         },
+        vendorOffer: true,
         payments: {
           where: {
             status: { in: ['PENDING', 'PROCESSING', 'SUCCEEDED'] as any },

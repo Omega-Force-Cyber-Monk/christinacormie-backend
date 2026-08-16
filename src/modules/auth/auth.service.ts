@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   Injectable,
   Logger,
   NotFoundException,
@@ -13,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { addDuration } from '../../common/utils/date.util';
+import { MailService } from '../../infrastructure/mail/mail.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { LoginDto } from './dto/login.dto';
@@ -34,6 +36,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly googleTokenVerifier: GoogleTokenVerifierService,
+    private readonly mailService: MailService,
   ) {}
 
   async registerCustomer(dto: RegisterCustomerDto) {
@@ -511,6 +514,22 @@ export class AuthService {
     ]);
 
     this.logger.log(`Email verification code for ${email}: ${code}`);
+
+    try {
+      await this.mailService.send({
+        to: email,
+        subject: 'Your BiteDrop verification code',
+        text: `Your BiteDrop verification code is ${code}. It will expire in 10 minutes.`,
+        html: `<p>Your BiteDrop verification code is <strong>${code}</strong>.</p><p>It will expire in 10 minutes.</p>`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown email delivery error';
+      this.logger.error(`Failed to deliver verification email to ${email}: ${message}`);
+      throw new InternalServerErrorException(
+        'Verification code was created but the email could not be sent',
+      );
+    }
   }
 
   private createVerificationCode() {

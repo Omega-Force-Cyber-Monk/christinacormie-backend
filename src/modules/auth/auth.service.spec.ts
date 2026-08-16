@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { MailService } from '../../infrastructure/mail/mail.service';
 import { AuthService } from './auth.service';
 import { GoogleTokenVerifierService } from './google-token-verifier.service';
 
@@ -26,11 +27,15 @@ describe('AuthService Google login', () => {
     verifyIdToken: jest.fn(),
   } as unknown as GoogleTokenVerifierService;
 
+  const mailService = {
+    send: jest.fn(),
+  } as unknown as MailService;
+
   let service: AuthService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new AuthService(prisma, jwtService, googleTokenVerifier);
+    service = new AuthService(prisma, jwtService, googleTokenVerifier, mailService);
     (jwtService.signAsync as jest.Mock)
       .mockResolvedValueOnce('access-token')
       .mockResolvedValueOnce('refresh-token');

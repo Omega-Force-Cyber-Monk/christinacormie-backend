@@ -6,6 +6,24 @@ enum BookingType {
   COMMUNITY_REQUEST
 }
 
+enum BookingEventType {
+  BIRTHDAY_PARTY
+  CORPORATE_EVENT
+  WEDDING
+  WEDDING_RECEPTION
+  GRADUATION_PARTY
+  COMMUNITY_EVENT
+  FUNDRAISER
+  PRIVATE_PARTY
+  OTHER
+}
+
+enum BookingPaymentPreference {
+  DEPOSIT_ONLY
+  PREPAID_IN_FULL
+  NO_PREFERENCE
+}
+
 enum BookingStatus {
   PENDING
   QUOTED
@@ -28,6 +46,7 @@ model Booking {
   communityRequestId          String?               @map("community_request_id") @db.Uuid
   vendorOfferId               String?               @map("vendor_offer_id") @db.Uuid
   bookingType                 BookingType           @map("booking_type")
+  eventType                   BookingEventType?     @map("event_type")
   status                      BookingStatus         @default(PENDING)
   eventName                   String?               @map("event_name") @db.VarChar(255)
   eventDescription            String?               @map("event_description")
@@ -35,15 +54,20 @@ model Booking {
   endsAt                      DateTime?             @map("ends_at") @db.Timestamptz(6)
   guestCount                  Int                   @map("guest_count")
   address                     String
+  contactPhone                String?               @map("contact_phone") @db.VarChar(30)
   location                    Unsupported("geography")?
   distanceFromServiceCenterKm Decimal?              @map("distance_from_service_center_km") @db.Decimal(8, 2)
   outsideServiceRadius        Boolean               @default(false) @map("outside_service_radius")
   outsideRadiusFee            Decimal               @default(0) @map("outside_radius_fee") @db.Decimal(12, 2)
+  budgetAmount                Decimal?              @map("budget_amount") @db.Decimal(12, 2)
   subtotal                    Decimal               @default(0) @db.Decimal(12, 2)
   discountAmount              Decimal               @default(0) @map("discount_amount") @db.Decimal(12, 2)
   taxAmount                   Decimal               @default(0) @map("tax_amount") @db.Decimal(12, 2)
   serviceFee                  Decimal               @default(0) @map("service_fee") @db.Decimal(12, 2)
   totalAmount                 Decimal               @default(0) @map("total_amount") @db.Decimal(12, 2)
+  preferredMenuItemIds        Json?                 @map("preferred_menu_item_ids")
+  referenceImageUrls          Json?                 @map("reference_image_urls")
+  paymentPreference           BookingPaymentPreference @default(NO_PREFERENCE) @map("payment_preference")
   specialInstructions         String?               @map("special_instructions")
   cancellationReason          String?               @map("cancellation_reason")
   acceptedAt                  DateTime?             @map("accepted_at") @db.Timestamptz(6)

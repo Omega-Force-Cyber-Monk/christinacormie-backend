@@ -21,6 +21,27 @@ export class CommunityService {
     return this.communityRepository.createRequest(userId, dto, 'PUBLIC');
   }
 
+  listOpenRequests() {
+    return this.communityRepository.listOpenRequests();
+  }
+
+  listMyRequests(userId: string) {
+    return this.communityRepository.listMyRequests(userId);
+  }
+
+  async getRequestDetails(userId: string, requestId: string) {
+    return this.ensureRequestVisible(userId, requestId);
+  }
+
+  async listRequestOffers(
+    userId: string,
+    requestId: string,
+    sort: 'LOW_PRICE' | 'HIGH_RATED' | 'RECENT' = 'RECENT',
+  ) {
+    await this.ensureRequestVisible(userId, requestId);
+    return this.communityRepository.listOffersForRequest(requestId, sort);
+  }
+
   async createPrivateTruckRequest(
     userId: string,
     foodTruckId: string,
@@ -108,6 +129,8 @@ export class CommunityService {
       throw new ForbiddenException('This private request targets another truck');
     }
 
+    this.validateOfferDto(dto);
+
     return this.communityRepository.createVendorOffer(vendor.id, requestId, dto);
   }
 
@@ -183,6 +206,40 @@ export class CommunityService {
 
     if (dto.startTime && dto.endTime && dto.startTime >= dto.endTime) {
       throw new BadRequestException('startTime must be before endTime');
+    }
+
+    if (dto.expiresAt && new Date(dto.expiresAt) <= new Date()) {
+      throw new BadRequestException('expiresAt must be in the future');
+    }
+
+    if (
+      dto.eventDate &&
+      new Date(dto.eventDate).toISOString().slice(0, 10) <
+        new Date().toISOString().slice(0, 10)
+    ) {
+      throw new BadRequestException('eventDate cannot be in the past');
+    }
+  }
+
+  private validateOfferDto(dto: CreateVendorOfferDto) {
+    if (!dto.quotedAmount && !dto.baseServiceFee) {
+      throw new BadRequestException(
+        'Either quotedAmount or baseServiceFee is required',
+      );
+    }
+
+    if (
+      dto.depositAmount !== undefined &&
+      dto.quotedAmount !== undefined &&
+      dto.depositAmount > dto.quotedAmount
+    ) {
+      throw new BadRequestException(
+        'depositAmount cannot be greater than quotedAmount',
+      );
+    }
+
+    if (dto.depositPercent !== undefined && dto.depositPercent > 100) {
+      throw new BadRequestException('depositPercent cannot exceed 100');
     }
 
     if (dto.expiresAt && new Date(dto.expiresAt) <= new Date()) {

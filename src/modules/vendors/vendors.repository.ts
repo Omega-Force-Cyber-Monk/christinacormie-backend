@@ -1,6 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { slugify } from '../../common/utils/slug.util';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AdminListQueryDto } from '../admin/dto/admin-list-query.dto';
 import { CompleteVendorOnboardingDto } from './dto/complete-vendor-onboarding.dto';
 import { UpdatePhotoShootRequestDto } from './dto/update-photo-shoot-request.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
@@ -23,11 +25,54 @@ export class VendorsRepository {
     });
   }
 
-  findPendingApproval() {
+  findPendingApproval(query: AdminListQueryDto) {
+    const search = query.search?.trim();
+
     return this.prisma.vendor.findMany({
-      where: { status: 'PENDING_APPROVAL', deletedAt: null },
-      orderBy: { createdAt: 'asc' },
+      where: {
+        status: 'PENDING_APPROVAL',
+        deletedAt: null,
+        ...(search
+          ? {
+              OR: [
+                {
+                  businessName: {
+                    contains: search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+                {
+                  businessEmail: {
+                    contains: search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+                {
+                  user: {
+                    OR: [
+                      {
+                        email: {
+                          contains: search,
+                          mode: 'insensitive' as const,
+                        },
+                      },
+                      {
+                        phone: {
+                          contains: search,
+                          mode: 'insensitive' as const,
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { createdAt: query.sortOrder ?? 'asc' },
       include: this.vendorInclude(),
+      take: this.limit(query),
+      skip: query.offset ?? 0,
     });
   }
 
@@ -47,62 +92,71 @@ export class VendorsRepository {
     vendorId: string,
     dto: CompleteVendorOnboardingDto,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const selectedPlan = dto.selectedPlan ?? dto.plan ?? 'FREE';
-      const rawContactName = dto.contactName ?? dto.contact?.name ?? 'Vendor';
-      const [firstName, ...lastNameParts] = rawContactName.trim().split(/\s+/);
-      const lastName = lastNameParts.join(' ') || undefined;
-      const contactCity = dto.city ?? dto.contact?.city ?? dto.primaryCity ?? 'Austin';
-      const contactState = dto.state ?? dto.contact?.state ?? 'TX';
-      const contactEmail = (dto.email ?? dto.contact?.email ?? '').toLowerCase();
-      const contactPhone = dto.phoneNumber ?? dto.phone ?? dto.contact?.phoneNumber;
-      const logoUrl = dto.logoUrl ?? dto.truckLogoUrl;
-      const menuItem = dto.firstMenuItem ?? dto.menuItem ?? { name: 'Featured Item', price: 10 };
-      const menuItemPhotoUrl = menuItem.photoUrl ?? menuItem.imageUrl;
-      const radiusKm = dto.serviceRadiusKm ?? dto.serviceRadius ?? 20;
-      const latitude = dto.latitude ?? 30.2672;
-      const longitude = dto.longitude ?? -97.7431;
+    return this.prisma.$transaction(
+      async (tx) => {
+        const selectedPlan = dto.selectedPlan ?? dto.plan ?? 'FREE';
+        const rawContactName = dto.contactName ?? dto.contact?.name ?? 'Vendor';
+        const [firstName, ...lastNameParts] = rawContactName.trim().split(/\s+/);
+        const lastName = lastNameParts.join(' ') || undefined;
+        const contactCity = dto.city ?? dto.contact?.city ?? dto.primaryCity ?? 'Austin';
+        const contactState = dto.state ?? dto.contact?.state ?? 'TX';
+        const contactEmail = (dto.email ?? dto.contact?.email ?? '').toLowerCase();
+        const contactPhone = dto.contact?.phoneNumber;
+        const logoUrl = dto.logoUrl ?? dto.truckLogoUrl;
+        const menuItem =
+          dto.firstMenuItem ?? dto.menuItem ?? { name: 'Featured Item', price: 10 };
+        const menuItemPhotoUrl = menuItem.photoUrl ?? menuItem.imageUrl;
+        const radiusKm = dto.serviceRadiusKm ?? dto.serviceRadius ?? 20;
+        const latitude = dto.latitude ?? 30.2672;
+        const longitude = dto.longitude ?? -97.7431;
 
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          ...(contactEmail ? { email: contactEmail } : {}),
-          ...(contactPhone ? { phone: contactPhone } : {}),
-          updatedAt: new Date(),
-          profile: {
-            upsert: {
-              create: {
-                firstName,
-                lastName,
-                displayName: rawContactName,
-                city: contactCity,
-                state: contactState,
-                country: 'USA',
-              },
-              update: {
-                firstName,
-                lastName,
-                displayName: rawContactName,
-                city: contactCity,
-                state: contactState,
-                country: 'USA',
+        await this.ensureUniqueUserContactInfo(
+          tx,
+          userId,
+          contactEmail || null,
+          contactPhone ?? null,
+        );
+
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            ...(contactEmail ? { email: contactEmail } : {}),
+            ...(contactPhone ? { phone: contactPhone } : {}),
+            updatedAt: new Date(),
+            profile: {
+              upsert: {
+                create: {
+                  firstName,
+                  lastName,
+                  displayName: rawContactName,
+                  city: contactCity,
+                  state: contactState,
+                  country: 'USA',
+                },
+                update: {
+                  firstName,
+                  lastName,
+                  displayName: rawContactName,
+                  city: contactCity,
+                  state: contactState,
+                  country: 'USA',
+                },
               },
             },
           },
-        },
-      });
+        });
 
-      await tx.vendor.update({
-        where: { id: vendorId },
-        data: {
-          selectedPlan,
-          businessName: dto.truckName,
-          ...(contactEmail ? { businessEmail: contactEmail } : {}),
-          ...(contactPhone ? { businessPhone: contactPhone } : {}),
-          logoUrl,
-          updatedAt: new Date(),
-        },
-      });
+        await tx.vendor.update({
+          where: { id: vendorId },
+          data: {
+            selectedPlan,
+            businessName: dto.truckName,
+            ...(contactEmail ? { businessEmail: contactEmail } : {}),
+            ...(contactPhone ? { businessPhone: contactPhone } : {}),
+            logoUrl,
+            updatedAt: new Date(),
+          },
+        });
 
       const existingTruck = await tx.foodTruck.findFirst({
         where: { vendorId, deletedAt: null },
@@ -351,22 +405,27 @@ export class VendorsRepository {
             })
         : null;
 
-      return {
-        vendor: await tx.vendor.findUnique({
-          where: { id: vendorId },
-          include: this.vendorInclude(),
-        }),
-        foodTruck: await tx.foodTruck.findUnique({
-          where: { id: foodTruck.id },
-          include: this.foodTruckInclude(),
-        }),
-        foodTruckId: foodTruck.id,
-        photoShootRequestId: photoShootRequest?.id ?? null,
-        menu,
-        serviceArea: serviceAreas[0],
-        photoShootRequest,
-      };
-    });
+        return {
+          vendor: await tx.vendor.findUnique({
+            where: { id: vendorId },
+            include: this.vendorInclude(),
+          }),
+          foodTruck: await tx.foodTruck.findUnique({
+            where: { id: foodTruck.id },
+            include: this.foodTruckInclude(),
+          }),
+          foodTruckId: foodTruck.id,
+          photoShootRequestId: photoShootRequest?.id ?? null,
+          menu,
+          serviceArea: serviceAreas[0],
+          photoShootRequest,
+        };
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
+      },
+    );
   }
 
   findPhotoShootRequests() {
@@ -654,5 +713,58 @@ export class VendorsRepository {
     }
 
     return slug;
+  }
+
+  private limit(query: AdminListQueryDto) {
+    return Math.min(query.limit ?? 20, 100);
+  }
+
+  private async ensureUniqueUserContactInfo(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    email: string | null,
+    phone: string | null,
+  ) {
+    if (!email && !phone) {
+      return;
+    }
+
+    const orConditions = [
+      ...(email ? [{ email }] : []),
+      ...(phone ? [{ phone }] : []),
+    ];
+
+    const existingUser = await tx.user.findFirst({
+      where: {
+        id: { not: userId },
+        deletedAt: null,
+        OR: orConditions,
+      },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+      },
+    });
+
+    if (!existingUser) {
+      return;
+    }
+
+    if (phone && existingUser.phone === phone) {
+      throw new ConflictException(
+        'This phone number is already used by another account',
+      );
+    }
+
+    if (email && existingUser.email === email) {
+      throw new ConflictException(
+        'This email address is already used by another account',
+      );
+    }
+
+    throw new ConflictException(
+      'This email address or phone number is already used by another account',
+    );
   }
 }

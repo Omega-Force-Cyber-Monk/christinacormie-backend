@@ -23,6 +23,21 @@ enum RequestStatus {
   EXPIRED
 }
 
+enum CommunityEventType {
+  CORPORATE_EVENT
+  BIRTHDAY_PARTY
+  WEDDING_RECEPTION
+  GRADUATION_PARTY
+  COMMUNITY_EVENT
+  FUNDRAISER
+  OTHER
+}
+
+enum OfferPricingModel {
+  FLAT_FEE
+  PER_PERSON
+}
+
 enum OfferStatus {
   PENDING
   ACCEPTED
@@ -37,6 +52,7 @@ model CommunityRequest {
   targetFoodTruckId   String?                   @map("target_food_truck_id") @db.Uuid
   visibility          RequestVisibility         @default(PUBLIC)
   requestType         RequestType               @map("request_type")
+  eventType           CommunityEventType?       @map("event_type")
   status              RequestStatus             @default(OPEN)
   title               String                    @db.VarChar(255)
   description         String?
@@ -48,8 +64,10 @@ model CommunityRequest {
   budgetMin           Decimal?                  @map("budget_min") @db.Decimal(12, 2)
   budgetMax           Decimal?                  @map("budget_max") @db.Decimal(12, 2)
   address             String?
+  contactPhone        String?                   @map("contact_phone") @db.VarChar(30)
   location            Unsupported("geography")?
   preferredCuisines   Json?                     @map("preferred_cuisines")
+  preferredMenuItems  Json?                     @map("preferred_menu_items")
   allowPublicComments Boolean                   @default(true) @map("allow_public_comments")
   expiresAt           DateTime?                 @map("expires_at") @db.Timestamptz(6)
   createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -110,8 +128,22 @@ model VendorOffer {
   vendorId           String           @map("vendor_id") @db.Uuid
   foodTruckId        String           @map("food_truck_id") @db.Uuid
   message            String?
+  noteToClient       String?          @map("note_to_client")
+  pricingModel       OfferPricingModel? @map("pricing_model")
+  selectedMenuItems  Json?            @map("selected_menu_items")
+  extraCharges       Json?            @map("extra_charges")
+  baseServiceFee     Decimal          @default(0) @map("base_service_fee") @db.Decimal(12, 2)
+  transportFee       Decimal          @default(0) @map("transport_fee") @db.Decimal(12, 2)
   quotedAmount       Decimal          @map("quoted_amount") @db.Decimal(12, 2)
   serviceFee         Decimal          @default(0) @map("service_fee") @db.Decimal(12, 2)
+  taxAmount          Decimal          @default(0) @map("tax_amount") @db.Decimal(12, 2)
+  discountAmount     Decimal          @default(0) @map("discount_amount") @db.Decimal(12, 2)
+  paymentPreference  BookingPaymentPreference? @map("payment_preference")
+  depositAmount      Decimal          @default(0) @map("deposit_amount") @db.Decimal(12, 2)
+  depositPercent     Decimal          @default(0) @map("deposit_percent") @db.Decimal(5, 2)
+  balanceDueAtEvent  Decimal          @default(0) @map("balance_due_at_event") @db.Decimal(12, 2)
+  commissionAmount   Decimal          @default(0) @map("commission_amount") @db.Decimal(12, 2)
+  vendorNetAmount    Decimal          @default(0) @map("vendor_net_amount") @db.Decimal(12, 2)
   status             OfferStatus      @default(PENDING)
   expiresAt          DateTime?        @map("expires_at") @db.Timestamptz(6)
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)

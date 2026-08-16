@@ -119,7 +119,7 @@ export class PaymentsService {
       throw new BadRequestException('Vendor payment account is not ready');
     }
 
-    const amount = Number(booking.totalAmount);
+    const amount = this.resolvePaymentAmount(booking);
 
     if (amount <= 0) {
       throw new BadRequestException('Booking amount must be greater than zero');
@@ -268,6 +268,20 @@ export class PaymentsService {
     );
 
     return refund;
+  }
+
+  private resolvePaymentAmount(booking: Awaited<ReturnType<PaymentsRepository['findBookingForPayment']>>) {
+    const offer = booking?.vendorOffer;
+
+    if (!offer) {
+      return Number(booking?.totalAmount ?? 0);
+    }
+
+    if (offer.paymentPreference === 'DEPOSIT_ONLY') {
+      return Number(offer.depositAmount ?? 0);
+    }
+
+    return Number(booking?.totalAmount ?? offer.quotedAmount ?? 0);
   }
 
   async processStripeWebhook(rawBody: Buffer, signatureHeader: string) {

@@ -1,12 +1,19 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -25,6 +32,22 @@ import { CommunityService } from './community.service';
 @Controller('api/v1/community')
 export class CommunityController {
   constructor(private readonly communityService: CommunityService) {}
+
+  @ApiOperation({ summary: 'List public/open customer requests for vendors to browse' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('requests/open')
+  listOpenRequests() {
+    return this.communityService.listOpenRequests();
+  }
+
+  @ApiOperation({ summary: 'List requests created by the authenticated customer' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('requests/mine')
+  listMyRequests(@CurrentUser() user: AuthenticatedUser) {
+    return this.communityService.listMyRequests(user.sub);
+  }
 
   @ApiOperation({ summary: 'Create a public community food truck request' })
   @ApiBearerAuth()
@@ -51,6 +74,17 @@ export class CommunityController {
       foodTruckId,
       dto,
     );
+  }
+
+  @ApiOperation({ summary: 'Get a single community request with event/request details' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('requests/:requestId')
+  getRequestDetails(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId') requestId: string,
+  ) {
+    return this.communityService.getRequestDetails(user.sub, requestId);
   }
 
   @ApiOperation({ summary: 'Add media image/video to a community request' })
@@ -100,6 +134,27 @@ export class CommunityController {
     @Body() dto: CreateVendorOfferDto,
   ) {
     return this.communityService.createVendorOffer(user.sub, requestId, dto);
+  }
+
+  @ApiOperation({ summary: 'List vendor quotes submitted for a customer request' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiQuery({
+    name: 'sort',
+    required: false,
+    enum: ['LOW_PRICE', 'HIGH_RATED', 'RECENT'],
+  })
+  @Get('requests/:requestId/offers')
+  listRequestOffers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId') requestId: string,
+    @Query('sort') sort?: 'LOW_PRICE' | 'HIGH_RATED' | 'RECENT',
+  ) {
+    return this.communityService.listRequestOffers(
+      user.sub,
+      requestId,
+      sort ?? 'RECENT',
+    );
   }
 
   @ApiOperation({ summary: 'Accept a vendor offer for a community request' })

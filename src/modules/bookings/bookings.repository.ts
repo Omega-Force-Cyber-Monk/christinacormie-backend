@@ -36,10 +36,43 @@ export class BookingsRepository {
     });
   }
 
+  countMenuItemsForFoodTruck(foodTruckId: string, itemIds: string[]) {
+    return this.prisma.menuItem.count({
+      where: {
+        id: { in: itemIds },
+        category: {
+          menu: {
+            foodTruckId,
+          },
+        },
+      },
+    });
+  }
+
   findBookingById(bookingId: string) {
     return this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: this.bookingInclude(),
+    });
+  }
+
+  listCustomerBookings(customerId: string) {
+    return this.prisma.booking.findMany({
+      where: { customerId },
+      include: this.bookingInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  listVendorBookingsByUserId(userId: string) {
+    return this.prisma.booking.findMany({
+      where: {
+        vendor: {
+          userId,
+        },
+      },
+      include: this.bookingInclude(),
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -126,18 +159,24 @@ export class BookingsRepository {
         community_request_id,
         vendor_offer_id,
         booking_type,
+        event_type,
         event_name,
         event_description,
         starts_at,
         ends_at,
         guest_count,
         address,
+        contact_phone,
         location,
         distance_from_service_center_km,
         outside_service_radius,
         outside_radius_fee,
+        budget_amount,
         subtotal,
         total_amount,
+        preferred_menu_item_ids,
+        reference_image_urls,
+        payment_preference,
         special_instructions
       )
       VALUES (
@@ -149,18 +188,24 @@ export class BookingsRepository {
         ${dto.communityRequestId ?? null}::uuid,
         ${dto.vendorOfferId ?? null}::uuid,
         ${dto.bookingType}::"BookingType",
+        ${dto.eventType}::"BookingEventType",
         ${dto.eventName ?? null},
         ${dto.eventDescription ?? null},
         ${startsAt},
         ${endsAt},
         ${dto.guestCount},
         ${dto.address},
+        ${dto.contactPhone},
         ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography,
         ${serviceArea.distanceKm},
         ${serviceArea.outsideServiceRadius},
         ${serviceArea.outsideRadiusFee},
+        ${dto.budgetAmount ?? null},
         ${dto.subtotal ?? 0},
         ${(dto.subtotal ?? 0) + serviceArea.outsideRadiusFee},
+        ${dto.preferredMenuItemIds ? JSON.stringify(dto.preferredMenuItemIds) : null}::jsonb,
+        ${dto.referenceImageUrls ? JSON.stringify(dto.referenceImageUrls) : null}::jsonb,
+        ${(dto.paymentPreference ?? 'NO_PREFERENCE')}::"BookingPaymentPreference",
         ${dto.specialInstructions ?? null}
       )
       RETURNING id
@@ -363,6 +408,21 @@ export class BookingsRepository {
           logoUrl: true,
         },
       },
+      communityRequest: {
+        select: {
+          id: true,
+          title: true,
+          eventType: true,
+          guestCount: true,
+          address: true,
+          budgetMin: true,
+          budgetMax: true,
+          contactPhone: true,
+          preferredMenuItems: true,
+          media: true,
+        },
+      },
+      vendorOffer: true,
       quotes: {
         orderBy: { createdAt: 'desc' as const },
       },

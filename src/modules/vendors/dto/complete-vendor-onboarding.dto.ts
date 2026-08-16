@@ -59,12 +59,20 @@ export class OnboardingMenuItemDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/menu/birria.jpg' })
+  @ApiPropertyOptional({
+    example: 'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/birria.jpg',
+    description:
+      'Cloudinary image URL returned by POST /api/v1/vendors/me/onboarding/upload',
+  })
   @IsOptional()
   @IsUrl()
   photoUrl?: string;
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/menu/birria.jpg' })
+  @ApiPropertyOptional({
+    example: 'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/birria.jpg',
+    description:
+      'Cloudinary image URL returned by POST /api/v1/vendors/me/onboarding/upload',
+  })
   @IsOptional()
   @IsUrl()
   imageUrl?: string;
@@ -110,18 +118,6 @@ export class CompleteVendorOnboardingDto {
   @IsEmail()
   email?: string;
 
-  @ApiPropertyOptional({ example: '+12025550199' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(30)
-  phoneNumber?: string;
-
-  @ApiPropertyOptional({ example: '+12025550199' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(30)
-  phone?: string;
-
   @ApiProperty({ example: 'Demo Tacos Express' })
   @IsString()
   @MaxLength(255)
@@ -133,17 +129,29 @@ export class CompleteVendorOnboardingDto {
   @MaxLength(255)
   truckCallName?: string;
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/trucks/logo.jpg' })
+  @ApiPropertyOptional({
+    example: 'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/logo.jpg',
+    description:
+      'Cloudinary image URL returned by POST /api/v1/vendors/me/onboarding/upload',
+  })
   @IsOptional()
   @IsUrl()
   truckLogoUrl?: string;
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/trucks/logo.jpg' })
+  @ApiPropertyOptional({
+    example: 'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/logo.jpg',
+    description:
+      'Cloudinary image URL returned by POST /api/v1/vendors/me/onboarding/upload',
+  })
   @IsOptional()
   @IsUrl()
   logoUrl?: string;
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/trucks/profile.jpg' })
+  @ApiPropertyOptional({
+    example: 'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/truck.jpg',
+    description:
+      'Cloudinary image URL returned by POST /api/v1/vendors/me/onboarding/upload',
+  })
   @IsOptional()
   @IsUrl()
   truckImageUrl?: string;

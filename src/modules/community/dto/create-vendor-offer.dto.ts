@@ -1,13 +1,34 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsArray,
+  IsEnum,
   IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { BookingPaymentPreferenceDto } from '../../bookings/dto/create-booking.dto';
+
+export enum OfferPricingModelDto {
+  FLAT_FEE = 'FLAT_FEE',
+  PER_PERSON = 'PER_PERSON',
+}
+
+export class OfferExtraChargeDto {
+  @ApiProperty({ example: 'Transport / Travel' })
+  @IsString()
+  label: string;
+
+  @ApiProperty({ example: 50 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  amount: number;
+}
 
 export class CreateVendorOfferDto {
   @ApiProperty({ example: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' })
@@ -19,11 +40,97 @@ export class CreateVendorOfferDto {
   @IsString()
   message?: string;
 
-  @ApiProperty({ example: 600.0 })
+  @ApiPropertyOptional({ example: 'We can provide a full-service taco station and setup staff.' })
+  @IsOptional()
+  @IsString()
+  noteToClient?: string;
+
+  @ApiPropertyOptional({
+    enum: OfferPricingModelDto,
+    example: OfferPricingModelDto.FLAT_FEE,
+  })
+  @IsOptional()
+  @IsEnum(OfferPricingModelDto)
+  pricingModel?: OfferPricingModelDto;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Burger', 'Caesar Salad Cups', 'Veggie Pizzas'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  selectedMenuItems?: string[];
+
+  @ApiPropertyOptional({ example: 1200.0 })
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  quotedAmount: number;
+  baseServiceFee?: number;
+
+  @ApiPropertyOptional({ example: 50.0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  transportFee?: number;
+
+  @ApiPropertyOptional({
+    type: [OfferExtraChargeDto],
+    description: 'Additional charge lines shown in the quote breakdown.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OfferExtraChargeDto)
+  extraCharges?: OfferExtraChargeDto[];
+
+  @ApiPropertyOptional({ example: 40.0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  taxAmount?: number;
+
+  @ApiPropertyOptional({ example: 20.0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  discountAmount?: number;
+
+  @ApiPropertyOptional({
+    enum: BookingPaymentPreferenceDto,
+    example: BookingPaymentPreferenceDto.DEPOSIT_ONLY,
+  })
+  @IsOptional()
+  @IsEnum(BookingPaymentPreferenceDto)
+  paymentPreference?: BookingPaymentPreferenceDto;
+
+  @ApiPropertyOptional({ example: 240.0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  depositAmount?: number;
+
+  @ApiPropertyOptional({ example: 20.0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  depositPercent?: number;
+
+  @ApiPropertyOptional({
+    example: 1080.0,
+    description: 'Total contract amount for the quote. If omitted, the backend derives it from the quote breakdown.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  quotedAmount?: number;
 
   @ApiPropertyOptional({ example: 30.0 })
   @IsOptional()
@@ -31,6 +138,13 @@ export class CreateVendorOfferDto {
   @IsNumber()
   @Min(0)
   serviceFee?: number;
+
+  @ApiPropertyOptional({ example: 600.0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  balanceDueAtEvent?: number;
 
   @ApiPropertyOptional({ example: '2026-08-22T23:59:59.000Z' })
   @IsOptional()

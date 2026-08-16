@@ -1,5 +1,5 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
@@ -24,6 +24,37 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Register a new vendor account' })
+  @ApiBody({
+    type: RegisterVendorDto,
+    examples: {
+      minimal: {
+        summary: 'Minimal Vendor Signup (Required Fields Only)',
+        value: {
+          email: 'vendor@example.com',
+          phone: '+12025550199',
+          password: 'Password123!',
+        },
+      },
+      full: {
+        summary: 'Full Vendor Signup (Optional Profile & Business Details)',
+        value: {
+          email: 'vendor@example.com',
+          phone: '+12025550199',
+          password: 'Password123!',
+          dateOfBirth: '1994-08-12',
+          businessName: 'Tasty Tacos Food Truck',
+          businessEmail: 'contact@tastytacos.com',
+          businessPhone: '+12025550199',
+          description: 'Best gourmet tacos in town',
+          websiteUrl: 'https://tastytacos.example.com',
+          firstName: 'Jane',
+          lastName: 'Smith',
+          displayName: 'JaneSmith',
+          timezone: 'America/New_York',
+        },
+      },
+    },
+  })
   @Post('register/vendor')
   registerVendor(@Body() dto: RegisterVendorDto) {
     return this.authService.registerVendor(dto);

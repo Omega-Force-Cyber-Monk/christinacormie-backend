@@ -1,5 +1,23 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiConflictResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -44,7 +62,15 @@ export class VendorsController {
     return this.vendorsService.updateMyVendorProfile(user.sub, dto);
   }
 
-  @ApiOperation({ summary: 'Complete vendor onboarding in one request' })
+  @ApiOperation({
+    summary: 'Complete vendor onboarding in one request',
+    description:
+      'This endpoint accepts JSON only. Upload truck/logo/menu images first through POST /api/v1/vendors/me/onboarding/upload, then pass the returned Cloudinary URLs in truckLogoUrl, truckImageUrl, logoUrl, or menuItem.photoUrl. Phone number is accepted only through contact.phoneNumber.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Returned when contact.email or contact.phoneNumber is already used by another account.',
+  })
   @Roles(UserRole.VENDOR)
   @Post('api/v1/vendors/me/onboarding')
   completeOnboarding(
@@ -54,7 +80,90 @@ export class VendorsController {
     return this.vendorsService.completeOnboarding(user.sub, dto);
   }
 
-  @ApiOperation({ summary: 'Submit vendor verification documents' })
+  @ApiOperation({
+    summary: 'Upload onboarding image asset to Cloudinary',
+    description:
+      'Use this multipart endpoint before vendor onboarding when you need a Cloudinary URL for truck logo, truck image, or menu image.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @Roles(UserRole.VENDOR)
+  @UseInterceptors(FileInterceptor('file'))
+  @Post('api/v1/vendors/me/onboarding/upload')
+  uploadOnboardingAsset(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.vendorsService.uploadOnboardingAsset(user.sub, file);
+  }
+
+  @ApiOperation({
+    summary: 'Submit vendor verification documents',
+    description:
+      'This endpoint accepts JSON only. Upload each verification file first through POST /api/v1/vendors/me/verification-requests/upload, then send the returned Cloudinary URL in documents[].url.',
+  })
+  @ApiBody({
+    type: SubmitVerificationRequestDto,
+    examples: {
+      texasVendor: {
+        summary: 'Texas vendor payload',
+        description:
+          'Use this when the vendor state is Texas (TX). Required document types are DSHS license, Food Manager Certification, and COI.',
+        value: {
+          documents: [
+            {
+              type: 'DSHS_MOBILE_FOOD_VENDOR_LICENSE',
+              url: 'https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/dshs-license.pdf',
+            },
+            {
+              type: 'FOOD_MANAGER_CERTIFICATION',
+              url: 'https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/food-manager-certification.pdf',
+            },
+            {
+              type: 'CERTIFICATE_OF_INSURANCE',
+              url: 'https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/certificate-of-insurance.pdf',
+            },
+          ],
+          notes:
+            'Texas vendor verification documents submitted for admin review.',
+        },
+      },
+      nonTexasVendor: {
+        summary: 'Non-Texas vendor payload',
+        description:
+          'Use this when the vendor state is outside Texas. Required document types are state/local permit, Food Manager Certification, and COI.',
+        value: {
+          documents: [
+            {
+              type: 'STATE_OR_LOCAL_FOOD_VENDOR_PERMIT',
+              url: 'https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/state-or-local-permit.pdf',
+            },
+            {
+              type: 'FOOD_MANAGER_CERTIFICATION',
+              url: 'https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/food-manager-certification.pdf',
+            },
+            {
+              type: 'CERTIFICATE_OF_INSURANCE',
+              url: 'https://res.cloudinary.com/demo/raw/upload/v1/bitedrop/vendors/vendor-id/verification-documents/certificate-of-insurance.pdf',
+            },
+          ],
+          notes:
+            'Non-Texas vendor verification documents submitted for admin review.',
+        },
+      },
+    },
+  })
   @Roles(UserRole.VENDOR)
   @Post('api/v1/vendors/me/verification-requests')
   submitVerificationRequest(
@@ -62,6 +171,34 @@ export class VendorsController {
     @Body() dto: SubmitVerificationRequestDto,
   ) {
     return this.vendorsService.submitVerificationRequest(user.sub, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Upload vendor verification document to Cloudinary',
+    description:
+      'Use this multipart endpoint before submitting verification documents when you need a Cloudinary URL for PDF or document files.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @Roles(UserRole.VENDOR)
+  @UseInterceptors(FileInterceptor('file'))
+  @Post('api/v1/vendors/me/verification-requests/upload')
+  uploadVerificationDocument(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.vendorsService.uploadVerificationDocument(user.sub, file);
   }
 
   @ApiOperation({ summary: 'List vendor photo shoot requests (Admin)' })

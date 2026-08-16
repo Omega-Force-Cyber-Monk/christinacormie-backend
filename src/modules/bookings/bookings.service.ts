@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { AcceptBookingQuoteDto } from './dto/accept-booking-quote.dto';
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
-import { CreateBookingDto } from './dto/create-booking.dto';
+import { BookingTypeDto, CreateBookingDto } from './dto/create-booking.dto';
 import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
 import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -23,6 +23,11 @@ export class BookingsService {
   ) {}
 
   async createBookingRequest(userId: string, dto: CreateBookingDto) {
+    const normalizedDto: CreateBookingDto = {
+      ...dto,
+      bookingType: dto.bookingType ?? BookingTypeDto.EVENT,
+    };
+
     const startsAt = new Date(dto.startsAt);
     const endsAt = new Date(dto.endsAt);
     this.validateBookingWindow(startsAt, endsAt);
@@ -40,17 +45,47 @@ export class BookingsService {
       throw new BadRequestException('Guest count exceeds truck capacity');
     }
 
-    const serviceArea = await this.validateServiceArea(dto.foodTruckId, dto);
+    await this.validatePreferredMenuItems(dto.foodTruckId, dto.preferredMenuItemIds);
+
+    const serviceArea = await this.validateServiceArea(dto.foodTruckId, normalizedDto);
     await this.ensureNoOverlap(dto.foodTruckId, startsAt, endsAt);
 
     const booking = await this.bookingsRepository.createBooking(
       userId,
       foodTruck.vendorId,
-      dto,
+      normalizedDto,
       serviceArea,
     );
 
     await this.notificationsService.notifyBookingCreated(userId, booking);
+
+    return booking;
+  }
+
+  listMyBookings(userId: string) {
+    return this.bookingsRepository.listCustomerBookings(userId);
+  }
+
+  listVendorBookings(userId: string) {
+    return this.bookingsRepository.listVendorBookingsByUserId(userId);
+  }
+
+  async getBookingDetails(userId: string, bookingId: string) {
+    const booking = await this.bookingsRepository.findBookingById(bookingId);
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    if (booking.customerId === userId) {
+      return booking;
+    }
+
+    const vendor = await this.ensureVendor(userId);
+
+    if (booking.vendorId !== vendor.id) {
+      throw new ForbiddenException('Booking is not visible to this user');
+    }
 
     return booking;
   }
@@ -249,6 +284,27 @@ export class BookingsService {
       outsideServiceRadius,
       outsideRadiusFee: outsideServiceRadius ? outsideRadiusFee : 0,
     };
+  }
+
+  private async validatePreferredMenuItems(
+    foodTruckId: string,
+    preferredMenuItemIds?: string[],
+  ) {
+    if (!preferredMenuItemIds?.length) {
+      return;
+    }
+
+    const uniqueItemIds = [...new Set(preferredMenuItemIds)];
+    const count = await this.bookingsRepository.countMenuItemsForFoodTruck(
+      foodTruckId,
+      uniqueItemIds,
+    );
+
+    if (count !== uniqueItemIds.length) {
+      throw new BadRequestException(
+        'One or more preferred menu items do not belong to this food truck',
+      );
+    }
   }
 
   private async ensureNoOverlap(

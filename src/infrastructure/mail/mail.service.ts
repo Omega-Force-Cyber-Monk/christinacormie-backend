@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import * as nodemailer from 'nodemailer';
 
 type SendMailOptions = {
   to: string | string[];
@@ -10,44 +11,51 @@ type SendMailOptions = {
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private readonly apiKey = process.env.RESEND_API_KEY;
+  private transporter: nodemailer.Transporter | null = null;
+  private readonly smtpHost = process.env.SMTP_HOST;
+  private readonly smtpPort = Number(process.env.SMTP_PORT || 587);
+  private readonly smtpSecure = process.env.SMTP_SECURE === 'true';
+  private readonly smtpUser = process.env.SMTP_USER;
+  private readonly smtpPass = process.env.SMTP_PASS;
   private readonly fromEmail =
     process.env.MAIL_FROM_EMAIL || 'noreply@bitedropapp.com';
+  private readonly fromName = process.env.MAIL_FROM_NAME || 'BiteDrop';
+
+  constructor() {
+    if (this.smtpHost && this.smtpUser && this.smtpPass) {
+      this.transporter = nodemailer.createTransport({
+        host: this.smtpHost,
+        port: this.smtpPort,
+        secure: this.smtpSecure,
+        auth: {
+          user: this.smtpUser,
+          pass: this.smtpPass,
+        },
+      });
+    }
+  }
 
   async send(options: SendMailOptions): Promise<void> {
-    if (!this.apiKey) {
+    if (!this.transporter) {
       this.logger.warn(
-        `RESEND_API_KEY is not set. Skipping email to ${this.stringifyRecipients(options.to)} with subject "${options.subject}".`,
+        `SMTP mailer is not configured. Skipping email to ${this.stringifyRecipients(options.to)} with subject "${options.subject}".`,
       );
       return;
     }
 
     try {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: this.fromEmail,
-          to: Array.isArray(options.to) ? options.to : [options.to],
-          subject: options.subject,
-          text: options.text,
-          ...(options.html ? { html: options.html } : {}),
-        }),
+      await this.transporter.sendMail({
+        from: `"${this.fromName}" <${this.fromEmail}>`,
+        to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
+        subject: options.subject,
+        text: options.text,
+        ...(options.html ? { html: options.html } : {}),
       });
-
-      if (!response.ok) {
-        const body = await response.text();
-        this.logger.error(
-          `Failed to send email (${response.status}): ${body || 'No response body'}`,
-        );
-      }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Unknown email transport error';
+        error instanceof Error ? error.message : 'Unknown SMTP transport error';
       this.logger.error(`Failed to send email: ${message}`);
+      throw error;
     }
   }
 
