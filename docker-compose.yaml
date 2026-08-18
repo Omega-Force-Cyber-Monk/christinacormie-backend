@@ -1,0 +1,12 @@
+services:
+  backend:
+    image: ghcr.io/omega-force-cyber-monk/christinacormie-backend:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: christinacormie-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - '${PORT:-3000}:3000'
