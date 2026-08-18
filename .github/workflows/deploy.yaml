@@ -66,7 +66,7 @@ jobs:
           target: ${{ secrets.PATH }}
 
       - name: Execute deployment commands via SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@v0.1.10
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.CR_PAT || secrets.GITHUB_TOKEN }}
