@@ -56,7 +56,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Copy docker-compose.yaml to VPS via SCP
+      - name: Copy docker-compose.yaml to VPS
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.HOST }}
