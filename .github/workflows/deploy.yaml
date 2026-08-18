@@ -32,7 +32,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/omega-force-cyber-monk/christinacormie-backend
           tags: |
             type=raw,value=latest
             type=sha,format=short
@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Copy docker-compose.yaml to VPS
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
