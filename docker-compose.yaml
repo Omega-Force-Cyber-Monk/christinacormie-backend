@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/omega-force-cyber-monk/christinacormie-backend:${TAG:-latest}
+    image: ghcr.io/omega-force-cyber-monk/christinacormie-backend:latest
     build:
       context: .
       dockerfile: Dockerfile

@@ -67,12 +67,17 @@ jobs:
 
       - name: Execute deployment commands via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.CR_PAT || secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
           key: ${{ secrets.KEY }}
+          envs: GHCR_USERNAME,GHCR_TOKEN
           script: |
             cd ${{ secrets.PATH }}
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans
             docker system prune -af
