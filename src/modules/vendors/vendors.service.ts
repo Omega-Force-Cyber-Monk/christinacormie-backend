@@ -46,6 +46,22 @@ export class VendorsService {
     };
   }
 
+  async getMyVendorQrCode(userId: string) {
+    const vendor = await this.getMyVendorProfile(userId);
+    const qrs = await this.checkInsService.ensureQrCodesForApprovedVendor(vendor.id);
+    const primaryQr = qrs[0];
+
+    return {
+      vendorId: vendor.id,
+      businessName: vendor.businessName,
+      foodTruckId: primaryQr?.foodTruckId ?? null,
+      qrCode: primaryQr?.code ?? null,
+      qrCodeUrl: primaryQr ? `/api/v1/qr/${primaryQr.code}/profile` : null,
+      downloadUrl: primaryQr?.qrImageUrl ?? null,
+      shareMessage: `Scan our BiteDrop QR code at ${vendor.businessName} to check in and earn rewards!`,
+    };
+  }
+
   async updateMyVendorProfile(userId: string, dto: UpdateVendorProfileDto) {
     const vendor = await this.getMyVendorProfile(userId);
     return this.vendorsRepository.updateProfile(vendor.id, dto);

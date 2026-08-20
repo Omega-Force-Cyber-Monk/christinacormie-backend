@@ -565,16 +565,28 @@ export class AuthService {
   }
 
   private toAuthUser(user: any) {
+    const roles = this.getRoles(user);
+    const isVendor = roles.includes(UserRole.VENDOR);
+
+    const displayName =
+      (user.profile?.displayName ??
+        `${user.profile?.firstName ?? ''} ${user.profile?.lastName ?? ''}`.trim()) ||
+      user.email?.split('@')[0] ||
+      'User';
+
     return {
       id: user.id,
       email: user.email,
-      phone: user.phone,
-      status: user.status,
-      roles: this.getRoles(user),
-      profile: user.profile,
-      settings: user.settings,
-      notificationPreference: user.notificationPreference,
-      vendor: user.vendor,
+      displayName,
+      roles,
+      ...(isVendor && user.vendor
+        ? {
+            vendor: {
+              id: user.vendor.id,
+              businessName: user.vendor.businessName,
+            },
+          }
+        : {}),
     };
   }
 
@@ -586,8 +598,6 @@ export class AuthService {
     return {
       userRoles: true,
       profile: true,
-      settings: true,
-      notificationPreference: true,
       vendor: true,
     };
   }

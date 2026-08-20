@@ -74,18 +74,23 @@ model RewardRule {
 }
 
 model RewardRedemption {
-  id           String      @id @default(uuid()) @db.Uuid
-  rewardRuleId String      @map("reward_rule_id") @db.Uuid
-  userId       String      @map("user_id") @db.Uuid
-  pointsSpent  Int         @default(0) @map("points_spent")
-  rewardValue  Decimal?    @map("reward_value") @db.Decimal(12, 2)
-  status       String      @default("ACTIVE") @db.VarChar(30)
-  redeemedAt   DateTime    @default(now()) @map("redeemed_at") @db.Timestamptz(6)
-  usedAt       DateTime?   @map("used_at") @db.Timestamptz(6)
-  expiresAt    DateTime?   @map("expires_at") @db.Timestamptz(6)
-  rewardRule   RewardRule  @relation(fields: [rewardRuleId], references: [id])
-  user         User        @relation(fields: [userId], references: [id])
+  id              String      @id @default(uuid()) @db.Uuid
+  rewardRuleId    String?     @map("reward_rule_id") @db.Uuid
+  userId          String      @map("user_id") @db.Uuid
+  vendorId        String?     @map("vendor_id") @db.Uuid
+  foodTruckId     String?     @map("food_truck_id") @db.Uuid
+  pointsSpent     Int         @default(0) @map("points_spent")
+  rewardValue     Decimal?    @map("reward_value") @db.Decimal(12, 2)
+  backupCode      String?     @map("backup_code") @db.VarChar(10)
+  redemptionToken String?     @unique @map("redemption_token") @db.VarChar(255)
+  status          String      @default("ACTIVE") @db.VarChar(30)
+  redeemedAt      DateTime    @default(now()) @map("redeemed_at") @db.Timestamptz(6)
+  usedAt          DateTime?   @map("used_at") @db.Timestamptz(6)
+  expiresAt       DateTime?   @map("expires_at") @db.Timestamptz(6)
+  rewardRule      RewardRule? @relation(fields: [rewardRuleId], references: [id])
+  user            User        @relation(fields: [userId], references: [id])
 
+  @@index([backupCode])
   @@map("reward_redemptions")
 }
 

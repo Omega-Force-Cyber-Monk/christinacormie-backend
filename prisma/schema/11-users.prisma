@@ -38,6 +38,7 @@ model User {
   favoriteTrucks                     FavoriteTruck[]
   postLikes                          PostLike[]
   postComments                       PostComment[]
+  postCommentLikes                   PostCommentLike[]
   savedPosts                         SavedPost[]
   promotionRedemptions               PromotionRedemption[]
   communityRequests                  CommunityRequest[]            @relation("CommunityRequestCreatedBy")

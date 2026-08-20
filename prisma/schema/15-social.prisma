@@ -41,6 +41,8 @@ model Post {
   likeCount      Int          @default(0) @map("like_count")
   commentCount   Int          @default(0) @map("comment_count")
   saveCount      Int          @default(0) @map("save_count")
+  shareCount     Int          @default(0) @map("share_count")
+  viewCount      Int          @default(0) @map("view_count")
   publishedAt    DateTime?    @map("published_at") @db.Timestamptz(6)
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz(6)
@@ -79,19 +81,33 @@ model PostLike {
 }
 
 model PostComment {
-  id              String        @id @default(uuid()) @db.Uuid
-  postId          String        @map("post_id") @db.Uuid
-  userId          String        @map("user_id") @db.Uuid
-  parentCommentId String?       @map("parent_comment_id") @db.Uuid
+  id              String            @id @default(uuid()) @db.Uuid
+  postId          String            @map("post_id") @db.Uuid
+  userId          String            @map("user_id") @db.Uuid
+  parentCommentId String?           @map("parent_comment_id") @db.Uuid
   content         String
-  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(6)
-  post            Post          @relation(fields: [postId], references: [id])
-  user            User          @relation(fields: [userId], references: [id])
-  parentComment   PostComment?  @relation("PostCommentReplies", fields: [parentCommentId], references: [id])
-  replies         PostComment[] @relation("PostCommentReplies")
+  likeCount       Int               @default(0) @map("like_count")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt       DateTime?         @map("deleted_at") @db.Timestamptz(6)
+  post            Post              @relation(fields: [postId], references: [id])
+  user            User              @relation(fields: [userId], references: [id])
+  parentComment   PostComment?      @relation("PostCommentReplies", fields: [parentCommentId], references: [id])
+  replies         PostComment[]     @relation("PostCommentReplies")
+  likes           PostCommentLike[]
 
   @@map("post_comments")
+}
+
+model PostCommentLike {
+  id        String      @id @default(uuid()) @db.Uuid
+  commentId String      @map("comment_id") @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  comment   PostComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id])
+
+  @@unique([commentId, userId])
+  @@map("post_comment_likes")
 }
 
 model SavedPost {

@@ -17,9 +17,11 @@ import type { AuthenticatedUser } from '../../common/interfaces/authenticated-re
 import { AwardBadgeDto } from './dto/award-badge.dto';
 import { AwardPointsDto } from './dto/award-points.dto';
 import { CreateBadgeDto } from './dto/create-badge.dto';
+import { CreateRedemptionCodeDto } from './dto/create-redemption-code.dto';
 import { CreateRewardRuleDto } from './dto/create-reward-rule.dto';
 import { RedeemRewardDto } from './dto/redeem-reward.dto';
 import { UpdateRewardRuleDto } from './dto/update-reward-rule.dto';
+import { VendorConfirmRedemptionDto } from './dto/vendor-confirm-redemption.dto';
 import { RewardsService } from './rewards.service';
 
 @ApiTags('Rewards & Badges')
@@ -50,6 +52,27 @@ export class RewardsController {
     @Body() dto: RedeemRewardDto,
   ) {
     return this.rewardsService.redeemReward(user.sub, dto);
+  }
+
+  @ApiOperation({ summary: 'Request a credit redemption code & 6-digit backup code (Customer)' })
+  @UseGuards(JwtAuthGuard)
+  @Post('api/v1/rewards/me/redemption-codes')
+  createRedemptionCode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateRedemptionCodeDto,
+  ) {
+    return this.rewardsService.createRedemptionCode(user.sub, dto);
+  }
+
+  @ApiOperation({ summary: 'Confirm customer credit redemption via QR token or 6-digit backup code (Vendor)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Post('api/v1/vendors/me/redemptions/confirm')
+  confirmVendorRedemption(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VendorConfirmRedemptionDto,
+  ) {
+    return this.rewardsService.confirmVendorRedemption(user.sub, dto);
   }
 
   @ApiOperation({ summary: 'List all platform badges' })

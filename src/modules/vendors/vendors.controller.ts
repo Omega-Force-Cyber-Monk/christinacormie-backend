@@ -45,6 +45,13 @@ export class VendorsController {
     return this.vendorsService.getMyVendorProfile(user.sub);
   }
 
+  @ApiOperation({ summary: 'Get my vendor BiteDrop QR code details for display and sharing' })
+  @Roles(UserRole.VENDOR)
+  @Get('api/v1/vendors/me/qr-code')
+  getMyVendorQrCode(@CurrentUser() user: AuthenticatedUser) {
+    return this.vendorsService.getMyVendorQrCode(user.sub);
+  }
+
   @ApiOperation({ summary: 'Get vendor dashboard analytics overview' })
   @Roles(UserRole.VENDOR)
   @Get('api/v1/vendors/me/analytics')

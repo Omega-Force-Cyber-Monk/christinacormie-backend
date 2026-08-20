@@ -198,6 +198,8 @@ export class RewardsRepository {
           pointsSpent: pointsRequired,
           rewardValue: rewardRule.rewardValue,
           expiresAt: rewardRule.endsAt,
+          status: 'COMPLETED',
+          usedAt: new Date(),
         },
         include: { rewardRule: true },
       });
@@ -217,6 +219,105 @@ export class RewardsRepository {
       });
 
       return redemption;
+    });
+  }
+
+  async createRedemptionCode(data: {
+    userId: string;
+    amount: number;
+    pointsSpent: number;
+    backupCode: string;
+    redemptionToken: string;
+    expiresAt: Date;
+    foodTruckId?: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const account = await tx.loyaltyAccount.upsert({
+        where: { userId: data.userId },
+        create: { userId: data.userId },
+        update: {},
+      });
+
+      const balanceAfter = account.availablePoints - data.pointsSpent;
+
+      await tx.loyaltyAccount.update({
+        where: { id: account.id },
+        data: {
+          availablePoints: balanceAfter,
+          redeemedPoints: { increment: data.pointsSpent },
+          updatedAt: new Date(),
+        },
+      });
+
+      const redemption = await tx.rewardRedemption.create({
+        data: {
+          userId: data.userId,
+          foodTruckId: data.foodTruckId,
+          pointsSpent: data.pointsSpent,
+          rewardValue: data.amount,
+          backupCode: data.backupCode,
+          redemptionToken: data.redemptionToken,
+          status: 'PENDING',
+          expiresAt: data.expiresAt,
+        },
+      });
+
+      await tx.loyaltyTransaction.create({
+        data: {
+          loyaltyAccountId: account.id,
+          transactionType: 'REDEEM',
+          points: -data.pointsSpent,
+          balanceBefore: account.availablePoints,
+          balanceAfter,
+          sourceType: 'CREDIT_REDEMPTION_CODE',
+          sourceId: redemption.id,
+          idempotencyKey: `credit_redemption:${redemption.id}`,
+          description: `Credit redemption code for $${data.amount.toFixed(2)}`,
+        },
+      });
+
+      return redemption;
+    });
+  }
+
+  async findPendingRedemptionByTokenOrCode(tokenOrCode: string) {
+    const now = new Date();
+    return this.prisma.rewardRedemption.findFirst({
+      where: {
+        OR: [
+          { redemptionToken: tokenOrCode },
+          { backupCode: tokenOrCode },
+        ],
+        status: 'PENDING',
+        expiresAt: { gte: now },
+      },
+      include: {
+        user: {
+          include: {
+            profile: true,
+            loyaltyAccount: true,
+          },
+        },
+      },
+    });
+  }
+
+  async completeVendorRedemption(redemptionId: string, vendorId: string) {
+    return this.prisma.rewardRedemption.update({
+      where: { id: redemptionId },
+      data: {
+        status: 'COMPLETED',
+        usedAt: new Date(),
+        vendorId,
+      },
+      include: {
+        user: {
+          include: {
+            profile: true,
+            loyaltyAccount: true,
+          },
+        },
+      },
     });
   }
 

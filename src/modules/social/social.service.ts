@@ -5,7 +5,9 @@ import {
 } from '@nestjs/common';
 import { CommentPostDto } from './dto/comment-post.dto';
 import { CreatePostDto } from './dto/create-post.dto';
+import { ExploreFeedQueryDto } from './dto/explore-feed-query.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
+import { GetCommentsQueryDto } from './dto/get-comments-query.dto';
 import { ToggleFollowNotificationsDto } from './dto/toggle-follow-notifications.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -132,6 +134,45 @@ export class SocialService {
     return this.socialRepository.commentOnPost(postId, userId, dto);
   }
 
+  async getCommentsForPost(
+    userId: string | undefined,
+    postId: string,
+    query: GetCommentsQueryDto,
+  ) {
+    if (userId) {
+      await this.ensureVisiblePost(userId, postId);
+    }
+    return this.socialRepository.findCommentsForPost(postId, userId, query);
+  }
+
+  async likeComment(userId: string, commentId: string) {
+    const comment = await this.socialRepository.findCommentById(commentId);
+
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    await this.ensureVisiblePost(userId, comment.postId);
+    return this.socialRepository.likeComment(commentId, userId);
+  }
+
+  async sharePost(userId: string | undefined, postId: string) {
+    if (userId) {
+      await this.ensureVisiblePost(userId, postId);
+    }
+
+    const post = await this.socialRepository.sharePost(postId);
+    const slug = post.foodTruck.slug;
+
+    return {
+      success: true,
+      postId: post.id,
+      shareCount: post.shareCount,
+      shareUrl: `/api/v1/food-trucks/profile/${slug}/posts/${post.id}`,
+      shareText: post.content.length > 80 ? `${post.content.slice(0, 77)}...` : post.content,
+    };
+  }
+
   async savePost(userId: string, postId: string) {
     await this.ensureVisiblePost(userId, postId);
     return this.socialRepository.savePost(postId, userId);
@@ -140,6 +181,24 @@ export class SocialService {
   async getFollowedFeed(userId: string, dto: FeedQueryDto) {
     const limit = dto.limit ?? 20;
     const posts = await this.socialRepository.findFollowedFeed(userId, dto);
+    const hasMore = posts.length > limit;
+    const items = hasMore ? posts.slice(0, limit) : posts;
+
+    return {
+      items: items.map((post: any) => ({
+        ...post,
+        isLiked: Boolean(post.likes?.length),
+        isSaved: Boolean(post.savedBy?.length),
+        likes: undefined,
+        savedBy: undefined,
+      })),
+      nextCursor: hasMore ? items[items.length - 1]?.id : null,
+    };
+  }
+
+  async getExploreFeed(userId: string | undefined, dto: ExploreFeedQueryDto) {
+    const limit = dto.limit ?? 20;
+    const posts = await this.socialRepository.findExploreFeed(userId, dto);
     const hasMore = posts.length > limit;
     const items = hasMore ? posts.slice(0, limit) : posts;
 

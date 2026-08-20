@@ -56,6 +56,10 @@ export class CheckInsService {
       }
     }
 
+    const loyaltyAccount = await this.rewardsService.getMyLoyaltyAccount(userId);
+    const totalPoints = loyaltyAccount.availablePoints;
+    const availableCreditAmount = Math.floor(totalPoints / 100);
+
     const duplicateSince = new Date(Date.now() - 12 * 60 * 60_000);
     const duplicate = await this.checkInsRepository.findRecentCheckIn(
       userId,
@@ -74,7 +78,16 @@ export class CheckInsService {
         await this.notificationsService.notifyCheckIn(userId, duplicateCheckIn);
       }
 
-      return duplicateCheckIn;
+      return {
+        checkIn: duplicateCheckIn,
+        experienceState: 'ALREADY_CHECKED_IN_TODAY',
+        availableCreditAmount,
+        pointsEarned: 0,
+        currentPoints: totalPoints,
+        tierName: totalPoints >= 2500 ? 'Drop Legend' : 'Drop Hunter',
+        nextTierPoints: 2500,
+        message: 'Already checked in today.',
+      };
     }
 
     const verification = await this.verifyLocation(qrCode.foodTruckId, dto);
@@ -86,15 +99,43 @@ export class CheckInsService {
       verification,
     );
 
+    let pointsEarned = 0;
     if (checkIn?.status === 'VERIFIED') {
-      await this.rewardsService.awardPoints(userId, 'CHECK_IN', checkIn.id);
+      const awardResult = await this.rewardsService.awardPoints(
+        userId,
+        'CHECK_IN',
+        checkIn.id,
+      );
+      pointsEarned = awardResult.transaction?.points ?? 10;
     }
 
     if (checkIn) {
       await this.notificationsService.notifyCheckIn(userId, checkIn);
     }
 
-    return checkIn;
+    const updatedAccount = await this.rewardsService.getMyLoyaltyAccount(userId);
+    const updatedTotalPoints = updatedAccount.availablePoints;
+    const updatedCreditAmount = Math.floor(updatedTotalPoints / 100);
+
+    let experienceState = 'NEW_USER';
+    if (updatedCreditAmount >= 5) {
+      experienceState = 'HAS_CREDIT_AVAILABLE';
+    } else if (updatedTotalPoints > pointsEarned) {
+      experienceState = 'HAS_POINTS_NO_CREDIT';
+    } else {
+      experienceState = 'NEW_USER';
+    }
+
+    return {
+      checkIn,
+      experienceState,
+      availableCreditAmount: updatedCreditAmount,
+      pointsEarned,
+      currentPoints: updatedTotalPoints,
+      tierName: updatedTotalPoints >= 2500 ? 'Drop Legend' : 'Drop Hunter',
+      nextTierPoints: 2500,
+      message: `Check-in complete! Earned +${pointsEarned} points.`,
+    };
   }
 
   async getQrAnalytics(userId: string, foodTruckId: string) {

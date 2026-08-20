@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CommentPostDto } from './dto/comment-post.dto';
 import { CreatePostDto } from './dto/create-post.dto';
+import { ExploreFeedQueryDto, ExploreSortBy } from './dto/explore-feed-query.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
+import { GetCommentsQueryDto } from './dto/get-comments-query.dto';
 import { ToggleFollowNotificationsDto } from './dto/toggle-follow-notifications.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 
@@ -323,17 +325,151 @@ export class SocialRepository {
       select: {
         id: true,
         postId: true,
+        parentCommentId: true,
       },
     });
   }
 
+  async findCommentsForPost(postId: string, userId?: string, dto?: GetCommentsQueryDto) {
+    const limit = dto?.limit ?? 20;
+    const offset = dto?.offset ?? 0;
+
+    const [totalCount, topLevelComments] = await Promise.all([
+      this.prisma.postComment.count({
+        where: {
+          postId,
+          deletedAt: null,
+        },
+      }),
+      this.prisma.postComment.findMany({
+        where: {
+          postId,
+          parentCommentId: null,
+          deletedAt: null,
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+        take: limit,
+        skip: offset,
+        include: {
+          user: {
+            select: {
+              id: true,
+              profile: {
+                select: {
+                  displayName: true,
+                  firstName: true,
+                  lastName: true,
+                  avatarUrl: true,
+                },
+              },
+            },
+          },
+          likes: userId
+            ? {
+                where: { userId },
+                select: { id: true },
+              }
+            : false,
+          replies: {
+            where: { deletedAt: null },
+            orderBy: { createdAt: 'asc' },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  profile: {
+                    select: {
+                      displayName: true,
+                      firstName: true,
+                      lastName: true,
+                      avatarUrl: true,
+                    },
+                  },
+                },
+              },
+              likes: userId
+                ? {
+                    where: { userId },
+                    select: { id: true },
+                  }
+                : false,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const formattedComments = topLevelComments.map((comment) => {
+      const isLiked = Boolean(comment.likes && comment.likes.length > 0);
+      const displayName =
+        (comment.user.profile?.displayName ??
+          `${comment.user.profile?.firstName ?? ''} ${comment.user.profile?.lastName ?? ''}`.trim()) ||
+        'Customer';
+
+      const formattedReplies = (comment.replies || []).map((reply) => {
+        const replyIsLiked = Boolean(reply.likes && reply.likes.length > 0);
+        const replyDisplayName =
+          (reply.user.profile?.displayName ??
+            `${reply.user.profile?.firstName ?? ''} ${reply.user.profile?.lastName ?? ''}`.trim()) ||
+          'Customer';
+
+        return {
+          id: reply.id,
+          postId: reply.postId,
+          parentCommentId: reply.parentCommentId,
+          content: reply.content,
+          likeCount: reply.likeCount,
+          isLiked: replyIsLiked,
+          createdAt: reply.createdAt,
+          author: {
+            id: reply.user.id,
+            displayName: replyDisplayName,
+            avatarUrl: reply.user.profile?.avatarUrl ?? null,
+          },
+        };
+      });
+
+      return {
+        id: comment.id,
+        postId: comment.postId,
+        content: comment.content,
+        likeCount: comment.likeCount,
+        isLiked,
+        createdAt: comment.createdAt,
+        author: {
+          id: comment.user.id,
+          displayName,
+          avatarUrl: comment.user.profile?.avatarUrl ?? null,
+        },
+        replies: formattedReplies,
+      };
+    });
+
+    return {
+      totalCount,
+      comments: formattedComments,
+    };
+  }
+
   async commentOnPost(postId: string, userId: string, dto: CommentPostDto) {
+    let effectiveParentCommentId: string | null = dto.parentCommentId ?? null;
+
+    if (dto.parentCommentId) {
+      const parent = await this.findCommentById(dto.parentCommentId);
+      if (parent?.parentCommentId) {
+        // Flatten to top-level parent comment for 1-level depth
+        effectiveParentCommentId = parent.parentCommentId;
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const comment = await tx.postComment.create({
         data: {
           postId,
           userId,
-          parentCommentId: dto.parentCommentId,
+          parentCommentId: effectiveParentCommentId,
           content: dto.content,
         },
         include: {
@@ -343,6 +479,8 @@ export class SocialRepository {
               profile: {
                 select: {
                   displayName: true,
+                  firstName: true,
+                  lastName: true,
                   avatarUrl: true,
                 },
               },
@@ -358,7 +496,98 @@ export class SocialRepository {
         },
       });
 
-      return comment;
+      const displayName =
+        (comment.user.profile?.displayName ??
+          `${comment.user.profile?.firstName ?? ''} ${comment.user.profile?.lastName ?? ''}`.trim()) ||
+        'Customer';
+
+      return {
+        id: comment.id,
+        postId: comment.postId,
+        parentCommentId: comment.parentCommentId,
+        content: comment.content,
+        likeCount: comment.likeCount,
+        isLiked: false,
+        createdAt: comment.createdAt,
+        author: {
+          id: comment.user.id,
+          displayName,
+          avatarUrl: comment.user.profile?.avatarUrl ?? null,
+        },
+      };
+    });
+  }
+
+  async likeComment(commentId: string, userId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.postCommentLike.findUnique({
+        where: {
+          commentId_userId: {
+            commentId,
+            userId,
+          },
+        },
+      });
+
+      if (existing) {
+        await tx.postCommentLike.delete({
+          where: { id: existing.id },
+        });
+
+        const updated = await tx.postComment.update({
+          where: { id: commentId },
+          data: {
+            likeCount: { decrement: 1 },
+          },
+          select: { id: true, likeCount: true },
+        });
+
+        return {
+          liked: false,
+          likeCount: Math.max(0, updated.likeCount),
+        };
+      }
+
+      await tx.postCommentLike.create({
+        data: {
+          commentId,
+          userId,
+        },
+      });
+
+      const updated = await tx.postComment.update({
+        where: { id: commentId },
+        data: {
+          likeCount: { increment: 1 },
+        },
+        select: { id: true, likeCount: true },
+      });
+
+      return {
+        liked: true,
+        likeCount: updated.likeCount,
+      };
+    });
+  }
+
+  async sharePost(postId: string) {
+    return this.prisma.post.update({
+      where: { id: postId },
+      data: {
+        shareCount: { increment: 1 },
+      },
+      select: {
+        id: true,
+        shareCount: true,
+        content: true,
+        foodTruck: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+      },
     });
   }
 
@@ -374,10 +603,21 @@ export class SocialRepository {
       });
 
       if (existing) {
-        return existing;
+        await tx.savedPost.delete({
+          where: { id: existing.id },
+        });
+
+        await tx.post.update({
+          where: { id: postId },
+          data: {
+            saveCount: { decrement: 1 },
+          },
+        });
+
+        return { saved: false };
       }
 
-      const savedPost = await tx.savedPost.create({
+      await tx.savedPost.create({
         data: {
           postId,
           userId,
@@ -391,7 +631,7 @@ export class SocialRepository {
         },
       });
 
-      return savedPost;
+      return { saved: true };
     });
   }
 
@@ -411,6 +651,33 @@ export class SocialRepository {
       orderBy: {
         createdAt: 'desc',
       },
+      take,
+      ...(dto.cursor
+        ? {
+            cursor: { id: dto.cursor },
+            skip: 1,
+          }
+        : {}),
+      include: this.postInclude(userId),
+    });
+  }
+
+  findExploreFeed(userId: string | undefined, dto: ExploreFeedQueryDto) {
+    const limit = dto.limit ?? 20;
+    const take = limit + 1;
+
+    const orderBy: any =
+      dto.sortBy === ExploreSortBy.TRENDING
+        ? [{ likeCount: 'desc' }, { commentCount: 'desc' }, { createdAt: 'desc' }]
+        : [{ createdAt: 'desc' }];
+
+    return this.prisma.post.findMany({
+      where: {
+        deletedAt: null,
+        status: 'PUBLISHED',
+        isFollowerOnly: false,
+      },
+      orderBy,
       take,
       ...(dto.cursor
         ? {

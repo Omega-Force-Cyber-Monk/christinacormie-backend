@@ -8,9 +8,11 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AwardBadgeDto } from './dto/award-badge.dto';
 import { AwardPointsDto } from './dto/award-points.dto';
 import { CreateBadgeDto } from './dto/create-badge.dto';
+import { CreateRedemptionCodeDto } from './dto/create-redemption-code.dto';
 import { CreateRewardRuleDto } from './dto/create-reward-rule.dto';
 import { RedeemRewardDto } from './dto/redeem-reward.dto';
 import { UpdateRewardRuleDto } from './dto/update-reward-rule.dto';
+import { VendorConfirmRedemptionDto } from './dto/vendor-confirm-redemption.dto';
 import { RewardsRepository } from './rewards.repository';
 
 const DEFAULT_POINT_RULES: Record<string, number> = {
@@ -155,6 +157,86 @@ export class RewardsService {
     );
 
     return redemption;
+  }
+
+  async createRedemptionCode(userId: string, dto: CreateRedemptionCodeDto) {
+    const pointsSpent = dto.amount * 100;
+    const account = await this.rewardsRepository.ensureLoyaltyAccount(userId);
+
+    if (account.availablePoints < pointsSpent) {
+      throw new BadRequestException(`Not enough points. ${pointsSpent} points required for $${dto.amount} credit.`);
+    }
+
+    const backupCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const redemptionToken = `rdm_${backupCode}_${Date.now().toString(36)}`;
+    const expiresAt = new Date(Date.now() + 15 * 60_000);
+
+    const redemption = await this.rewardsRepository.createRedemptionCode({
+      userId,
+      amount: dto.amount,
+      pointsSpent,
+      backupCode,
+      redemptionToken,
+      expiresAt,
+      foodTruckId: dto.foodTruckId,
+    });
+
+    return {
+      redemptionId: redemption.id,
+      redemptionToken,
+      backupCode,
+      amount: dto.amount,
+      pointsSpent,
+      expiresAt,
+      status: 'PENDING',
+      message: `Show this screen to staff or provide 6-digit backup code: ${backupCode}`,
+    };
+  }
+
+  async confirmVendorRedemption(vendorUserId: string, dto: VendorConfirmRedemptionDto) {
+    const vendor = await this.rewardsRepository.findVendorByUserId(vendorUserId);
+
+    if (!vendor || vendor.deletedAt) {
+      throw new ForbiddenException('Vendor profile is required to confirm redemptions');
+    }
+
+    const tokenOrCode = dto.redemptionToken?.trim() ?? dto.manualCode?.trim();
+
+    if (!tokenOrCode) {
+      throw new BadRequestException('Either redemptionToken or manualCode must be provided');
+    }
+
+    const redemption = await this.rewardsRepository.findPendingRedemptionByTokenOrCode(tokenOrCode);
+
+    if (!redemption) {
+      throw new NotFoundException('Invalid or expired redemption code');
+    }
+
+    const completed = await this.rewardsRepository.completeVendorRedemption(redemption.id, vendor.id);
+
+    const customerName =
+      (completed.user.profile?.displayName ??
+        `${completed.user.profile?.firstName ?? ''} ${completed.user.profile?.lastName ?? ''}`.trim()) ||
+      'Customer';
+
+    const remainingPoints = completed.user.loyaltyAccount?.availablePoints ?? 0;
+    const remainingCredit = (remainingPoints / 100).toFixed(2);
+    const amountApplied = Number(completed.rewardValue ?? redemption.rewardValue ?? 0).toFixed(2);
+
+    await this.notificationsService.notifyReward(
+      completed.userId,
+      'Credit Redeemed',
+      `$${amountApplied} credit applied at vendor.`,
+      { redemptionId: completed.id, vendorId: vendor.id },
+    );
+
+    return {
+      success: true,
+      amountApplied: Number(amountApplied),
+      customerName,
+      remainingCustomerBalance: Number(remainingCredit),
+      message: `Redemption Complete. $${amountApplied} credit applied for ${customerName}.`,
+    };
   }
 
   listBadges() {

@@ -5,7 +5,10 @@ This guide explains the practical order for testing the APIs. Test in this order
 Related docs:
 
 ```text
+Social feed & comments UI handoff: docs/FRONTEND_SOCIAL_FEED_AND_COMMENTS_HANDOFF.md
+QR Check-In & Credit Redemption testing: docs/QR_CHECKIN_AND_REDEMPTION_TESTING_FLOW.md
 Notification end-to-end testing: docs/NOTIFICATION_TESTING_FLOW.md
+Frontend notification screen UI handoff: docs/FRONTEND_NOTIFICATION_SCREEN_HANDOFF.md
 Frontend notification integration handoff: docs/FRONTEND_NOTIFICATION_INTEGRATION_PROMPT.md
 ```
 

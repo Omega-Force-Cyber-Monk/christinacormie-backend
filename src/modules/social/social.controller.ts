@@ -18,7 +18,9 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { CommentPostDto } from './dto/comment-post.dto';
 import { CreatePostDto } from './dto/create-post.dto';
+import { ExploreFeedQueryDto } from './dto/explore-feed-query.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
+import { GetCommentsQueryDto } from './dto/get-comments-query.dto';
 import { ToggleFollowNotificationsDto } from './dto/toggle-follow-notifications.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { SocialService } from './social.service';
@@ -128,7 +130,18 @@ export class SocialController {
     return this.socialService.likePost(user.sub, postId);
   }
 
-  @ApiOperation({ summary: 'Comment on a post' })
+  @ApiOperation({ summary: 'Get comments and 1-level replies for a post' })
+  @UseGuards(JwtAuthGuard)
+  @Get('posts/:postId/comments')
+  getCommentsForPost(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('postId') postId: string,
+    @Query() query: GetCommentsQueryDto,
+  ) {
+    return this.socialService.getCommentsForPost(user.sub, postId, query);
+  }
+
+  @ApiOperation({ summary: 'Comment on a post or reply to an existing comment (1-level nested)' })
   @UseGuards(JwtAuthGuard)
   @Post('posts/:postId/comments')
   commentOnPost(
@@ -137,6 +150,26 @@ export class SocialController {
     @Body() dto: CommentPostDto,
   ) {
     return this.socialService.commentOnPost(user.sub, postId, dto);
+  }
+
+  @ApiOperation({ summary: 'Like or toggle like on a comment' })
+  @UseGuards(JwtAuthGuard)
+  @Post('comments/:commentId/like')
+  likeComment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('commentId') commentId: string,
+  ) {
+    return this.socialService.likeComment(user.sub, commentId);
+  }
+
+  @ApiOperation({ summary: 'Share a post (increments share count and returns deep link)' })
+  @UseGuards(JwtAuthGuard)
+  @Post('posts/:postId/share')
+  sharePost(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('postId') postId: string,
+  ) {
+    return this.socialService.sharePost(user.sub, postId);
   }
 
   @ApiOperation({ summary: 'Bookmark / save a post' })
@@ -149,7 +182,7 @@ export class SocialController {
     return this.socialService.savePost(user.sub, postId);
   }
 
-  @ApiOperation({ summary: 'Get personalized social feed from followed food trucks' })
+  @ApiOperation({ summary: 'Get personalized social feed from followed food trucks (Following Tab)' })
   @UseGuards(JwtAuthGuard)
   @Get('feed/following')
   getFollowedFeed(
@@ -157,5 +190,15 @@ export class SocialController {
     @Query() query: FeedQueryDto,
   ) {
     return this.socialService.getFollowedFeed(user.sub, query);
+  }
+
+  @ApiOperation({ summary: 'Get explore social feed across all food trucks (Explore Tab - Newest & Trending)' })
+  @UseGuards(JwtAuthGuard)
+  @Get('feed/explore')
+  getExploreFeed(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ExploreFeedQueryDto,
+  ) {
+    return this.socialService.getExploreFeed(user.sub, query);
   }
 }
