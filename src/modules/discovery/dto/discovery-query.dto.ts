@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEnum,
   IsInt,
   IsLatitude,
   IsLongitude,
@@ -13,6 +14,13 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+
+export enum OperatingStatusFilter {
+  OPEN = 'OPEN',
+  CLOSED = 'CLOSED',
+  BUSY = 'BUSY',
+  UNAVAILABLE = 'UNAVAILABLE',
+}
 
 const toBoolean = ({ value }: { value: unknown }) => {
   if (value === undefined) {
@@ -60,6 +68,17 @@ export class NearbyFoodTrucksQueryDto {
   @Transform(toBoolean)
   @IsBoolean({ message: 'openOnly must be true or false' })
   openOnly?: boolean;
+
+  @ApiPropertyOptional({
+    enum: OperatingStatusFilter,
+    description: 'Filter by exact operating status',
+    example: OperatingStatusFilter.OPEN,
+  })
+  @IsOptional()
+  @IsEnum(OperatingStatusFilter, {
+    message: 'operatingStatus must be one of: OPEN, CLOSED, BUSY, UNAVAILABLE',
+  })
+  operatingStatus?: OperatingStatusFilter;
 
   @ApiPropertyOptional({ example: 'f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a66' })
   @IsOptional()
@@ -129,6 +148,17 @@ export class TrendingFoodTrucksQueryDto {
   @Transform(toBoolean)
   @IsBoolean({ message: 'openOnly must be true or false' })
   openOnly?: boolean;
+
+  @ApiPropertyOptional({
+    enum: OperatingStatusFilter,
+    description: 'Filter by exact operating status',
+    example: OperatingStatusFilter.OPEN,
+  })
+  @IsOptional()
+  @IsEnum(OperatingStatusFilter, {
+    message: 'operatingStatus must be one of: OPEN, CLOSED, BUSY, UNAVAILABLE',
+  })
+  operatingStatus?: OperatingStatusFilter;
 
   @ApiPropertyOptional({ example: 'f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a66' })
   @IsOptional()

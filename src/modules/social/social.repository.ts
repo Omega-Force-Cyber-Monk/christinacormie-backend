@@ -889,15 +889,22 @@ export class SocialRepository {
 
     const totalCount = allItems.length;
     const openCount = allItems.filter((item) => item.isOpen).length;
+    const closedCount = totalCount - openCount;
 
-    const filteredItems =
-      query.tab === FavoriteTab.OPEN
-        ? allItems.filter((item) => item.isOpen)
-        : allItems;
+    let filteredItems = allItems;
+    if (query.tab === FavoriteTab.OPEN) {
+      filteredItems = allItems.filter((item) => item.isOpen);
+    } else if (
+      query.tab === FavoriteTab.CLOSED ||
+      (query.tab as string) === 'CLOSE'
+    ) {
+      filteredItems = allItems.filter((item) => !item.isOpen);
+    }
 
     return {
       totalCount,
       openCount,
+      closedCount,
       items: filteredItems,
     };
   }

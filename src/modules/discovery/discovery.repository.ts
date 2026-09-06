@@ -137,7 +137,11 @@ export class DiscoveryRepository {
   ) {
     const where: string[] = [];
 
-    if (dto.openOnly) {
+    if (dto.operatingStatus) {
+      where.push(
+        `f.operating_status = ${this.addParam(values, dto.operatingStatus)}`,
+      );
+    } else if (dto.openOnly) {
       where.push(`f.operating_status = 'OPEN'`);
     }
 

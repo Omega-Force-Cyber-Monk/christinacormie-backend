@@ -498,7 +498,7 @@ export class SeedService implements OnApplicationBootstrap {
              current_address = '${safeAddress}',
              location_updated_at = NOW(),
              location_valid_until = NOW() + INTERVAL '365 days',
-             operating_status = 'OPEN',
+             operating_status = COALESCE(operating_status, 'OPEN'),
              status = 'ACTIVE'
          WHERE id = '${truck.id}'::uuid`,
       );

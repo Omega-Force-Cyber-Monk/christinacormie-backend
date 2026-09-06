@@ -5,13 +5,14 @@ import { IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
 export enum FavoriteTab {
   ALL = 'ALL',
   OPEN = 'OPEN',
+  CLOSED = 'CLOSED',
 }
 
 export class GetFavoritesQueryDto {
   @ApiPropertyOptional({
     enum: FavoriteTab,
     default: FavoriteTab.ALL,
-    description: 'Filter by tab: ALL or OPEN',
+    description: 'Filter by tab: ALL, OPEN, or CLOSED',
   })
   @IsOptional()
   @IsEnum(FavoriteTab)
