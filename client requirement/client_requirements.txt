@@ -1,0 +1,126 @@
+================================================================================
+BITE DROP — CLIENT REQUIREMENTS (NEW FEATURES & EXPANSION SPECIFICATIONS)
+================================================================================
+
+1. VENDOR PRICING & STRIPE COMMISSION STRUCTURE
+--------------------------------------------------------------------------------
+Vendor Subscription Tiers:
+• Free    — $0 / month
+• Starter — $10 / month
+• Pro     — $19 / month
+• Elite   — $49 / month
+
+Booking Availability & Dynamic Tier-Based Platform Commission:
+• Event booking must remain available to vendors across all subscription tiers.
+• The Bite Drop platform commission percentage is determined dynamically by the vendor's active subscription:
+  - Free Tier:    25% platform commission
+  - Starter Tier: 20% platform commission
+  - Pro Tier:     15% platform commission
+  - Elite Tier:   12% platform commission
+• Requirement: Rather than applying a fixed static commission rate, the platform must automatically identify the vendor's current subscription plan and apply the corresponding Bite Drop commission percentage to each booking (including enforcing the corresponding minimum deposit validation threshold).
+
+
+2. FOOD ORDERING — PICKUP & THIRD-PARTY DELIVERY
+--------------------------------------------------------------------------------
+Objective:
+Expand Bite Drop beyond event bookings to allow customers to order food directly from participating food trucks.
+
+Ordering Models:
+• Pickup: Customer orders and pays through Bite Drop and picks the food up directly from the truck window.
+• Delivery: Customer orders and pays through Bite Drop, and a third-party delivery service handles pickup from the truck and delivery to the customer.
+
+Third-Party Delivery Integration:
+• Exploring DoorDash Drive On-Demand as the third-party delivery provider.
+• Bite Drop will NOT employ or manage drivers. Bite Drop will provide the mobile/web ordering experience, while DoorDash (or another third-party delivery provider) handles the driver dispatch and last-mile delivery.
+• Currently contacting DoorDash regarding production/API access.
+
+Launch Strategy:
+• Does not need to be completed for the initial launch.
+• Architecture requirement: Ensure the current database, menu, and payment architecture is designed so that food ordering, pickup, and third-party delivery can be added later without requiring major platform rebuilds.
+
+
+3. FOOD LOVER & FOOD TRUCK LEADERBOARDS
+--------------------------------------------------------------------------------
+Objective:
+Add leaderboard and ranking functionality for both Food Lovers (Customers) and Food Truck Owners to encourage friendly competition, app engagement, and community participation.
+
+Ranking Criteria:
+• Food Trucks: Ranked based on activity and performance within Bite Drop, such as customer check-ins, completed bookings, ratings/reviews, and overall platform engagement.
+• Food Lovers: Ranked based on participation such as verified QR check-ins, Bite Drop loyalty points earned, and community activity.
+• Users must be able to view their current rank and standings within the app.
+
+
+4. FOOD LOVER (FOODIE) ONBOARDING QUESTIONS
+--------------------------------------------------------------------------------
+Objective:
+Expand the Food Lover onboarding experience beyond basic account creation to personalize recommendations, notifications, and overall app experience.
+
+Onboarding Flow & Question Sequence:
+• Screen 1: Welcome to Bite Drop
+  - "Find food trucks near you, book events, earn rewards, and be part of the community."
+
+• Screen 2: Challenge
+  - Question: "What's the hardest part about finding food trucks?" (Choose up to 2)
+    [ ] Knowing where they are
+    [ ] Knowing when they're open
+    [ ] Finding ones I'll actually like
+    [ ] Keeping up with my favorites
+
+• Screen 3: Events & Bookings
+  - Question: "Have you ever wanted a food truck for an event but didn't know where to start?" (Single choice)
+    ( ) Yes — definitely
+    ( ) A few times
+    ( ) Not yet, but I might
+    ( ) I'm just here to find food
+
+• Screen 4: What Matters Most
+  - Question: "What would make Bite Drop worth using for you?" (Select all that apply)
+    [ ] Finding trucks near me
+    [ ] Booking trucks for events
+    [ ] Earning rewards
+    [ ] Following my favorite trucks
+    [ ] Discovering new trucks
+
+• Screen 5: Completion
+  - "You're all set! Let's find your next favorite food truck."
+
+
+5. FOOD TRUCK OWNER (VENDOR) ONBOARDING QUESTIONS
+--------------------------------------------------------------------------------
+Objective:
+Collect information about the vendor's business, goals, and challenges during onboarding to store with their account for personalization, platform analytics, targeted marketing, and future feature improvements.
+
+Questionnaire Sequence:
+• Screen 1: Challenge
+  - Question: "What's your biggest challenge running your food truck?" (Choose up to 2)
+    [ ] Getting discovered by new customers
+    [ ] Finding more events & booking opportunities
+    [ ] Keeping customers coming back
+    [ ] Promoting where I'll be
+
+• Screen 2: Current Bookings
+  - Question: "How do you currently get most of your bookings?" (Single choice)
+    ( ) Social media
+    ( ) Word of mouth
+    ( ) Calls, texts, or DMs
+    ( ) Booking websites or platforms
+    ( ) I don't get many booking requests yet
+
+• Screen 3: Growth Goals
+  - Question: "What would help your food truck grow the most?" (Select all that apply)
+    [ ] More visibility & customers
+    [ ] More event bookings
+    [ ] More followers & repeat customers
+    [ ] An easier way to manage my truck online
+
+Additional Vendor Profile Discovery Points:
+• Experience in the food truck industry.
+• Biggest operational/business challenges.
+• Identification of which Bite Drop tools and features are most critical to their business.
+
+
+================================================================================
+STORAGE & ARCHITECTURE NOTE
+================================================================================
+All responses from both customer and vendor onboarding questionnaires must be stored directly with the user/vendor database account for future personalization, recommendation algorithms, marketing segmentation, and platform analytics.
+================================================================================

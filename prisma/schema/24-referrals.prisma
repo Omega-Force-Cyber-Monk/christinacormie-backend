@@ -1,0 +1,61 @@
+enum ReferralProgramType {
+  CUSTOMER
+  VENDOR
+}
+
+enum ReferralStatus {
+  PENDING
+  QUALIFIED
+  REWARDED
+  REJECTED
+  EXPIRED
+}
+
+model ReferralCode {
+  id          String              @id @default(uuid()) @db.Uuid
+  ownerUserId String              @map("owner_user_id") @db.Uuid
+  code        String              @unique @db.VarChar(50)
+  programType ReferralProgramType @map("program_type")
+  maximumUses Int?                @map("maximum_uses")
+  usageCount  Int                 @default(0) @map("usage_count")
+  expiresAt   DateTime?           @map("expires_at") @db.Timestamptz(6)
+  isActive    Boolean             @default(true) @map("is_active")
+  ownerUser   User                @relation(fields: [ownerUserId], references: [id])
+  referrals   Referral[]
+
+  @@map("referral_codes")
+}
+
+model Referral {
+  id             String              @id @default(uuid()) @db.Uuid
+  referralCodeId String              @map("referral_code_id") @db.Uuid
+  referrerUserId String              @map("referrer_user_id") @db.Uuid
+  referredUserId String              @unique @map("referred_user_id") @db.Uuid
+  programType    ReferralProgramType @map("program_type")
+  status         ReferralStatus      @default(PENDING)
+  qualifiedAt    DateTime?           @map("qualified_at") @db.Timestamptz(6)
+  rewardedAt     DateTime?           @map("rewarded_at") @db.Timestamptz(6)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  referralCode   ReferralCode        @relation(fields: [referralCodeId], references: [id])
+  referrerUser   User                @relation("ReferralReferrerUser", fields: [referrerUserId], references: [id])
+  referredUser   User                @relation("ReferralReferredUser", fields: [referredUserId], references: [id])
+  rewards        ReferralReward[]
+
+  @@map("referrals")
+}
+
+model ReferralReward {
+  id                String     @id @default(uuid()) @db.Uuid
+  referralId        String     @map("referral_id") @db.Uuid
+  beneficiaryUserId String     @map("beneficiary_user_id") @db.Uuid
+  rewardType        RewardType @map("reward_type")
+  rewardValue       Decimal?   @map("reward_value") @db.Decimal(12, 2)
+  points            Int?
+  status            String     @default("PENDING") @db.VarChar(30)
+  issuedAt          DateTime?  @map("issued_at") @db.Timestamptz(6)
+  expiresAt         DateTime?  @map("expires_at") @db.Timestamptz(6)
+  referral          Referral   @relation(fields: [referralId], references: [id])
+  beneficiaryUser   User       @relation(fields: [beneficiaryUserId], references: [id])
+
+  @@map("referral_rewards")
+}

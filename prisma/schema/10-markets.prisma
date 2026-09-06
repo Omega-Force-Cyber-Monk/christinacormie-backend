@@ -1,0 +1,27 @@
+enum MarketStatus {
+  PLANNED
+  PILOT
+  ACTIVE
+  PAUSED
+}
+
+model Market {
+  id                 String                @id @default(uuid()) @db.Uuid
+  name               String                @db.VarChar(150)
+  city               String                @db.VarChar(150)
+  state              String                @db.VarChar(150)
+  country            String                @default("USA") @db.VarChar(100)
+  timezone           String                @db.VarChar(100)
+  centerLocation     Unsupported("geography")? @map("center_location")
+  operatingRadiusKm  Decimal?              @map("operating_radius_km") @db.Decimal(8, 2)
+  status             MarketStatus          @default(PLANNED)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  vendors            Vendor[]
+  foodTrucks         FoodTruck[]
+  leaderboards       Leaderboard[]
+  campaigns          Campaign[]
+  featuredPlacements FeaturedPlacement[]
+
+  @@unique([city, state, country])
+  @@map("markets")
+}
