@@ -37,6 +37,16 @@ export class RewardsController {
     return this.rewardsService.getMyLoyaltyAccount(user.sub);
   }
 
+  @ApiOperation({
+    summary:
+      'Get customer rewards/profile page summary with points, tiers, credit, and recent activity',
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get('api/v1/rewards/me/profile-summary')
+  getMyProfileSummary(@CurrentUser() user: AuthenticatedUser) {
+    return this.rewardsService.getMyProfileSummary(user.sub);
+  }
+
   @ApiOperation({ summary: 'List available reward rules' })
   @UseGuards(JwtAuthGuard)
   @Get('api/v1/rewards/rules')
@@ -52,6 +62,20 @@ export class RewardsController {
     @Body() dto: RedeemRewardDto,
   ) {
     return this.rewardsService.redeemReward(user.sub, dto);
+  }
+
+  @ApiOperation({ summary: 'Claim daily app streak points once per day' })
+  @UseGuards(JwtAuthGuard)
+  @Post('api/v1/rewards/me/daily-streak')
+  claimDailyStreak(@CurrentUser() user: AuthenticatedUser) {
+    return this.rewardsService.claimDailyStreak(user.sub);
+  }
+
+  @ApiOperation({ summary: 'Claim birthday bonus points once per year' })
+  @UseGuards(JwtAuthGuard)
+  @Post('api/v1/rewards/me/birthday-bonus')
+  claimBirthdayBonus(@CurrentUser() user: AuthenticatedUser) {
+    return this.rewardsService.claimBirthdayBonus(user.sub);
   }
 
   @ApiOperation({

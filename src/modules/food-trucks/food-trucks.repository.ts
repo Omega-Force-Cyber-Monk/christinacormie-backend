@@ -30,6 +30,7 @@ export class FoodTrucksRepository {
       select: {
         id: true,
         status: true,
+        isVerified: true,
       },
     });
   }
@@ -45,7 +46,13 @@ export class FoodTrucksRepository {
     return this.prisma.foodTruck.findFirst({
       where: {
         slug,
+        status: 'ACTIVE',
         deletedAt: null,
+        vendor: {
+          status: 'APPROVED',
+          isVerified: true,
+          deletedAt: null,
+        },
       },
       include: this.publicFoodTruckInclude(),
     });
@@ -584,6 +591,9 @@ export class FoodTrucksRepository {
         AND (d.ends_at IS NULL OR d.ends_at >= ${now})
         AND f.status = 'ACTIVE'
         AND f.deleted_at IS NULL
+        AND v.status = 'APPROVED'
+        AND v.is_verified = true
+        AND v.deleted_at IS NULL
         AND ST_DWithin(
           d.location,
           ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography,
@@ -628,6 +638,9 @@ export class FoodTrucksRepository {
         AND d.status <> 'CANCELLED'
         AND f.status = 'ACTIVE'
         AND f.deleted_at IS NULL
+        AND v.status = 'APPROVED'
+        AND v.is_verified = true
+        AND v.deleted_at IS NULL
       ORDER BY d.starts_at ASC
       LIMIT ${limit}
     `;
@@ -679,6 +692,9 @@ export class FoodTrucksRepository {
         AND d.status <> 'CANCELLED'
         AND f.status = 'ACTIVE'
         AND f.deleted_at IS NULL
+        AND v.status = 'APPROVED'
+        AND v.is_verified = true
+        AND v.deleted_at IS NULL
         AND ST_DWithin(
           d.location,
           ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326)::geography,

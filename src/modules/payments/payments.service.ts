@@ -14,6 +14,9 @@ import { StripeClientService } from './stripe-client.service';
 
 @Injectable()
 export class PaymentsService {
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
   constructor(
     private readonly paymentsRepository: PaymentsRepository,
     private readonly notificationsService: NotificationsService,
@@ -213,6 +216,10 @@ export class PaymentsService {
 
     if (!vendor || payment.vendorId !== vendor.id) {
       throw new ForbiddenException('Payment is not visible to this user');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     return payment;
@@ -484,8 +491,12 @@ export class PaymentsService {
   private async ensureVendor(userId: string) {
     const vendor = await this.paymentsRepository.findVendorByUserId(userId);
 
-    if (!vendor) {
+    if (!vendor || vendor.deletedAt) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     return vendor;

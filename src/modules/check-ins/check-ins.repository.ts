@@ -15,7 +15,7 @@ export class CheckInsRepository {
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      select: { id: true },
+      select: { id: true, status: true, isVerified: true },
     });
   }
 
@@ -43,8 +43,17 @@ export class CheckInsRepository {
             name: true,
             slug: true,
             profileImageUrl: true,
+            status: true,
             locationValidUntil: true,
             deletedAt: true,
+            vendor: {
+              select: {
+                id: true,
+                status: true,
+                isVerified: true,
+                deletedAt: true,
+              },
+            },
           },
         },
       },
@@ -79,6 +88,11 @@ export class CheckInsRepository {
     const trucks = await this.prisma.foodTruck.findMany({
       where: {
         vendorId,
+        vendor: {
+          status: 'APPROVED',
+          isVerified: true,
+          deletedAt: null,
+        },
         deletedAt: null,
       },
       select: { id: true },
@@ -154,6 +168,16 @@ export class CheckInsRepository {
         status: { in: ['PENDING', 'VERIFIED'] },
       },
       orderBy: { checkedInAt: 'desc' },
+    });
+  }
+
+  findFirstVerifiedCheckIn(userId: string) {
+    return this.prisma.checkIn.findFirst({
+      where: {
+        userId,
+        status: 'VERIFIED',
+      },
+      orderBy: { checkedInAt: 'asc' },
     });
   }
 
@@ -252,6 +276,7 @@ export class CheckInsRepository {
     userId: string,
     foodTruckId: string,
     dto: CreateCheckInDto,
+    rejectionReason = 'Duplicate check-in window',
   ) {
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
       INSERT INTO check_ins (
@@ -280,7 +305,7 @@ export class CheckInsRepository {
         ${dto.deviceId ?? null},
         100,
         false,
-        'Duplicate check-in window'
+        ${rejectionReason}
       )
       RETURNING id
     `;

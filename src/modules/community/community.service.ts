@@ -10,15 +10,34 @@ import { CreateVendorOfferDto } from './dto/create-vendor-offer.dto';
 import { NewFoodTruckLeadDto } from './dto/new-food-truck-lead.dto';
 import { ReactRequestDto } from './dto/react-request.dto';
 import { RequestMediaDto } from './dto/request-media.dto';
+import { RewardsService } from '../rewards/rewards.service';
 import { CommunityRepository } from './community.repository';
 
 @Injectable()
 export class CommunityService {
-  constructor(private readonly communityRepository: CommunityRepository) {}
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
+  constructor(
+    private readonly communityRepository: CommunityRepository,
+    private readonly rewardsService: RewardsService,
+  ) {}
 
   async createPublicRequest(userId: string, dto: CreateCommunityRequestDto) {
     this.validateRequestDto(dto);
-    return this.communityRepository.createRequest(userId, dto, 'PUBLIC');
+    const request = await this.communityRepository.createRequest(
+      userId,
+      dto,
+      'PUBLIC',
+    );
+
+    if (!request) {
+      throw new BadRequestException('Community post could not be created');
+    }
+
+    await this.rewardsService.awardPoints(userId, 'COMMUNITY_POST', request.id);
+
+    return request;
   }
 
   listOpenRequests() {
@@ -300,6 +319,10 @@ export class CommunityService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
+    }
+
     return vendor;
   }
 
@@ -309,6 +332,15 @@ export class CommunityService {
 
     if (!foodTruck || foodTruck.deletedAt) {
       throw new NotFoundException('Food truck not found');
+    }
+
+    if (
+      foodTruck.status !== 'ACTIVE' ||
+      foodTruck.vendor.deletedAt ||
+      foodTruck.vendor.status !== 'APPROVED' ||
+      !foodTruck.vendor.isVerified
+    ) {
+      throw new ForbiddenException('Food truck is not available');
     }
 
     return foodTruck;

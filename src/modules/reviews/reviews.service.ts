@@ -15,6 +15,9 @@ import { ReviewsRepository } from './reviews.repository';
 
 @Injectable()
 export class ReviewsService {
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
   constructor(
     private readonly reviewsRepository: ReviewsRepository,
     private readonly rewardsService: RewardsService,
@@ -131,6 +134,10 @@ export class ReviewsService {
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     return vendor;

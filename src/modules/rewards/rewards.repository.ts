@@ -19,14 +19,45 @@ export class RewardsRepository {
   findVendorById(vendorId: string) {
     return this.prisma.vendor.findUnique({
       where: { id: vendorId },
-      select: { id: true, userId: true, deletedAt: true },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        isVerified: true,
+        deletedAt: true,
+      },
     });
   }
 
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      select: { id: true, userId: true, deletedAt: true },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        isVerified: true,
+        deletedAt: true,
+      },
+    });
+  }
+
+  findFoodTruckById(foodTruckId: string) {
+    return this.prisma.foodTruck.findUnique({
+      where: { id: foodTruckId },
+      select: {
+        id: true,
+        vendorId: true,
+        status: true,
+        deletedAt: true,
+        vendor: {
+          select: {
+            status: true,
+            isVerified: true,
+            deletedAt: true,
+          },
+        },
+      },
     });
   }
 
@@ -70,6 +101,20 @@ export class RewardsRepository {
         AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
       },
       orderBy: { name: 'asc' },
+    });
+  }
+
+  listActivePointRules() {
+    const now = new Date();
+
+    return this.prisma.rewardRule.findMany({
+      where: {
+        rewardType: 'POINTS',
+        isActive: true,
+        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+        AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+      },
+      orderBy: { startsAt: 'desc' },
     });
   }
 
@@ -307,22 +352,213 @@ export class RewardsRepository {
     });
   }
 
-  async completeVendorRedemption(redemptionId: string, vendorId: string) {
-    return this.prisma.rewardRedemption.update({
-      where: { id: redemptionId },
-      data: {
-        status: 'COMPLETED',
-        usedAt: new Date(),
-        vendorId,
+  async refundExpiredPendingRedemptions(userId?: string) {
+    const expiredRedemptions = await this.prisma.rewardRedemption.findMany({
+      where: {
+        status: 'PENDING',
+        expiresAt: { lt: new Date() },
+        ...(userId ? { userId } : {}),
       },
-      include: {
-        user: {
-          include: {
-            profile: true,
-            loyaltyAccount: true,
+      select: {
+        id: true,
+        userId: true,
+        pointsSpent: true,
+      },
+    });
+
+    if (!expiredRedemptions.length) {
+      return { refundedCount: 0 };
+    }
+
+    let refundedCount = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const redemption of expiredRedemptions) {
+        const expired = await tx.rewardRedemption.updateMany({
+          where: {
+            id: redemption.id,
+            status: 'PENDING',
+          },
+          data: {
+            status: 'EXPIRED',
+          },
+        });
+
+        if (expired.count === 0 || redemption.pointsSpent <= 0) {
+          continue;
+        }
+
+        const account = await tx.loyaltyAccount.upsert({
+          where: { userId: redemption.userId },
+          create: { userId: redemption.userId },
+          update: {},
+        });
+        const balanceAfter = account.availablePoints + redemption.pointsSpent;
+
+        await tx.loyaltyAccount.update({
+          where: { id: account.id },
+          data: {
+            availablePoints: balanceAfter,
+            redeemedPoints: { decrement: redemption.pointsSpent },
+            updatedAt: new Date(),
+          },
+        });
+
+        await tx.loyaltyTransaction.create({
+          data: {
+            loyaltyAccountId: account.id,
+            transactionType: 'REFUND',
+            points: redemption.pointsSpent,
+            balanceBefore: account.availablePoints,
+            balanceAfter,
+            sourceType: 'EXPIRED_CREDIT_REDEMPTION_REFUND',
+            sourceId: redemption.id,
+            idempotencyKey: `expired_credit_refund:${redemption.id}`,
+            description: 'Refunded expired credit redemption code',
+          },
+        });
+
+        refundedCount += 1;
+      }
+    });
+
+    return { refundedCount };
+  }
+
+  findCheckInsByIds(ids: string[]) {
+    if (!ids.length) {
+      return [];
+    }
+
+    return this.prisma.checkIn.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        foodTruck: {
+          select: {
+            name: true,
+            currentAddress: true,
           },
         },
       },
+    });
+  }
+
+  findReviewsByIds(ids: string[]) {
+    if (!ids.length) {
+      return [];
+    }
+
+    return this.prisma.review.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        rating: true,
+        foodTruck: {
+          select: {
+            name: true,
+            currentAddress: true,
+          },
+        },
+      },
+    });
+  }
+
+  findBookingsByIds(ids: string[]) {
+    if (!ids.length) {
+      return [];
+    }
+
+    return this.prisma.booking.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        eventName: true,
+        startsAt: true,
+        foodTruck: {
+          select: {
+            name: true,
+            currentAddress: true,
+          },
+        },
+      },
+    });
+  }
+
+  findFoodTrucksByIds(ids: string[]) {
+    if (!ids.length) {
+      return [];
+    }
+
+    return this.prisma.foodTruck.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        currentAddress: true,
+      },
+    });
+  }
+
+  findCommunityRequestsByIds(ids: string[]) {
+    if (!ids.length) {
+      return [];
+    }
+
+    return this.prisma.communityRequest.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        title: true,
+        address: true,
+      },
+    });
+  }
+
+  findRewardRedemptionsByIds(ids: string[]) {
+    if (!ids.length) {
+      return [];
+    }
+
+    return this.prisma.rewardRedemption.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        rewardValue: true,
+        foodTruckId: true,
+      },
+    });
+  }
+
+  async completeVendorRedemption(redemptionId: string, vendorId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const completed = await tx.rewardRedemption.updateMany({
+        where: {
+          id: redemptionId,
+          status: 'PENDING',
+        },
+        data: {
+          status: 'COMPLETED',
+          usedAt: new Date(),
+          vendorId,
+        },
+      });
+
+      if (completed.count === 0) {
+        return null;
+      }
+
+      return tx.rewardRedemption.findUnique({
+        where: { id: redemptionId },
+        include: {
+          user: {
+            include: {
+              profile: true,
+              loyaltyAccount: true,
+            },
+          },
+        },
+      });
     });
   }
 
@@ -425,6 +661,17 @@ export class RewardsRepository {
       },
       user: {
         select: {
+          id: true,
+          email: true,
+          profile: {
+            select: {
+              firstName: true,
+              lastName: true,
+              displayName: true,
+              dateOfBirth: true,
+              avatarUrl: true,
+            },
+          },
           userBadges: {
             where: { revokedAt: null },
             include: { badge: true },

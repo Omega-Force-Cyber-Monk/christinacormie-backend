@@ -20,6 +20,9 @@ import { BookingsRepository } from './bookings.repository';
 
 @Injectable()
 export class BookingsService {
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
   constructor(
     private readonly bookingsRepository: BookingsRepository,
     private readonly notificationsService: NotificationsService,
@@ -76,7 +79,8 @@ export class BookingsService {
     return this.bookingsRepository.listCustomerBookings(userId);
   }
 
-  listVendorBookings(userId: string) {
+  async listVendorBookings(userId: string) {
+    await this.ensureVendor(userId);
     return this.bookingsRepository.listVendorBookingsByUserId(userId);
   }
 
@@ -131,6 +135,16 @@ export class BookingsService {
       updatedBooking,
       'Booking accepted',
       NotificationEventType.BOOKING_ACCEPTED,
+    );
+
+    await this.rewardsService.awardPoints(
+      booking.customerId,
+      'BOOKING',
+      booking.id,
+      {
+        idempotencyKey: `BOOKING:${booking.customerId}:${booking.id}`,
+        description: 'Booking reward',
+      },
     );
 
     return updatedBooking;
@@ -301,7 +315,10 @@ export class BookingsService {
       dto,
     );
 
-    await this.rewardsService.awardPoints(userId, 'BOOKING', booking!.id);
+    await this.rewardsService.awardPoints(userId, 'BOOKING', booking!.id, {
+      idempotencyKey: `BOOKING:${userId}:${booking!.id}`,
+      description: 'Booking reward',
+    });
     await this.notificationsService.notifyVendorBookingUpdate(
       userId,
       booking!,
@@ -399,6 +416,10 @@ export class BookingsService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
+    }
+
     return vendor;
   }
 
@@ -408,6 +429,14 @@ export class BookingsService {
 
     if (!foodTruck || foodTruck.deletedAt) {
       throw new NotFoundException('Food truck not found');
+    }
+
+    if (
+      foodTruck.vendor.deletedAt ||
+      foodTruck.vendor.status !== 'APPROVED' ||
+      !foodTruck.vendor.isVerified
+    ) {
+      throw new ForbiddenException('Food truck is not available for booking');
     }
 
     return foodTruck;

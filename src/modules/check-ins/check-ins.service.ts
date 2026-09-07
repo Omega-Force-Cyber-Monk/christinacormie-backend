@@ -12,6 +12,9 @@ import { CheckInsRepository } from './check-ins.repository';
 
 @Injectable()
 export class CheckInsService {
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
   constructor(
     private readonly checkInsRepository: CheckInsRepository,
     private readonly notificationsService: NotificationsService,
@@ -59,36 +62,41 @@ export class CheckInsService {
     const loyaltyAccount =
       await this.rewardsService.getMyLoyaltyAccount(userId);
     const totalPoints = loyaltyAccount.availablePoints;
-    const availableCreditAmount = Math.floor(totalPoints / 100);
-
-    const duplicateSince = new Date(Date.now() - 12 * 60 * 60_000);
-    const duplicate = await this.checkInsRepository.findRecentCheckIn(
-      userId,
-      qrCode.foodTruckId,
-      duplicateSince,
+    const loyaltyProgress = this.rewardsService.getLoyaltyProgressForPoints(
+      loyaltyAccount.availablePoints,
+      loyaltyAccount.lifetimePoints,
+      loyaltyAccount.redeemedPoints,
     );
 
-    if (duplicate) {
-      const duplicateCheckIn =
+    const firstVerifiedCheckIn =
+      await this.checkInsRepository.findFirstVerifiedCheckIn(userId);
+
+    if (firstVerifiedCheckIn) {
+      const ineligibleCheckIn =
         await this.checkInsRepository.createDuplicateCheckIn(
           userId,
           qrCode.foodTruckId,
           dto,
+          'Customer is not eligible for check-in points after first successful QR check-in',
         );
 
-      if (duplicateCheckIn) {
-        await this.notificationsService.notifyCheckIn(userId, duplicateCheckIn);
+      if (ineligibleCheckIn) {
+        await this.notificationsService.notifyCheckIn(
+          userId,
+          ineligibleCheckIn,
+        );
       }
 
       return {
-        checkIn: duplicateCheckIn,
-        experienceState: 'ALREADY_CHECKED_IN_TODAY',
-        availableCreditAmount,
+        checkIn: ineligibleCheckIn,
+        experienceState: 'NOT_ELIGIBLE_FOR_CHECK_IN_POINTS',
+        availableCreditAmount: loyaltyProgress.availableCreditAmount,
         pointsEarned: 0,
         currentPoints: totalPoints,
-        tierName: totalPoints >= 2500 ? 'Drop Legend' : 'Drop Hunter',
-        nextTierPoints: 2500,
-        message: 'Already checked in today.',
+        tierName: loyaltyProgress.currentTier.name,
+        nextTierPoints: loyaltyProgress.nextTier?.requiredPoints ?? null,
+        message:
+          'You are not eligible for check-in points right now. First-time QR check-in points can only be earned once.',
       };
     }
 
@@ -107,8 +115,14 @@ export class CheckInsService {
         userId,
         'CHECK_IN',
         checkIn.id,
+        {
+          idempotencyKey: `FIRST_QR_CHECK_IN:${userId}`,
+          description: 'First-time QR check-in bonus',
+        },
       );
-      pointsEarned = awardResult.transaction?.points ?? 10;
+      pointsEarned = awardResult.awarded
+        ? (awardResult.transaction?.points ?? 10)
+        : 0;
     }
 
     if (checkIn) {
@@ -117,8 +131,13 @@ export class CheckInsService {
 
     const updatedAccount =
       await this.rewardsService.getMyLoyaltyAccount(userId);
+    const updatedProgress = this.rewardsService.getLoyaltyProgressForPoints(
+      updatedAccount.availablePoints,
+      updatedAccount.lifetimePoints,
+      updatedAccount.redeemedPoints,
+    );
     const updatedTotalPoints = updatedAccount.availablePoints;
-    const updatedCreditAmount = Math.floor(updatedTotalPoints / 100);
+    const updatedCreditAmount = updatedProgress.availableCreditAmount;
 
     let experienceState = 'NEW_USER';
     if (updatedCreditAmount >= 5) {
@@ -135,8 +154,8 @@ export class CheckInsService {
       availableCreditAmount: updatedCreditAmount,
       pointsEarned,
       currentPoints: updatedTotalPoints,
-      tierName: updatedTotalPoints >= 2500 ? 'Drop Legend' : 'Drop Hunter',
-      nextTierPoints: 2500,
+      tierName: updatedProgress.currentTier.name,
+      nextTierPoints: updatedProgress.nextTier?.requiredPoints ?? null,
       message: `Check-in complete! Earned +${pointsEarned} points.`,
     };
   }
@@ -229,6 +248,17 @@ export class CheckInsService {
       throw new NotFoundException('QR code not found');
     }
 
+    if (
+      qrCode.foodTruck.status !== 'ACTIVE' ||
+      qrCode.foodTruck.vendor.deletedAt ||
+      qrCode.foodTruck.vendor.status !== 'APPROVED' ||
+      !qrCode.foodTruck.vendor.isVerified
+    ) {
+      throw new ForbiddenException(
+        'This food truck QR code is not available until the vendor is approved.',
+      );
+    }
+
     return qrCode;
   }
 
@@ -248,6 +278,10 @@ export class CheckInsService {
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     const foodTruck =

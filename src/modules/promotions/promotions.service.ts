@@ -12,6 +12,9 @@ import { PromotionsRepository } from './promotions.repository';
 
 @Injectable()
 export class PromotionsService {
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
   constructor(private readonly promotionsRepository: PromotionsRepository) {}
 
   async createPromotion(userId: string, dto: CreatePromotionDto) {
@@ -46,6 +49,14 @@ export class PromotionsService {
 
     if (!promotion || promotion.foodTruck.deletedAt) {
       throw new NotFoundException('Promotion not found');
+    }
+
+    if (
+      promotion.foodTruck.vendor.deletedAt ||
+      promotion.foodTruck.vendor.status !== 'APPROVED' ||
+      !promotion.foodTruck.vendor.isVerified
+    ) {
+      throw new ForbiddenException('Promotion is not available');
     }
 
     const now = new Date();
@@ -143,6 +154,14 @@ export class PromotionsService {
       throw new NotFoundException('Food truck not found');
     }
 
+    if (
+      foodTruck.vendor.deletedAt ||
+      foodTruck.vendor.status !== 'APPROVED' ||
+      !foodTruck.vendor.isVerified
+    ) {
+      throw new ForbiddenException('Food truck promotions are not available');
+    }
+
     return foodTruck;
   }
 
@@ -151,6 +170,10 @@ export class PromotionsService {
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     const foodTruck = await this.ensureFoodTruckExists(foodTruckId);
@@ -167,6 +190,10 @@ export class PromotionsService {
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     const promotion =

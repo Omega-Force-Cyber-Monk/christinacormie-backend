@@ -1,5 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  IsDate,
   IsEmail,
   IsOptional,
   IsString,
@@ -36,6 +38,12 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(30)
   phone?: string;
+
+  @ApiPropertyOptional({ example: '1994-08-12' })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  dateOfBirth?: Date;
 
   @ApiPropertyOptional({
     example: 'https://cdn.bitedrop.com/avatars/user123.jpg',

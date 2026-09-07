@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { RewardsService } from '../rewards/rewards.service';
 import { RegisterDeviceTokenDto } from './dto/register-device-token.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -13,7 +14,10 @@ import { UpdateSettingsDto } from './dto/update-settings.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rewardsService: RewardsService,
+  ) {}
 
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -69,7 +73,7 @@ export class UsersService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedProfile = await this.prisma.$transaction(async (tx) => {
       if (
         phone !== undefined ||
         (email && email.toLowerCase() !== user.email?.toLowerCase())
@@ -98,6 +102,20 @@ export class UsersService {
         email: email ? email.toLowerCase() : user.email,
       };
     });
+
+    if (this.isProfileComplete(updatedProfile)) {
+      await this.rewardsService.awardPoints(
+        userId,
+        'PROFILE_COMPLETION',
+        userId,
+        {
+          idempotencyKey: `PROFILE_COMPLETION:${userId}`,
+          description: 'Completed profile setup',
+        },
+      );
+    }
+
+    return updatedProfile;
   }
 
   async updateSettings(userId: string, dto: UpdateSettingsDto) {
@@ -292,6 +310,20 @@ export class UsersService {
       AccountStatus.DEACTIVATED,
       AccountStatus.BLOCKED,
     ].includes(status);
+  }
+
+  private isProfileComplete(profile: any) {
+    const hasName = Boolean(
+      profile.displayName ||
+        profile.firstName ||
+        `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim(),
+    );
+
+    return Boolean(
+      hasName &&
+        profile.email &&
+        profile.dateOfBirth,
+    );
   }
 
   private toUserResponse(user: any) {

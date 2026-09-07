@@ -11,7 +11,7 @@ export class PromotionsRepository {
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      select: { id: true },
+      select: { id: true, status: true, isVerified: true },
     });
   }
 
@@ -22,6 +22,13 @@ export class PromotionsRepository {
         id: true,
         vendorId: true,
         deletedAt: true,
+        vendor: {
+          select: {
+            status: true,
+            isVerified: true,
+            deletedAt: true,
+          },
+        },
       },
     });
   }
@@ -58,6 +65,13 @@ export class PromotionsRepository {
             name: true,
             slug: true,
             deletedAt: true,
+            vendor: {
+              select: {
+                status: true,
+                isVerified: true,
+                deletedAt: true,
+              },
+            },
           },
         },
       },

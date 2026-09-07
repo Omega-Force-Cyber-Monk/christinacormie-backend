@@ -25,6 +25,8 @@ import { VendorsRepository } from './vendors.repository';
 @Injectable()
 export class VendorsService {
   private readonly logger = new Logger(VendorsService.name);
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
 
   constructor(
     private readonly vendorsRepository: VendorsRepository,
@@ -48,6 +50,8 @@ export class VendorsService {
 
   async getMyVendorQrCode(userId: string) {
     const vendor = await this.getMyVendorProfile(userId);
+    this.ensureVendorApproved(vendor);
+
     const qrs = await this.checkInsService.ensureQrCodesForApprovedVendor(
       vendor.id,
     );
@@ -214,6 +218,8 @@ export class VendorsService {
 
   async getMyVendorAnalytics(userId: string) {
     const vendor = await this.getMyVendorProfile(userId);
+    this.ensureVendorApproved(vendor);
+
     return this.vendorsRepository.getVendorAnalytics(vendor.id);
   }
 
@@ -319,6 +325,15 @@ export class VendorsService {
     }
 
     return state.trim().toUpperCase();
+  }
+
+  private ensureVendorApproved(vendor: {
+    status?: string;
+    isVerified?: boolean;
+  }) {
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
+    }
   }
 
   private ensureCloudinaryReady() {

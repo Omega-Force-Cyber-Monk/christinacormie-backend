@@ -15,17 +15,74 @@ import { UpdateRewardRuleDto } from './dto/update-reward-rule.dto';
 import { VendorConfirmRedemptionDto } from './dto/vendor-confirm-redemption.dto';
 import { RewardsRepository } from './rewards.repository';
 
+const POINTS_PER_ACTION = [
+  { sourceType: 'CHECK_IN', action: 'QR code check-in', points: 10 },
+  { sourceType: 'REVIEW', action: 'Leave a verified review', points: 25 },
+  { sourceType: 'FOLLOW_TRUCK', action: 'Follow a food truck', points: 5 },
+  { sourceType: 'BOOKING', action: 'Make a booking', points: 100 },
+  { sourceType: 'COMMUNITY_POST', action: 'Community post', points: 10 },
+  { sourceType: 'REFERRAL_CUSTOMER', action: 'Refer a friend', points: 500 },
+  { sourceType: 'DAILY_STREAK', action: 'Daily app streak', points: 5 },
+  {
+    sourceType: 'PROFILE_COMPLETION',
+    action: 'Complete profile setup',
+    points: 50,
+  },
+  { sourceType: 'BIRTHDAY_BONUS', action: 'Birthday bonus', points: 50 },
+];
+
 const DEFAULT_POINT_RULES: Record<string, number> = {
-  FOLLOW_TRUCK: 5,
   CHECK_IN: 10,
-  REVIEW: 20,
-  REFERRAL_CUSTOMER: 50,
+  REVIEW: 25,
+  FOLLOW_TRUCK: 5,
+  BOOKING: 100,
+  COMMUNITY_POST: 10,
+  REFERRAL_CUSTOMER: 500,
   REFERRAL_VENDOR: 100,
-  BOOKING: 25,
+  DAILY_STREAK: 5,
+  PROFILE_COMPLETION: 50,
+  BIRTHDAY_BONUS: 50,
 };
+
+const LOYALTY_TIERS = [
+  {
+    slug: 'foodie',
+    name: 'Foodie',
+    requiredPoints: 0,
+    creditAmount: 0,
+    level: 1,
+  },
+  {
+    slug: 'explorer',
+    name: 'Explorer',
+    requiredPoints: 500,
+    creditAmount: 5,
+    level: 2,
+  },
+  {
+    slug: 'drop_hunter',
+    name: 'Drop Hunter',
+    requiredPoints: 2000,
+    creditAmount: 10,
+    level: 3,
+  },
+  {
+    slug: 'bitedrop_legend',
+    name: 'BiteDrop Legend',
+    requiredPoints: 10000,
+    creditAmount: 25,
+    level: 4,
+  },
+];
+
+const POINTS_PER_DOLLAR = 100;
+const MAX_REDEEM_PER_VISIT = 5;
 
 @Injectable()
 export class RewardsService {
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
   constructor(
     private readonly rewardsRepository: RewardsRepository,
     private readonly notificationsService: NotificationsService,
@@ -33,6 +90,47 @@ export class RewardsService {
 
   getMyLoyaltyAccount(userId: string) {
     return this.rewardsRepository.ensureLoyaltyAccount(userId);
+  }
+
+  async getMyProfileSummary(userId: string) {
+    await this.rewardsRepository.refundExpiredPendingRedemptions(userId);
+    const account = await this.rewardsRepository.ensureLoyaltyAccount(userId);
+    const pointsPerAction = await this.getPointsPerAction();
+    const loyalty = this.getLoyaltyProgressForPoints(
+      account.availablePoints,
+      account.lifetimePoints,
+      account.redeemedPoints,
+    );
+    const profile = account.user?.profile;
+    const displayName =
+      profile?.displayName ||
+      `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim() ||
+      account.user?.email ||
+      'Customer';
+
+    return {
+      profile: {
+        id: account.userId,
+        name: displayName,
+        email: account.user?.email ?? null,
+        avatarUrl: profile?.avatarUrl ?? null,
+        level: loyalty.currentTier.level,
+      },
+      loyalty,
+      tiers: LOYALTY_TIERS.map((tier) => ({
+        ...tier,
+        isCurrent: tier.slug === loyalty.currentTier.slug,
+      })),
+      pointsPerAction,
+      recentActivity: await this.getRecentActivity(account.transactions ?? []),
+      actions: {
+        canRedeem: loyalty.availableCreditAmount >= 1,
+        canInviteFriends: true,
+        canRequestTruck: true,
+        canManageSettings: true,
+        canOpenSupport: false,
+      },
+    };
   }
 
   listRewardRules() {
@@ -163,14 +261,107 @@ export class RewardsService {
     return redemption;
   }
 
+  async claimDailyStreak(userId: string) {
+    await this.ensureUserExists(userId);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const award = await this.awardPoints(userId, 'DAILY_STREAK', userId, {
+      idempotencyKey: `DAILY_STREAK:${userId}:${today}`,
+      description: 'Daily app streak bonus',
+    });
+
+    return {
+      awarded: award.awarded,
+      pointsEarned: award.transaction?.points ?? 0,
+      currentPoints: award.transaction?.balanceAfter ?? null,
+      message: award.awarded
+        ? 'Daily app streak points added.'
+        : 'Daily app streak points already claimed today.',
+    };
+  }
+
+  async claimBirthdayBonus(userId: string) {
+    const account = await this.rewardsRepository.ensureLoyaltyAccount(userId);
+    const birthday = account.user?.profile?.dateOfBirth;
+
+    if (!birthday) {
+      throw new BadRequestException(
+        'Date of birth is required to claim birthday bonus',
+      );
+    }
+
+    const now = new Date();
+
+    if (
+      birthday.getUTCMonth() !== now.getUTCMonth() ||
+      birthday.getUTCDate() !== now.getUTCDate()
+    ) {
+      throw new BadRequestException(
+        'Birthday bonus is only available on your birthday',
+      );
+    }
+
+    const year = now.getUTCFullYear();
+    const award = await this.awardPoints(userId, 'BIRTHDAY_BONUS', userId, {
+      idempotencyKey: `BIRTHDAY_BONUS:${userId}:${year}`,
+      description: 'Birthday bonus',
+    });
+
+    return {
+      awarded: award.awarded,
+      pointsEarned: award.transaction?.points ?? 0,
+      currentPoints: award.transaction?.balanceAfter ?? null,
+      message: award.awarded
+        ? 'Birthday bonus points added.'
+        : 'Birthday bonus already claimed this year.',
+    };
+  }
+
   async createRedemptionCode(userId: string, dto: CreateRedemptionCodeDto) {
+    await this.rewardsRepository.refundExpiredPendingRedemptions(userId);
     const pointsSpent = dto.amount * 100;
     const account = await this.rewardsRepository.ensureLoyaltyAccount(userId);
+    const loyalty = this.getLoyaltyProgressForPoints(
+      account.availablePoints,
+      account.lifetimePoints,
+      account.redeemedPoints,
+    );
 
     if (account.availablePoints < pointsSpent) {
       throw new BadRequestException(
         `Not enough points. ${pointsSpent} points required for $${dto.amount} credit.`,
       );
+    }
+
+    if (dto.amount > MAX_REDEEM_PER_VISIT) {
+      throw new BadRequestException(
+        `Maximum redemption per visit is $${MAX_REDEEM_PER_VISIT}.`,
+      );
+    }
+
+    if (dto.amount > loyalty.availableCreditAmount) {
+      throw new BadRequestException(
+        `Redeem amount exceeds available credit. You can redeem up to $${loyalty.availableCreditAmount} now.`,
+      );
+    }
+
+    if (dto.foodTruckId) {
+      const foodTruck = await this.rewardsRepository.findFoodTruckById(
+        dto.foodTruckId,
+      );
+
+      if (!foodTruck || foodTruck.deletedAt) {
+        throw new NotFoundException('Food truck not found');
+      }
+
+      if (
+        foodTruck.status !== 'ACTIVE' ||
+        foodTruck.vendor.deletedAt ||
+        foodTruck.vendor.status !== 'APPROVED' ||
+        !foodTruck.vendor.isVerified
+      ) {
+        throw new ForbiddenException('Food truck is not available for redemption');
+      }
     }
 
     const backupCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -212,6 +403,10 @@ export class RewardsService {
       );
     }
 
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
+    }
+
     const tokenOrCode = dto.redemptionToken?.trim() ?? dto.manualCode?.trim();
 
     if (!tokenOrCode) {
@@ -229,18 +424,45 @@ export class RewardsService {
       throw new NotFoundException('Invalid or expired redemption code');
     }
 
+    if (redemption.foodTruckId) {
+      const redemptionTruck = await this.rewardsRepository.findFoodTruckById(
+        redemption.foodTruckId,
+      );
+
+      if (
+        !redemptionTruck ||
+        redemptionTruck.deletedAt ||
+        redemptionTruck.vendorId !== vendor.id
+      ) {
+        throw new BadRequestException(
+          'This redemption code was generated for another food truck',
+        );
+      }
+    }
+
     const completed = await this.rewardsRepository.completeVendorRedemption(
       redemption.id,
       vendor.id,
     );
+
+    if (!completed) {
+      throw new BadRequestException(
+        'Redemption code has already been used or is no longer pending',
+      );
+    }
 
     const customerName =
       (completed.user.profile?.displayName ??
         `${completed.user.profile?.firstName ?? ''} ${completed.user.profile?.lastName ?? ''}`.trim()) ||
       'Customer';
 
-    const remainingPoints = completed.user.loyaltyAccount?.availablePoints ?? 0;
-    const remainingCredit = (remainingPoints / 100).toFixed(2);
+    const remainingProgress = this.getLoyaltyProgressForPoints(
+      completed.user.loyaltyAccount?.availablePoints ?? 0,
+      completed.user.loyaltyAccount?.lifetimePoints ?? 0,
+      completed.user.loyaltyAccount?.redeemedPoints ?? 0,
+    );
+    const remainingCredit =
+      remainingProgress.availableCreditAmount.toFixed(2);
     const amountApplied = Number(
       completed.rewardValue ?? redemption.rewardValue ?? 0,
     ).toFixed(2);
@@ -265,6 +487,53 @@ export class RewardsService {
     return this.rewardsRepository.listBadges();
   }
 
+  getLoyaltyProgressForPoints(
+    availablePoints: number,
+    lifetimePoints = availablePoints,
+    redeemedPoints = 0,
+  ) {
+    const currentTier = [...LOYALTY_TIERS]
+      .reverse()
+      .find((tier) => lifetimePoints >= tier.requiredPoints)!;
+    const nextTier =
+      LOYALTY_TIERS.find(
+        (tier) => tier.requiredPoints > lifetimePoints,
+      ) ?? null;
+    const finalTier = LOYALTY_TIERS[LOYALTY_TIERS.length - 1];
+    const redeemableByPoints = Math.floor(availablePoints / POINTS_PER_DOLLAR);
+    const availableCreditAmount = Math.min(
+      redeemableByPoints,
+      currentTier.creditAmount,
+    );
+    const target = finalTier.requiredPoints;
+
+    return {
+      availablePoints,
+      lifetimePoints,
+      redeemedPoints,
+      availableCreditAmount,
+      maxRedeemPerVisit: MAX_REDEEM_PER_VISIT,
+      currentTier,
+      nextTier: nextTier
+        ? {
+            ...nextTier,
+            pointsRemaining: Math.max(
+              nextTier.requiredPoints - lifetimePoints,
+              0,
+            ),
+          }
+        : null,
+      progress: {
+        current: lifetimePoints,
+        target,
+        percentage:
+          target === 0
+            ? 100
+            : Number(Math.min((lifetimePoints / target) * 100, 100).toFixed(2)),
+      },
+    };
+  }
+
   listMyCustomerBadges(userId: string) {
     return this.rewardsRepository.listUserBadges(userId);
   }
@@ -274,6 +543,10 @@ export class RewardsService {
 
     if (!vendor || vendor.deletedAt) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     return this.rewardsRepository.listVendorBadges(vendor.id);
@@ -341,6 +614,248 @@ export class RewardsService {
     }
 
     return DEFAULT_POINT_RULES[sourceType] ?? 0;
+  }
+
+  private async getPointsPerAction() {
+    const rules = await this.rewardsRepository.listActivePointRules();
+    const overridePointsBySourceType = new Map<string, number>();
+
+    for (const rule of rules) {
+      if (
+        rule.rewardValue !== null &&
+        !overridePointsBySourceType.has(rule.triggerType)
+      ) {
+        overridePointsBySourceType.set(
+          rule.triggerType,
+          Math.max(0, Math.floor(Number(rule.rewardValue))),
+        );
+      }
+    }
+
+    return POINTS_PER_ACTION.map((pointAction) => ({
+      ...pointAction,
+      points:
+        overridePointsBySourceType.get(pointAction.sourceType) ??
+        pointAction.points,
+    }));
+  }
+
+  private async getRecentActivity(transactions: any[]) {
+    const idsByType = transactions.reduce<Record<string, string[]>>(
+      (acc, transaction) => {
+        if (transaction.sourceType && transaction.sourceId) {
+          acc[transaction.sourceType] ??= [];
+          acc[transaction.sourceType].push(transaction.sourceId);
+        }
+
+        return acc;
+      },
+      {},
+    );
+
+    const [
+      checkIns,
+      reviews,
+      bookings,
+      followedTrucks,
+      communityRequests,
+      redemptions,
+    ] = await Promise.all([
+      this.rewardsRepository.findCheckInsByIds(idsByType.CHECK_IN ?? []),
+      this.rewardsRepository.findReviewsByIds(idsByType.REVIEW ?? []),
+      this.rewardsRepository.findBookingsByIds(idsByType.BOOKING ?? []),
+      this.rewardsRepository.findFoodTrucksByIds(
+        idsByType.FOLLOW_TRUCK ?? [],
+      ),
+      this.rewardsRepository.findCommunityRequestsByIds(
+        idsByType.COMMUNITY_POST ?? [],
+      ),
+      this.rewardsRepository.findRewardRedemptionsByIds([
+        ...(idsByType.CREDIT_REDEMPTION_CODE ?? []),
+        ...(idsByType.EXPIRED_CREDIT_REDEMPTION_REFUND ?? []),
+      ]),
+    ]);
+
+    const checkInById = new Map<string, any>(
+      checkIns.map((item): [string, any] => [item.id, item]),
+    );
+    const reviewById = new Map<string, any>(
+      reviews.map((item): [string, any] => [item.id, item]),
+    );
+    const bookingById = new Map<string, any>(
+      bookings.map((item): [string, any] => [item.id, item]),
+    );
+    const followedTruckById = new Map<string, any>(
+      followedTrucks.map((item): [string, any] => [item.id, item]),
+    );
+    const communityRequestById = new Map<string, any>(
+      communityRequests.map((item): [string, any] => [item.id, item]),
+    );
+    const redemptionById = new Map<string, any>(
+      redemptions.map((item): [string, any] => [item.id, item]),
+    );
+    const redemptionTruckIds = [
+      ...new Set(
+        redemptions
+          .map((redemption) => redemption.foodTruckId)
+          .filter(Boolean) as string[],
+      ),
+    ];
+    const redemptionTrucks = await this.rewardsRepository.findFoodTrucksByIds(
+      redemptionTruckIds,
+    );
+    const redemptionTruckById = new Map<string, any>(
+      redemptionTrucks.map((item): [string, any] => [item.id, item]),
+    );
+
+    return transactions.map((transaction) => {
+      const context = this.getActivityContext(transaction, {
+        checkInById,
+        reviewById,
+        bookingById,
+        followedTruckById,
+        communityRequestById,
+        redemptionById,
+        redemptionTruckById,
+      });
+
+      return this.toRecentActivity(transaction, context);
+    });
+  }
+
+  private getActivityContext(
+    transaction: any,
+    maps: {
+      checkInById: Map<string, any>;
+      reviewById: Map<string, any>;
+      bookingById: Map<string, any>;
+      followedTruckById: Map<string, any>;
+      communityRequestById: Map<string, any>;
+      redemptionById: Map<string, any>;
+      redemptionTruckById: Map<string, any>;
+    },
+  ) {
+    const sourceId = transaction.sourceId;
+
+    if (!sourceId) {
+      return undefined;
+    }
+
+    if (transaction.sourceType === 'CHECK_IN') {
+      const checkIn = maps.checkInById.get(sourceId);
+      return checkIn
+        ? {
+            title: checkIn.foodTruck.name,
+            subtitle: checkIn.foodTruck.currentAddress
+              ? `Checked in at ${checkIn.foodTruck.currentAddress}`
+              : 'Checked in',
+          }
+        : undefined;
+    }
+
+    if (transaction.sourceType === 'REVIEW') {
+      const review = maps.reviewById.get(sourceId);
+      return review
+        ? {
+            title: review.foodTruck.name,
+            subtitle: `Reviewed with ${review.rating} stars`,
+          }
+        : undefined;
+    }
+
+    if (transaction.sourceType === 'BOOKING') {
+      const booking = maps.bookingById.get(sourceId);
+      return booking
+        ? {
+            title: booking.foodTruck.name,
+            subtitle: booking.eventName
+              ? `Booked for ${booking.eventName}`
+              : `Booked for ${booking.startsAt.toISOString().slice(0, 10)}`,
+          }
+        : undefined;
+    }
+
+    if (transaction.sourceType === 'FOLLOW_TRUCK') {
+      const truck = maps.followedTruckById.get(sourceId);
+      return truck
+        ? {
+            title: truck.name,
+            subtitle: 'Followed a food truck',
+          }
+        : undefined;
+    }
+
+    if (transaction.sourceType === 'COMMUNITY_POST') {
+      const request = maps.communityRequestById.get(sourceId);
+      return request
+        ? {
+            title: request.title,
+            subtitle: request.address ?? 'Community post',
+          }
+        : undefined;
+    }
+
+    if (
+      ['CREDIT_REDEMPTION_CODE', 'EXPIRED_CREDIT_REDEMPTION_REFUND'].includes(
+        transaction.sourceType,
+      )
+    ) {
+      const redemption = maps.redemptionById.get(sourceId);
+      const truck = redemption?.foodTruckId
+        ? maps.redemptionTruckById.get(redemption.foodTruckId)
+        : null;
+
+      return {
+        title: truck?.name ?? this.activityTitle(transaction.sourceType),
+        subtitle:
+          transaction.sourceType === 'EXPIRED_CREDIT_REDEMPTION_REFUND'
+            ? 'Expired credit was refunded'
+            : `Credit redemption for $${Number(redemption?.rewardValue ?? 0).toFixed(2)}`,
+      };
+    }
+
+    return undefined;
+  }
+
+  private toRecentActivity(
+    transaction: any,
+    context?: { title?: string; subtitle?: string },
+  ) {
+    const sourceType = transaction.sourceType ?? transaction.transactionType;
+    const points = Number(transaction.points ?? 0);
+    const isEarn = points > 0;
+
+    return {
+      id: transaction.id,
+      type: sourceType,
+      title: context?.title ?? this.activityTitle(sourceType),
+      subtitle:
+        context?.subtitle ??
+        transaction.description ??
+        (isEarn ? 'Points earned' : 'Credit redeemed'),
+      points,
+      createdAt: transaction.createdAt,
+      balanceAfter: transaction.balanceAfter,
+    };
+  }
+
+  private activityTitle(sourceType?: string) {
+    const titles: Record<string, string> = {
+      CHECK_IN: 'QR code check-in',
+      REVIEW: 'Verified review',
+      FOLLOW_TRUCK: 'Followed a food truck',
+      BOOKING: 'Booking reward',
+      COMMUNITY_POST: 'Community post',
+      REFERRAL_CUSTOMER: 'Friend referral',
+      REFERRAL_VENDOR: 'Vendor referral',
+      DAILY_STREAK: 'Daily app streak',
+      PROFILE_COMPLETION: 'Profile completed',
+      BIRTHDAY_BONUS: 'Birthday bonus',
+      CREDIT_REDEMPTION_CODE: 'Credit redeemed',
+      REWARD_REDEMPTION: 'Reward redeemed',
+    };
+
+    return sourceType ? (titles[sourceType] ?? sourceType) : 'Reward activity';
   }
 
   private async ensureUserExists(userId: string) {

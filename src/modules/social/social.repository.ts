@@ -19,7 +19,7 @@ export class SocialRepository {
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      select: { id: true },
+      select: { id: true, status: true, isVerified: true },
     });
   }
 
@@ -31,6 +31,13 @@ export class SocialRepository {
         vendorId: true,
         status: true,
         deletedAt: true,
+        vendor: {
+          select: {
+            status: true,
+            isVerified: true,
+            deletedAt: true,
+          },
+        },
       },
     });
   }

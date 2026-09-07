@@ -128,7 +128,13 @@ export class DiscoveryRepository {
   }
 
   private baseWhere() {
-    return [`f.status = 'ACTIVE'`, `f.deleted_at IS NULL`];
+    return [
+      `f.status = 'ACTIVE'`,
+      `f.deleted_at IS NULL`,
+      `v.status = 'APPROVED'`,
+      `v.is_verified = true`,
+      `v.deleted_at IS NULL`,
+    ];
   }
 
   private filterWhere(

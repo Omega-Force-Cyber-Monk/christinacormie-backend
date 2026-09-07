@@ -27,6 +27,9 @@ import { FoodTrucksRepository } from './food-trucks.repository';
 
 @Injectable()
 export class FoodTrucksService {
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
   constructor(private readonly foodTrucksRepository: FoodTrucksRepository) {}
 
   async getPublicProfile(slug: string) {
@@ -154,6 +157,7 @@ export class FoodTrucksService {
     dto: UpdateOperatingStatusDto,
   ) {
     await this.ensureOwnFoodTruck(userId, foodTruckId);
+    await this.ensureApprovedVendor(userId);
     return this.foodTrucksRepository.updateOperatingStatus(foodTruckId, dto);
   }
 
@@ -163,6 +167,7 @@ export class FoodTrucksService {
     dto: UpdateTruckLocationDto,
   ) {
     await this.ensureOwnFoodTruck(userId, foodTruckId);
+    await this.ensureApprovedVendor(userId);
     return this.foodTrucksRepository.updateLocation(foodTruckId, dto);
   }
 
@@ -172,6 +177,7 @@ export class FoodTrucksService {
     dto: CreateFoodTruckDropDto,
   ) {
     await this.ensureOwnFoodTruck(userId, foodTruckId);
+    await this.ensureApprovedVendor(userId);
     return this.foodTrucksRepository.createActiveDrop(foodTruckId, dto);
   }
 
@@ -325,6 +331,16 @@ export class FoodTrucksService {
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    return vendor;
+  }
+
+  private async ensureApprovedVendor(userId: string) {
+    const vendor = await this.getVendorForUser(userId);
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     return vendor;

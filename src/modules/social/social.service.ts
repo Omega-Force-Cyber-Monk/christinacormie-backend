@@ -17,6 +17,9 @@ import { SocialRepository } from './social.repository';
 
 @Injectable()
 export class SocialService {
+  private readonly vendorApprovalMessage =
+    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+
   constructor(
     private readonly socialRepository: SocialRepository,
     private readonly notificationsService: NotificationsService,
@@ -39,7 +42,10 @@ export class SocialService {
       foodTruckId,
     );
 
-    await this.rewardsService.awardPoints(userId, 'FOLLOW_TRUCK', follow.id);
+    await this.rewardsService.awardPoints(userId, 'FOLLOW_TRUCK', foodTruckId, {
+      idempotencyKey: `FOLLOW_TRUCK:${userId}:${foodTruckId}`,
+      description: 'Followed a food truck',
+    });
 
     return follow;
   }
@@ -236,6 +242,15 @@ export class SocialService {
       throw new NotFoundException('Food truck not found');
     }
 
+    if (
+      foodTruck.status !== 'ACTIVE' ||
+      foodTruck.vendor.deletedAt ||
+      foodTruck.vendor.status !== 'APPROVED' ||
+      !foodTruck.vendor.isVerified
+    ) {
+      throw new ForbiddenException('Food truck is not available');
+    }
+
     return foodTruck;
   }
 
@@ -244,6 +259,10 @@ export class SocialService {
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     const foodTruck = await this.ensureFoodTruckExists(foodTruckId);
@@ -260,6 +279,10 @@ export class SocialService {
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
     const post = await this.socialRepository.findPostById(postId);
