@@ -184,9 +184,12 @@ export class BookingsRepository {
         subtotal,
         total_amount,
         preferred_menu_item_ids,
+        custom_menu_items,
         reference_image_urls,
         payment_preference,
-        special_instructions
+        special_instructions,
+        is_adult_confirmed,
+        terms_accepted
       )
       VALUES (
         gen_random_uuid(),
@@ -213,9 +216,12 @@ export class BookingsRepository {
         ${dto.subtotal ?? 0},
         ${(dto.subtotal ?? 0) + serviceArea.outsideRadiusFee},
         ${dto.preferredMenuItemIds ? JSON.stringify(dto.preferredMenuItemIds) : null}::jsonb,
+        ${dto.customMenuItems ? JSON.stringify(dto.customMenuItems) : null}::jsonb,
         ${dto.referenceImageUrls ? JSON.stringify(dto.referenceImageUrls) : null}::jsonb,
         ${dto.paymentPreference ?? 'NO_PREFERENCE'}::"BookingPaymentPreference",
-        ${dto.specialInstructions ?? null}
+        ${dto.specialInstructions ?? null},
+        ${dto.isAdultConfirmed},
+        ${dto.termsAccepted}
       )
       RETURNING id
     `;

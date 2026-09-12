@@ -30,9 +30,12 @@ export class BookingsService {
   ) {}
 
   async createBookingRequest(userId: string, dto: CreateBookingDto) {
+    this.validateBookingConfirmations(dto);
+    const customMenuItems = this.normalizeCustomMenuItems(dto.customMenuItems);
     const normalizedDto: CreateBookingDto = {
       ...dto,
       bookingType: dto.bookingType ?? BookingTypeDto.EVENT,
+      customMenuItems,
     };
 
     const startsAt = new Date(dto.startsAt);
@@ -72,7 +75,11 @@ export class BookingsService {
 
     await this.notificationsService.notifyBookingCreated(userId, booking);
 
-    return booking;
+    return {
+      message:
+        "Booking request sent! Your booking request has been sent to the vendor. You'll receive a quote within 24 hours.",
+      booking,
+    };
   }
 
   listMyBookings(userId: string) {
@@ -336,6 +343,34 @@ export class BookingsService {
     if (startsAt >= endsAt) {
       throw new BadRequestException('startsAt must be before endsAt');
     }
+  }
+
+  private validateBookingConfirmations(dto: CreateBookingDto) {
+    if (dto.isAdultConfirmed !== true) {
+      throw new BadRequestException(
+        'You must confirm that you are 18 years or older',
+      );
+    }
+
+    if (dto.termsAccepted !== true) {
+      throw new BadRequestException(
+        'You must agree to the BiteDrop Terms and Conditions',
+      );
+    }
+  }
+
+  private normalizeCustomMenuItems(items?: string[]) {
+    if (!items?.length) {
+      return undefined;
+    }
+
+    const normalizedItems = items.map((item) => item.trim()).filter(Boolean);
+
+    if (normalizedItems.length !== items.length) {
+      throw new BadRequestException('Custom menu items cannot be empty');
+    }
+
+    return [...new Set(normalizedItems)];
   }
 
   private async validateServiceArea(

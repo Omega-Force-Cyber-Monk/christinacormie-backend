@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  Equals,
   IsArray,
   IsEnum,
   IsISO8601,
@@ -154,6 +155,24 @@ export class CreateBookingDto {
 
   @ApiPropertyOptional({
     type: [String],
+    example: ['Extra spicy chicken tacos', 'Vegetarian platter'],
+    description:
+      'Custom menu requests typed by the customer when the item is not available in the truck menu.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20, {
+    message: 'customMenuItems cannot contain more than 20 items',
+  })
+  @IsString({ each: true, message: 'Each custom menu item must be text' })
+  @MaxLength(150, {
+    each: true,
+    message: 'Each custom menu item cannot be longer than 150 characters',
+  })
+  customMenuItems?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
     example: [
       'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/bookings/reference-1.jpg',
     ],
@@ -178,4 +197,24 @@ export class CreateBookingDto {
   @IsOptional()
   @IsString()
   specialInstructions?: string;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Customer must confirm they are 18 years or older before submitting a booking request.',
+  })
+  @Equals(true, {
+    message: 'You must confirm that you are 18 years or older',
+  })
+  isAdultConfirmed: boolean;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Customer must accept BiteDrop Terms and Conditions before submitting a booking request.',
+  })
+  @Equals(true, {
+    message: 'You must agree to the BiteDrop Terms and Conditions',
+  })
+  termsAccepted: boolean;
 }
