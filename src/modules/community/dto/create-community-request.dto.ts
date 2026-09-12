@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  ArrayMaxSize,
   IsBoolean,
   IsEnum,
   IsISO8601,
@@ -18,6 +19,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { RequestMediaDto } from './request-media.dto';
+import { CommunityPostCategory } from '@prisma/client';
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -43,6 +45,34 @@ export enum CommunityEventTypeDto {
 }
 
 export class CreateCommunityRequestDto {
+  @ApiPropertyOptional({ enum: CommunityPostCategory, default: 'NEED_TRUCK' })
+  @IsOptional()
+  @IsEnum(CommunityPostCategory, {
+    message:
+      'category must be NEED_TRUCK, VENDOR_CALLOUT, FOR_SALE, HIRING_JOBS, COMMUNITY_HELP, or COMMUNITY',
+  })
+  category?: CommunityPostCategory;
+
+  @ApiPropertyOptional({
+    example: 6,
+    description: 'Optional structured Vendor Callout field.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  spotsOpen?: number;
+
+  @ApiPropertyOptional({ example: 2000 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  attendanceMin?: number;
+
+  @ApiPropertyOptional({ example: 2500 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  attendanceMax?: number;
   @ApiPropertyOptional({
     enum: RequestTypeDto,
     example: RequestTypeDto.EVENT,
@@ -77,6 +107,7 @@ export class CreateCommunityRequestDto {
   })
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   description?: string;
 
   @ApiPropertyOptional({ example: '2026-08-25T00:00:00.000Z' })
@@ -91,7 +122,11 @@ export class CreateCommunityRequestDto {
   @Matches(TIME_PATTERN)
   startTime?: string;
 
-  @ApiPropertyOptional({ example: '20:00' })
+  @ApiPropertyOptional({
+    example: '20:00',
+    description:
+      'Optional event end time. If omitted, quote acceptance reserves three hours after startTime.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(5)
@@ -160,6 +195,8 @@ export class CreateCommunityRequestDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
+  @ArrayMaxSize(30, { message: 'You can select up to 30 preferred menu items' })
+  @MaxLength(150, { each: true })
   preferredMenuItems?: string[];
 
   @ApiPropertyOptional({ example: true, default: true })
@@ -177,5 +214,8 @@ export class CreateCommunityRequestDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RequestMediaDto)
+  @ArrayMaxSize(5, {
+    message: 'A Community post can contain at most 5 attachments',
+  })
   media?: RequestMediaDto[];
 }

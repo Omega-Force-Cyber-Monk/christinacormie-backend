@@ -6,10 +6,19 @@ import { RewardsModule } from '../rewards/rewards.module';
 import { CommunityController } from './community.controller';
 import { CommunityRepository } from './community.repository';
 import { CommunityService } from './community.service';
+import { CloudinaryModule } from '../../infrastructure/cloudinary/cloudinary.module';
+import { CommunityPostsController } from './community-posts.controller';
+import { CommunityPostsService } from './community-posts.service';
 
 @Module({
-  imports: [JwtModule.register({}), RewardsModule],
-  controllers: [CommunityController],
-  providers: [CommunityService, CommunityRepository, JwtAuthGuard, RolesGuard],
+  imports: [JwtModule.register({}), RewardsModule, CloudinaryModule],
+  controllers: [CommunityPostsController, CommunityController],
+  providers: [
+    CommunityService,
+    CommunityPostsService,
+    CommunityRepository,
+    JwtAuthGuard,
+    RolesGuard,
+  ],
 })
 export class CommunityModule {}

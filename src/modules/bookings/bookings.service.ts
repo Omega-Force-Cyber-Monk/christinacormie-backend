@@ -1,3 +1,4 @@
+import { calculateQuote } from './quote-financials';
 import {
   BadRequestException,
   ConflictException,
@@ -7,11 +8,7 @@ import {
 } from '@nestjs/common';
 import { AcceptBookingQuoteDto } from './dto/accept-booking-quote.dto';
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
-import {
-  BookingPaymentPreferenceDto,
-  BookingTypeDto,
-  CreateBookingDto,
-} from './dto/create-booking.dto';
+import { BookingTypeDto, CreateBookingDto } from './dto/create-booking.dto';
 import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
 import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -205,50 +202,39 @@ export class BookingsService {
       throw new BadRequestException('Quote expiresAt must be in the future');
     }
 
-    const extraChargesTotal = (dto.extraCharges ?? []).reduce(
-      (sum, item) => sum + Number(item.amount ?? 0),
-      0,
-    );
-    const subtotal = dto.subtotal ?? dto.baseServiceFee ?? 0;
-    const transportFee = dto.transportFee ?? dto.outsideRadiusFee ?? 0;
-    const serviceFee = dto.serviceFee ?? 0;
-    const taxAmount = dto.taxAmount ?? 0;
-    const discountAmount = dto.discountAmount ?? 0;
-    const totalAmount =
-      dto.totalAmount ??
-      subtotal +
-        transportFee +
-        extraChargesTotal +
-        serviceFee +
-        taxAmount -
-        discountAmount;
-
-    if (totalAmount < 0) {
-      throw new BadRequestException('Quote total cannot be negative');
-    }
-
-    const minCommissionRate = Number(
-      process.env.PLATFORM_COMMISSION_RATE ?? '0.20',
-    );
-    const paymentPreference =
-      dto.paymentPreference ?? BookingPaymentPreferenceDto.DEPOSIT_ONLY;
-
-    if (paymentPreference === BookingPaymentPreferenceDto.DEPOSIT_ONLY) {
-      const minDepositRequired = Number(
-        (totalAmount * minCommissionRate).toFixed(2),
+    if (
+      dto.subtotal !== undefined &&
+      dto.baseServiceFee !== undefined &&
+      dto.subtotal !== dto.baseServiceFee
+    )
+      throw new BadRequestException('subtotal and baseServiceFee must match');
+    if (
+      dto.transportFee !== undefined &&
+      dto.outsideRadiusFee !== undefined &&
+      dto.transportFee !== dto.outsideRadiusFee
+    )
+      throw new BadRequestException(
+        'transportFee and outsideRadiusFee must match',
       );
-      const effectiveDeposit =
-        dto.depositAmount ??
-        (dto.depositPercent !== undefined
-          ? Number(((totalAmount * dto.depositPercent) / 100).toFixed(2))
-          : 0);
+    const calculated = calculateQuote(
+      {
+        ...dto,
+        baseServiceFee: dto.baseServiceFee ?? dto.subtotal,
+        transportFee: dto.transportFee ?? dto.outsideRadiusFee,
+        quotedAmount: dto.totalAmount,
+      },
+      booking.guestCount,
+    );
+    Object.assign(dto, calculated, {
+      subtotal: calculated.baseServiceFee,
+      totalAmount: calculated.quotedAmount,
+      outsideRadiusFee: calculated.transportFee,
+    });
 
-      if (effectiveDeposit < minDepositRequired) {
-        throw new BadRequestException(
-          `Deposit amount must be at least ${Math.round(minCommissionRate * 100)}% of the total quote amount ($${minDepositRequired.toFixed(2)})`,
-        );
-      }
-    }
+    const subtotal = calculated.baseServiceFee;
+    const transportFee = calculated.transportFee;
+    const totalAmount = calculated.quotedAmount;
+    const paymentPreference = dto.paymentPreference!;
 
     await this.ensureNoOverlap(
       booking.foodTruckId,
@@ -278,7 +264,11 @@ export class BookingsService {
       NotificationEventType.QUOTE_CREATED,
     );
 
-    return quoteResult;
+    return {
+      ...quoteResult,
+      message: 'Quote sent successfully',
+      breakdown: calculated,
+    };
   }
 
   async customerAcceptQuote(

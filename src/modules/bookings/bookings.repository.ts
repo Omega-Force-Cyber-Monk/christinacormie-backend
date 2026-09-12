@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AcceptBookingQuoteDto } from './dto/accept-booking-quote.dto';
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
@@ -315,8 +315,15 @@ export class BookingsRepository {
         : Math.max(totalAmount - depositAmount, 0));
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`;
+      const current = await tx.booking.findUnique({ where: { id: bookingId } });
+      if (!current || !['PENDING', 'ACCEPTED'].includes(current.status))
+        throw new ConflictException(
+          'This booking already has a quote or is no longer open for quoting',
+        );
       const quote = await tx.bookingQuote.create({
         data: {
+          pricePerPerson: dto.pricePerPerson,
           bookingId,
           vendorId,
           pricingModel: (dto.pricingModel as any) ?? null,
@@ -369,11 +376,55 @@ export class BookingsRepository {
     dto: AcceptBookingQuoteDto,
   ) {
     const quote = await this.findQuoteById(quoteId);
+    if (!quote) throw new ConflictException('Quote is no longer available');
     const holdExpiresAt = new Date(
       Date.now() + (dto.paymentWindowMinutes ?? 30) * 60_000,
     );
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${quote.bookingId}::uuid FOR UPDATE`;
+      const currentQuote = await tx.bookingQuote.findUnique({
+        where: { id: quoteId },
+        include: { booking: true },
+      });
+      if (
+        !currentQuote ||
+        currentQuote.status !== 'PENDING' ||
+        currentQuote.booking.status !== 'QUOTED' ||
+        currentQuote.booking.customerId !== userId
+      )
+        throw new ConflictException(
+          'This quote is no longer available for acceptance',
+        );
+      if (currentQuote.expiresAt && currentQuote.expiresAt <= new Date())
+        throw new ConflictException('Quote has expired');
+      const { foodTruckId, startsAt, endsAt } = currentQuote.booking;
+      if (!endsAt || endsAt <= startsAt || startsAt <= new Date())
+        throw new ConflictException(
+          'The booking needs a valid future event window',
+        );
+      await tx.$queryRaw`SELECT id FROM food_trucks WHERE id = ${foodTruckId}::uuid FOR UPDATE`;
+      const overlap = await tx.booking.findFirst({
+        where: {
+          id: { not: currentQuote.bookingId },
+          foodTruckId,
+          status: { in: ['PAYMENT_PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
+          startsAt: { lt: endsAt },
+          OR: [{ endsAt: null }, { endsAt: { gt: startsAt } }],
+        },
+      });
+      const hold = await tx.bookingHold.findFirst({
+        where: {
+          foodTruckId,
+          expiresAt: { gt: new Date() },
+          startsAt: { lt: endsAt },
+          endsAt: { gt: startsAt },
+        },
+      });
+      if (overlap || hold)
+        throw new ConflictException(
+          'Food truck is already booked or reserved during this event',
+        );
       await tx.bookingQuote.update({
         where: { id: quoteId },
         data: { status: 'ACCEPTED' as any },

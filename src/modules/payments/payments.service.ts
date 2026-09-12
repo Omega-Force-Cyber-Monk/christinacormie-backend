@@ -1,3 +1,4 @@
+import { platformCommissionRate } from '../bookings/quote-financials';
 import {
   BadRequestException,
   ForbiddenException,
@@ -302,7 +303,7 @@ export class PaymentsService {
       chargeAmount = deposit > 0 ? deposit : totalContractAmount;
     }
 
-    const rate = Number(process.env.PLATFORM_COMMISSION_RATE ?? '0.20');
+    const rate = platformCommissionRate();
     const totalCommissionAmount = Number(
       (totalContractAmount * rate).toFixed(2),
     );
@@ -503,7 +504,7 @@ export class PaymentsService {
   }
 
   private calculateCommission(amount: number) {
-    const rate = Number(process.env.PLATFORM_COMMISSION_RATE ?? 0.1);
+    const rate = platformCommissionRate();
     const commissionAmount = Number((amount * rate).toFixed(2));
 
     return {

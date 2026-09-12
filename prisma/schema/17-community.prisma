@@ -1,3 +1,17 @@
+enum CommunityPostCategory {
+  NEED_TRUCK
+  VENDOR_CALLOUT
+  FOR_SALE
+  HIRING_JOBS
+  COMMUNITY_HELP
+  COMMUNITY
+}
+
+enum CommunityActionType {
+  INTEREST
+  IGNORE
+}
+
 enum RequestVisibility {
   PUBLIC
   PRIVATE
@@ -47,6 +61,11 @@ enum OfferStatus {
 }
 
 model CommunityRequest {
+  category            CommunityPostCategory     @default(NEED_TRUCK)
+  spotsOpen           Int?                      @map("spots_open")
+  attendanceMin       Int?                      @map("attendance_min")
+  attendanceMax       Int?                      @map("attendance_max")
+  actions             CommunityPostAction[]
   id                  String                    @id @default(uuid()) @db.Uuid
   createdById         String                    @map("created_by") @db.Uuid
   targetFoodTruckId   String?                   @map("target_food_truck_id") @db.Uuid
@@ -82,6 +101,21 @@ model CommunityRequest {
   conversations       Conversation[]
 
   @@map("community_requests")
+  @@index([visibility, category, createdAt])
+}
+
+model CommunityPostAction {
+  id        String              @id @default(uuid()) @db.Uuid
+  postId    String              @map("post_id") @db.Uuid
+  userId    String              @map("user_id") @db.Uuid
+  type      CommunityActionType
+  message   String?
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  post      CommunityRequest    @relation(fields: [postId], references: [id])
+  user      User                @relation(fields: [userId], references: [id])
+
+  @@unique([postId, userId, type])
+  @@map("community_post_actions")
 }
 
 model CommunityRequestMedia {
@@ -123,6 +157,7 @@ model CommunityRequestReaction {
 }
 
 model VendorOffer {
+  pricePerPerson     Decimal?         @map("price_per_person") @db.Decimal(12, 2)
   id                 String           @id @default(uuid()) @db.Uuid
   communityRequestId String           @map("community_request_id") @db.Uuid
   vendorId           String           @map("vendor_id") @db.Uuid

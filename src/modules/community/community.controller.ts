@@ -7,12 +7,15 @@ import {
   Post,
   Query,
   UseGuards,
+  UseFilters,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiQuery,
   ApiTags,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -27,8 +30,65 @@ import { NewFoodTruckLeadDto } from './dto/new-food-truck-lead.dto';
 import { ReactRequestDto } from './dto/react-request.dto';
 import { RequestMediaDto } from './dto/request-media.dto';
 import { CommunityService } from './community.service';
+import { CommunityErrorFilter } from './community-error.filter';
 
 @ApiTags('Community')
+@UseFilters(CommunityErrorFilter)
+@ApiResponse({
+  status: 400,
+  description: 'Invalid request data.',
+  schema: {
+    example: {
+      statusCode: 400,
+      error: 'Bad Request',
+      message: 'eventDate is required for a Need-a-Truck request',
+    },
+  },
+})
+@ApiResponse({
+  status: 401,
+  description: 'Authentication required.',
+  schema: {
+    example: {
+      statusCode: 401,
+      error: 'Unauthorized',
+      message: 'Invalid or expired access token',
+    },
+  },
+})
+@ApiResponse({
+  status: 403,
+  description: 'Approval, ownership, or visibility check failed.',
+  schema: {
+    example: {
+      statusCode: 403,
+      error: 'Forbidden',
+      message: 'You cannot send a quote to your own request',
+    },
+  },
+})
+@ApiResponse({
+  status: 404,
+  description: 'Requested resource was not found.',
+  schema: {
+    example: {
+      statusCode: 404,
+      error: 'Not Found',
+      message: 'Community request not found',
+    },
+  },
+})
+@ApiResponse({
+  status: 409,
+  description: 'Conflicting quote or request state.',
+  schema: {
+    example: {
+      statusCode: 409,
+      error: 'Conflict',
+      message: 'This request is no longer open for quotes',
+    },
+  },
+})
 @Controller('api/v1/community')
 export class CommunityController {
   constructor(private readonly communityService: CommunityService) {}
@@ -72,7 +132,7 @@ export class CommunityController {
   @Post('food-trucks/:foodTruckId/requests')
   createPrivateTruckRequest(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('foodTruckId') foodTruckId: string,
+    @Param('foodTruckId', ParseUUIDPipe) foodTruckId: string,
     @Body() dto: CreateCommunityRequestDto,
   ) {
     return this.communityService.createPrivateTruckRequest(
@@ -90,18 +150,21 @@ export class CommunityController {
   @Get('requests/:requestId')
   getRequestDetails(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId') requestId: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
   ) {
     return this.communityService.getRequestDetails(user.sub, requestId);
   }
 
-  @ApiOperation({ summary: 'Add media image/video to a community request' })
+  @ApiOperation({
+    summary:
+      'Add an image/PDF to my Community request (maximum five attachments)',
+  })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('requests/:requestId/media')
   addRequestMedia(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId') requestId: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
     @Body() dto: RequestMediaDto,
   ) {
     return this.communityService.addRequestMedia(user.sub, requestId, dto);
@@ -113,7 +176,7 @@ export class CommunityController {
   @Post('requests/:requestId/comments')
   commentOnRequest(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId') requestId: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
     @Body() dto: CommentRequestDto,
   ) {
     return this.communityService.commentOnRequest(user.sub, requestId, dto);
@@ -125,7 +188,7 @@ export class CommunityController {
   @Post('requests/:requestId/reactions')
   reactToRequest(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId') requestId: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
     @Body() dto: ReactRequestDto,
   ) {
     return this.communityService.reactToRequest(user.sub, requestId, dto);
@@ -140,7 +203,7 @@ export class CommunityController {
   @Post('requests/:requestId/offers')
   createVendorOffer(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId') requestId: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
     @Body() dto: CreateVendorOfferDto,
   ) {
     return this.communityService.createVendorOffer(user.sub, requestId, dto);
@@ -159,7 +222,7 @@ export class CommunityController {
   @Get('requests/:requestId/offers')
   listRequestOffers(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId') requestId: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
     @Query('sort') sort?: 'LOW_PRICE' | 'HIGH_RATED' | 'RECENT',
   ) {
     return this.communityService.listRequestOffers(
@@ -175,7 +238,7 @@ export class CommunityController {
   @Patch('offers/:offerId/accept')
   acceptOffer(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('offerId') offerId: string,
+    @Param('offerId', ParseUUIDPipe) offerId: string,
   ) {
     return this.communityService.acceptOffer(user.sub, offerId);
   }
@@ -186,7 +249,7 @@ export class CommunityController {
   @Patch('offers/:offerId/reject')
   rejectOffer(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('offerId') offerId: string,
+    @Param('offerId', ParseUUIDPipe) offerId: string,
   ) {
     return this.communityService.rejectOffer(user.sub, offerId);
   }
@@ -198,7 +261,7 @@ export class CommunityController {
   @Patch('offers/:offerId/withdraw')
   withdrawOffer(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('offerId') offerId: string,
+    @Param('offerId', ParseUUIDPipe) offerId: string,
   ) {
     return this.communityService.withdrawOffer(user.sub, offerId);
   }

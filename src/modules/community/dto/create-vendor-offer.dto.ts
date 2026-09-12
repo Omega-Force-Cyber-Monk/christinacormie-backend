@@ -31,6 +31,16 @@ export class OfferExtraChargeDto {
 }
 
 export class CreateVendorOfferDto {
+  @ApiPropertyOptional({
+    example: 25,
+    description:
+      'Required for PER_PERSON; backend multiplies by the request guest count.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  pricePerPerson?: number;
   @ApiProperty({ example: '{{foodTruckId}}' })
   @IsUUID()
   foodTruckId: string;

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CommentRequestDto } from './dto/comment-request.dto';
@@ -12,9 +13,15 @@ import { ReactRequestDto } from './dto/react-request.dto';
 import { RequestMediaDto } from './dto/request-media.dto';
 import { RewardsService } from '../rewards/rewards.service';
 import { CommunityRepository } from './community.repository';
+import {
+  validateCommunityPost,
+  validateCommunityMedia,
+} from './community-validation';
+import { calculateQuote } from '../bookings/quote-financials';
 
 @Injectable()
 export class CommunityService {
+  private readonly logger = new Logger(CommunityService.name);
   private readonly vendorApprovalMessage =
     'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
 
@@ -24,7 +31,8 @@ export class CommunityService {
   ) {}
 
   async createPublicRequest(userId: string, dto: CreateCommunityRequestDto) {
-    this.validateRequestDto(dto);
+    await this.communityRepository.ensurePublisher(userId);
+    validateCommunityPost(dto);
     const request = await this.communityRepository.createRequest(
       userId,
       dto,
@@ -35,9 +43,28 @@ export class CommunityService {
       throw new BadRequestException('Community post could not be created');
     }
 
-    await this.rewardsService.awardPoints(userId, 'COMMUNITY_POST', request.id);
-
-    return request;
+    try {
+      const reward = await this.rewardsService.awardPoints(
+        userId,
+        'COMMUNITY_POST',
+        request.id,
+      );
+      return {
+        ...request,
+        rewardStatus: reward.awarded ? 'AWARDED' : 'NOT_AWARDED',
+      };
+    } catch (error) {
+      this.logger.error(
+        `Reward processing failed for Community post ${request.id}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return {
+        ...request,
+        rewardStatus: 'UNCONFIRMED',
+        rewardMessage:
+          'Post created, but reward processing could not be confirmed. Please contact support; do not repost.',
+      };
+    }
   }
 
   listOpenRequests() {
@@ -57,8 +84,20 @@ export class CommunityService {
     requestId: string,
     sort: 'LOW_PRICE' | 'HIGH_RATED' | 'RECENT' = 'RECENT',
   ) {
-    await this.ensureRequestVisible(userId, requestId);
-    return this.communityRepository.listOffersForRequest(requestId, sort);
+    const request = await this.ensureRequestVisible(userId, requestId);
+    if (!['LOW_PRICE', 'HIGH_RATED', 'RECENT'].includes(sort))
+      throw new BadRequestException(
+        'sort must be LOW_PRICE, HIGH_RATED, or RECENT',
+      );
+    const vendor =
+      request.createdById === userId
+        ? undefined
+        : await this.ensureVendor(userId);
+    return this.communityRepository.listOffersForRequest(
+      requestId,
+      sort,
+      vendor?.id,
+    );
   }
 
   async createPrivateTruckRequest(
@@ -66,8 +105,13 @@ export class CommunityService {
     foodTruckId: string,
     dto: CreateCommunityRequestDto,
   ) {
+    await this.communityRepository.ensurePublisher(userId);
+    validateCommunityPost(dto);
+    if (dto.category !== 'NEED_TRUCK')
+      throw new BadRequestException(
+        'Private truck requests must use the NEED_TRUCK category',
+      );
     await this.ensureFoodTruckExists(foodTruckId);
-    this.validateRequestDto(dto);
 
     return this.communityRepository.createRequest(
       userId,
@@ -82,6 +126,8 @@ export class CommunityService {
     requestId: string,
     dto: RequestMediaDto,
   ) {
+    await this.communityRepository.ensurePublisher(userId);
+    validateCommunityMedia([dto]);
     const request = await this.ensureRequestExists(requestId);
 
     if (request.createdById !== userId) {
@@ -129,9 +175,19 @@ export class CommunityService {
     requestId: string,
     dto: CreateVendorOfferDto,
   ) {
+    await this.communityRepository.ensurePublisher(userId);
     const vendor = await this.ensureVendor(userId);
     const request = await this.ensureRequestExists(requestId);
     const foodTruck = await this.ensureFoodTruckExists(dto.foodTruckId);
+
+    if (request.category !== 'NEED_TRUCK')
+      throw new BadRequestException(
+        'Quotes can only be sent to Need-a-Truck requests',
+      );
+    if (request.createdById === userId)
+      throw new ForbiddenException(
+        'You cannot send a quote to your own request',
+      );
 
     if (foodTruck.vendorId !== vendor.id) {
       throw new ForbiddenException('Food truck does not belong to this vendor');
@@ -154,7 +210,9 @@ export class CommunityService {
       );
     }
 
-    this.validateOfferDto(dto);
+    calculateQuote(dto, request.guestCount);
+    if (dto.expiresAt && new Date(dto.expiresAt) <= new Date())
+      throw new BadRequestException('Quote expiresAt must be in the future');
 
     return this.communityRepository.createVendorOffer(
       vendor.id,
@@ -217,101 +275,6 @@ export class CommunityService {
     return this.communityRepository.createNewFoodTruckLead(dto);
   }
 
-  private validateRequestDto(dto: CreateCommunityRequestDto) {
-    if (
-      (dto.latitude === undefined && dto.longitude !== undefined) ||
-      (dto.latitude !== undefined && dto.longitude === undefined)
-    ) {
-      throw new BadRequestException(
-        'latitude and longitude must be provided together',
-      );
-    }
-
-    if (
-      dto.budgetMin !== undefined &&
-      dto.budgetMax !== undefined &&
-      dto.budgetMin > dto.budgetMax
-    ) {
-      throw new BadRequestException('budgetMin cannot exceed budgetMax');
-    }
-
-    if (dto.startTime && dto.endTime && dto.startTime >= dto.endTime) {
-      throw new BadRequestException('startTime must be before endTime');
-    }
-
-    if (dto.expiresAt && new Date(dto.expiresAt) <= new Date()) {
-      throw new BadRequestException('expiresAt must be in the future');
-    }
-
-    if (
-      dto.eventDate &&
-      new Date(dto.eventDate).toISOString().slice(0, 10) <
-        new Date().toISOString().slice(0, 10)
-    ) {
-      throw new BadRequestException('eventDate cannot be in the past');
-    }
-  }
-
-  private validateOfferDto(dto: CreateVendorOfferDto) {
-    if (!dto.quotedAmount && !dto.baseServiceFee) {
-      throw new BadRequestException(
-        'Either quotedAmount or baseServiceFee is required',
-      );
-    }
-
-    const extraChargesTotal = (dto.extraCharges ?? []).reduce(
-      (sum, item) => sum + Number(item.amount ?? 0),
-      0,
-    );
-    const totalAmount =
-      dto.quotedAmount ??
-      (dto.baseServiceFee ?? 0) +
-        (dto.transportFee ?? 0) +
-        extraChargesTotal +
-        (dto.serviceFee ?? 0) +
-        (dto.taxAmount ?? 0) -
-        (dto.discountAmount ?? 0);
-
-    const minCommissionRate = Number(
-      process.env.PLATFORM_COMMISSION_RATE ?? '0.20',
-    );
-
-    if (dto.paymentPreference === 'DEPOSIT_ONLY') {
-      const minDepositRequired = Number(
-        (totalAmount * minCommissionRate).toFixed(2),
-      );
-      const effectiveDeposit =
-        dto.depositAmount ??
-        (dto.depositPercent !== undefined
-          ? Number(((totalAmount * dto.depositPercent) / 100).toFixed(2))
-          : 0);
-
-      if (effectiveDeposit < minDepositRequired) {
-        throw new BadRequestException(
-          `Deposit amount must be at least ${Math.round(minCommissionRate * 100)}% of the total quote amount ($${minDepositRequired.toFixed(2)})`,
-        );
-      }
-    }
-
-    if (
-      dto.depositAmount !== undefined &&
-      dto.quotedAmount !== undefined &&
-      dto.depositAmount > dto.quotedAmount
-    ) {
-      throw new BadRequestException(
-        'depositAmount cannot be greater than quotedAmount',
-      );
-    }
-
-    if (dto.depositPercent !== undefined && dto.depositPercent > 100) {
-      throw new BadRequestException('depositPercent cannot exceed 100');
-    }
-
-    if (dto.expiresAt && new Date(dto.expiresAt) <= new Date()) {
-      throw new BadRequestException('expiresAt must be in the future');
-    }
-  }
-
   private async ensureVendor(userId: string) {
     const vendor = await this.communityRepository.findVendorByUserId(userId);
 
@@ -359,7 +322,10 @@ export class CommunityService {
   private async ensureRequestVisible(userId: string, requestId: string) {
     const request = await this.ensureRequestExists(requestId);
 
-    if (request.visibility === 'PUBLIC' || request.createdById === userId) {
+    if (request.createdById === userId) return request;
+    if (['DRAFT', 'CANCELLED'].includes(request.status))
+      throw new NotFoundException('Community post is not available');
+    if (request.visibility === 'PUBLIC') {
       return request;
     }
 

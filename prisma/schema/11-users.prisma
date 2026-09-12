@@ -13,6 +13,7 @@ enum AccountStatus {
 }
 
 model User {
+  communityPostActions               CommunityPostAction[]
   id                                 String                        @id @default(uuid()) @db.Uuid
   email                              String?                       @unique @db.VarChar(255)
   phone                              String?                       @unique @db.VarChar(30)

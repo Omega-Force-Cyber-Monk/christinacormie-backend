@@ -18,6 +18,16 @@ import {
 
 export class CreateBookingQuoteDto {
   @ApiPropertyOptional({
+    example: 25,
+    description:
+      'Required for PER_PERSON; backend multiplies by booking guest count.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  pricePerPerson?: number;
+  @ApiPropertyOptional({
     enum: OfferPricingModelDto,
     example: OfferPricingModelDto.FLAT_FEE,
   })
