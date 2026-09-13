@@ -257,7 +257,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Create a new booking request (Customer)',
     description:
-      'Creates an event-style booking request with event type, contact phone, optional budget, preferred menu items, optional reference images, and payment preference.',
+      'Creates an event-style booking request with event type, UI-friendly eventDate/eventTime, contact phone, optional budget, preferred menu items, optional reference images, and payment preference.',
   })
   @ApiBody({
     type: CreateBookingDto,
@@ -271,8 +271,10 @@ export class BookingsController {
           eventName: 'Ava Birthday Celebration',
           eventDescription:
             'Outdoor birthday event with taco and drink service',
-          startsAt: '2026-08-25T18:00:00.000Z',
-          endsAt: '2026-08-25T21:00:00.000Z',
+          eventDate: '2026-08-25',
+          eventTime: '18:00',
+          endTime: '21:00',
+          eventTimezone: 'America/Chicago',
           guestCount: 50,
           address: '100 Congress Ave, Austin, TX 78701',
           contactPhone: '+12025550143',
@@ -303,7 +305,7 @@ export class BookingsController {
   @ApiResponse({
     status: 400,
     description:
-      'Request body validation failed, required confirmations missing, invalid booking time, truck unavailable, capacity exceeded, invalid menu items, custom menu items invalid, or service area issue.',
+      'Request body validation failed, required confirmations missing, invalid event date/time or timezone, truck unavailable, capacity exceeded, invalid menu items, custom menu items invalid, or service area issue.',
     schema: {
       example: errorExample(
         400,
