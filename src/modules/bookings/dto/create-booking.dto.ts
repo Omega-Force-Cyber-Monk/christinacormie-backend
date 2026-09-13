@@ -15,6 +15,7 @@ import {
   IsUrl,
   IsPhoneNumber,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -91,13 +92,69 @@ export class CreateBookingDto {
   @IsString()
   eventDescription?: string;
 
-  @ApiProperty({ example: '2026-08-20T18:00:00.000Z' })
-  @IsISO8601({ strict: true })
-  startsAt: string;
+  @ApiPropertyOptional({
+    example: '2026-08-25',
+    description:
+      'UI-friendly event date. Required with eventTime when startsAt/endsAt are not provided.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'eventDate must use YYYY-MM-DD format',
+  })
+  eventDate?: string;
 
-  @ApiProperty({ example: '2026-08-20T21:00:00.000Z' })
+  @ApiPropertyOptional({
+    example: '18:00',
+    description:
+      'UI-friendly event start time in 24-hour HH:mm format. Required with eventDate when startsAt/endsAt are not provided.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'eventTime must use HH:mm 24-hour format',
+  })
+  eventTime?: string;
+
+  @ApiPropertyOptional({
+    example: '21:00',
+    description:
+      'Optional UI-friendly event end time in 24-hour HH:mm format. If omitted, backend reserves a 3-hour window.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'endTime must use HH:mm 24-hour format',
+  })
+  endTime?: string;
+
+  @ApiPropertyOptional({
+    example: 'America/Chicago',
+    description:
+      'IANA time zone used to convert eventDate/eventTime into UTC. Defaults to UTC when omitted.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  eventTimezone?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-08-20T18:00:00.000Z',
+    description:
+      'Legacy ISO start datetime. If provided, endsAt must also be provided.',
+  })
+  @IsOptional()
   @IsISO8601({ strict: true })
-  endsAt: string;
+  startsAt?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-08-20T21:00:00.000Z',
+    description:
+      'Legacy ISO end datetime. If provided, startsAt must also be provided.',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  endsAt?: string;
 
   @ApiProperty({ example: 50 })
   @Type(() => Number)

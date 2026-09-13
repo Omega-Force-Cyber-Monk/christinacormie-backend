@@ -13,6 +13,7 @@ import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
 import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RewardsService } from '../rewards/rewards.service';
+import { bookingEventWindow } from './booking-event-window';
 import { BookingsRepository } from './bookings.repository';
 
 @Injectable()
@@ -29,14 +30,15 @@ export class BookingsService {
   async createBookingRequest(userId: string, dto: CreateBookingDto) {
     this.validateBookingConfirmations(dto);
     const customMenuItems = this.normalizeCustomMenuItems(dto.customMenuItems);
+    const { startsAt, endsAt } = bookingEventWindow(dto);
     const normalizedDto: CreateBookingDto = {
       ...dto,
       bookingType: dto.bookingType ?? BookingTypeDto.EVENT,
       customMenuItems,
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
     };
 
-    const startsAt = new Date(dto.startsAt);
-    const endsAt = new Date(dto.endsAt);
     this.validateBookingWindow(startsAt, endsAt);
 
     const foodTruck = await this.ensureFoodTruckExists(dto.foodTruckId);

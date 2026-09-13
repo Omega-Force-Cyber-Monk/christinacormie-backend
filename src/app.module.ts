@@ -11,6 +11,7 @@ import { DiscoveryModule } from './modules/discovery/discovery.module';
 import { FoodTrucksModule } from './modules/food-trucks/food-trucks.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MessagingModule } from './modules/messaging/messaging.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
@@ -36,6 +37,7 @@ import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
     BookingsModule,
     PaymentsModule,
     NotificationsModule,
+    MessagingModule,
     ReviewsModule,
     CheckInsModule,
     RewardsModule,

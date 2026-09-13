@@ -11,6 +11,7 @@ type NotifyInput = NotificationInput & {
   pushPreferenceKey?:
     | 'bookingAlerts'
     | 'paymentAlerts'
+    | 'messageAlerts'
     | 'followedTruckUpdates'
     | 'favoriteTruckAlerts'
     | 'rewardAlerts'

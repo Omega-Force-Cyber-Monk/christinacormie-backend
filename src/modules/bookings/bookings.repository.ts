@@ -155,8 +155,8 @@ export class BookingsRepository {
     },
   ) {
     const bookingNumber = await this.createBookingNumber();
-    const startsAt = new Date(dto.startsAt);
-    const endsAt = new Date(dto.endsAt);
+    const startsAt = new Date(dto.startsAt!);
+    const endsAt = new Date(dto.endsAt!);
 
     const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
       INSERT INTO bookings (
