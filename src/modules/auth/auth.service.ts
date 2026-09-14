@@ -23,6 +23,7 @@ import { GoogleTokenVerifierService } from './google-token-verifier.service';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { StaffLoginDto } from './dto/staff-login.dto';
 import { VerifyEmailCodeDto } from './dto/verify-email-code.dto';
 import { VerifyResetCodeDto } from './dto/verify-reset-code.dto';
 
@@ -251,6 +252,37 @@ export class AuthService {
 
     if (!passwordMatches) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    this.ensureAccountCanAuthenticate(user.status);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    return this.createAuthResponse(user);
+  }
+
+  async staffLogin(dto: StaffLoginDto) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: dto.email.toLowerCase(),
+        deletedAt: null,
+      },
+      include: this.authUserInclude(),
+    });
+
+    const staff = user?.vendorStaff;
+
+    if (!user || !staff || staff.deletedAt || staff.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Invalid email or PIN');
+    }
+
+    const pinMatches = await bcrypt.compare(dto.pin, staff.pinHash);
+
+    if (!pinMatches) {
+      throw new UnauthorizedException('Invalid email or PIN');
     }
 
     this.ensureAccountCanAuthenticate(user.status);
@@ -894,6 +926,7 @@ export class AuthService {
   private toAuthUser(user: any) {
     const roles = this.getRoles(user);
     const isVendor = roles.includes(UserRole.VENDOR);
+    const isStaff = roles.includes(UserRole.VENDOR_STAFF);
 
     const displayName =
       (user.profile?.displayName ??
@@ -914,6 +947,15 @@ export class AuthService {
             },
           }
         : {}),
+      ...(isStaff && user.vendorStaff
+        ? {
+            staff: {
+              id: user.vendorStaff.id,
+              vendorId: user.vendorStaff.vendorId,
+              businessName: user.vendorStaff.vendor?.businessName,
+            },
+          }
+        : {}),
     };
   }
 
@@ -926,6 +968,11 @@ export class AuthService {
       userRoles: true,
       profile: true,
       vendor: true,
+      vendorStaff: {
+        include: {
+          vendor: true,
+        },
+      },
     };
   }
 

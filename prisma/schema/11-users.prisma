@@ -1,6 +1,7 @@
 enum UserRole {
   CUSTOMER
   VENDOR
+  VENDOR_STAFF
   ADMIN
 }
 
@@ -34,6 +35,7 @@ model User {
   settings                           UserSetting?
   deviceTokens                       DeviceToken[]
   vendor                             Vendor?
+  vendorStaff                        VendorStaff?
   approvedVendors                    Vendor[]                      @relation("VendorApprovedBy")
   reviewedVendorVerificationRequests VendorVerificationRequest[]   @relation("VendorVerificationReviewedBy")
   foodTruckFollows                   FoodTruckFollow[]
