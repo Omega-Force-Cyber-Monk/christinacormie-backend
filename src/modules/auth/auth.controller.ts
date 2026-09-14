@@ -19,6 +19,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { StaffLoginDto } from './dto/staff-login.dto';
 import { VerifyResetCodeDto } from './dto/verify-reset-code.dto';
 import { VerifyEmailCodeDto } from './dto/verify-email-code.dto';
 
@@ -335,6 +336,40 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @ApiOperation({ summary: 'Login staff account with email and 4-digit PIN' })
+  @ApiResponse({
+    status: 201,
+    description: 'Staff login successful. Returns access and refresh tokens.',
+    schema: {
+      example: {
+        accessToken: 'jwt-access-token',
+        refreshToken: 'jwt-refresh-token',
+        user: {
+          id: 'staff-user-id',
+          email: 'maria@example.com',
+          displayName: 'maria',
+          roles: ['VENDOR_STAFF'],
+          staff: {
+            id: 'staff-id',
+            vendorId: 'vendor-id',
+            businessName: 'Taco Paradise',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Email/PIN is incorrect or staff account is inactive.',
+    schema: {
+      example: errorExample(401, 'Invalid email or PIN', 'Unauthorized'),
+    },
+  })
+  @Post('staff/login')
+  staffLogin(@Body() dto: StaffLoginDto) {
+    return this.authService.staffLogin(dto);
   }
 
   @ApiOperation({ summary: 'Send a 6-digit password reset code to email' })

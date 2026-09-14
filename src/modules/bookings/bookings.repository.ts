@@ -23,6 +23,29 @@ export class BookingsRepository {
     });
   }
 
+  async findVendorForActor(userId: string) {
+    const vendor = await this.findVendorByUserId(userId);
+
+    if (vendor) {
+      return vendor;
+    }
+
+    const staff = await this.prisma.vendorStaff.findFirst({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: {
+        vendor: {
+          select: { id: true, status: true, isVerified: true },
+        },
+      },
+    });
+
+    return staff?.vendor ?? null;
+  }
+
   findFoodTruckById(foodTruckId: string) {
     return this.prisma.foodTruck.findUnique({
       where: { id: foodTruckId },
@@ -78,6 +101,14 @@ export class BookingsRepository {
           userId,
         },
       },
+      include: this.bookingInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  listVendorBookingsByVendorId(vendorId: string) {
+    return this.prisma.booking.findMany({
+      where: { vendorId },
       include: this.bookingInclude(),
       orderBy: { createdAt: 'desc' },
     });

@@ -56,15 +56,16 @@ Purpose:
 
 - Vendor adds a staff member by email.
 - Backend creates staff account automatically if needed.
-- Backend generates a PIN.
-- Backend hashes/stores PIN.
+- Vendor manually sets a 4-digit PIN.
+- Backend securely stores PIN for login and vendor list display.
 - Backend sends PIN to staff email.
 
 Request body:
 
 ```json
 {
-  "email": "maria@example.com"
+  "email": "maria@example.com",
+  "pin": "1504"
 }
 ```
 
@@ -74,6 +75,7 @@ Success response example:
 {
   "id": "staff-id",
   "email": "maria@example.com",
+  "pin": "1504",
   "status": "ACTIVE",
   "addedAt": "2026-09-14T09:00:00.000Z",
   "message": "Staff account created and PIN sent to email"
@@ -98,6 +100,7 @@ Success response example:
     {
       "id": "staff-id",
       "email": "maria@example.com",
+      "pin": "1504",
       "status": "ACTIVE",
       "addedAt": "2026-09-14T09:00:00.000Z"
     }
@@ -107,8 +110,8 @@ Success response example:
 
 Important note:
 
-- PIN should not be returned in production response.
-- If UI still needs to show PIN like Figma, we need to decide whether this is only for demo/dev mode or if PIN should be hidden for security.
+- Vendor can see the staff PIN on the list as required by the Figma UI.
+- Because vendor must see PIN later, hash-only storage is not enough. We need secure reversible storage/encryption or another agreed display strategy.
 
 ### 3. Staff Login
 
@@ -157,8 +160,16 @@ POST /api/v1/vendors/me/staff/:staffId/reset-pin
 Purpose:
 
 - Vendor resets staff PIN.
-- Backend generates a new PIN.
+- Vendor manually enters a new 4-digit PIN.
 - Backend sends the new PIN to staff email.
+
+Request body:
+
+```json
+{
+  "pin": "5678"
+}
+```
 
 Success response example:
 
@@ -168,10 +179,6 @@ Success response example:
 }
 ```
 
-Open question:
-
-- Should vendor manually input a new PIN from UI, or should backend auto-generate it?
-- Current safest recommendation: backend auto-generates PIN and emails it.
 
 ### 5. Delete Staff
 
@@ -219,7 +226,8 @@ model VendorStaff {
   vendorId  String   @map("vendor_id") @db.Uuid
   userId    String   @unique @map("user_id") @db.Uuid
   email     String   @db.VarChar(255)
-  pinHash   String   @map("pin_hash") @db.VarChar(255)
+  pinHash      String @map("pin_hash") @db.VarChar(255)
+  pinEncrypted String @map("pin_encrypted")
   status    StaffStatus @default(ACTIVE)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
@@ -245,6 +253,13 @@ enum StaffStatus {
 ## Access Plan
 
 Staff should have limited access only.
+
+Decision:
+
+- Use existing vendor APIs where the feature already exists.
+- Do not create duplicate staff-only APIs for the same behavior.
+- Add staff-aware role/guard/vendor-scope checks so `VENDOR_STAFF` can access only approved routes for their assigned vendor.
+- Create new APIs only for staff management and staff login.
 
 ### Allowed Staff Access
 
@@ -288,9 +303,14 @@ These APIs already exist for vendor. During implementation we should allow `VEND
 
 ### Booking Permissions Decision
 
-Staff can view bookings/orders, but staff should not accept/reject/send quote unless we explicitly allow it later.
+Final decision: staff can only view booking list and booking details exactly like the staff UI.
 
-Blocked for staff by default:
+Allowed for staff:
+
+- `GET /api/v1/bookings/vendor/mine`
+- `GET /api/v1/bookings/:bookingId`
+
+Blocked for staff:
 
 - `PATCH /api/v1/bookings/:bookingId/accept`
 - `PATCH /api/v1/bookings/:bookingId/reject`
@@ -348,26 +368,30 @@ Your new staff login PIN is {pin}.
 
 ## Security Notes
 
-- Store PIN as hash, never plain text.
-- Avoid returning PIN from API response in production.
-- Consider PIN length: Figma shows 4 digits, but 6 digits is safer.
+- PIN length: 4 digits.
+- Vendor manually sets PIN.
+- Vendor can see staff PIN on staff list.
+- Store PIN hash for login verification.
+- Because vendor can see PIN later, we also need secure reversible storage/encryption for display. Do not store plain text PIN.
 - Consider rate limiting staff login later.
 - Reset PIN should revoke old PIN immediately.
 
 ## Open Questions Before Implementation
 
-1. Should PIN be 4 digits like Figma, or 6 digits for better security?
-2. Should vendor see staff PIN on the list, or should PIN only be sent by email?
-3. Should reset PIN be auto-generate or vendor manually enters new PIN?
-4. Should staff be allowed to accept/reject bookings or only view them?
-5. If staff email already belongs to a customer/vendor account, should we block it or attach staff role to same user?
+1. If staff email already belongs to a vendor-owner account, should we block it? Current draft allows attaching staff access to existing users.
+2. Confirm PIN display storage strategy: encrypted PIN display value + hash for login.
 
 ## Current Decision Draft
 
 - Role name: `VENDOR_STAFF`
 - PIN login: `email + PIN`
+- PIN length: 4 digits
+- Vendor manually sets PIN
+- Vendor can see staff PIN on list
 - Add staff: backend auto-creates account
-- PIN storage: hashed
+- PIN storage: hash for login + secure encrypted display value for vendor list
 - PIN delivery: email
 - Delete staff: hard delete staff link and disable staff login
 - Vendor owner only can manage staff
+- Existing email behavior: attach staff access to existing user unless final rule says otherwise
+- Staff booking access: list + details only, no accept/reject/quote

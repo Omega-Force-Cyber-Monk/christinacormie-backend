@@ -395,7 +395,7 @@ export class RewardsService {
     dto: VendorConfirmRedemptionDto,
   ) {
     const vendor =
-      await this.rewardsRepository.findVendorByUserId(vendorUserId);
+      await this.rewardsRepository.findVendorForActor(vendorUserId);
 
     if (!vendor || vendor.deletedAt) {
       throw new ForbiddenException(

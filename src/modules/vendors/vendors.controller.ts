@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -26,7 +27,9 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { CompleteVendorOnboardingDto } from './dto/complete-vendor-onboarding.dto';
+import { CreateVendorStaffDto } from './dto/create-vendor-staff.dto';
 import { RejectVendorDto } from './dto/reject-vendor.dto';
+import { ResetVendorStaffPinDto } from './dto/reset-vendor-staff-pin.dto';
 import { SubmitVerificationRequestDto } from './dto/submit-verification-request.dto';
 import { UpdatePhotoShootRequestDto } from './dto/update-photo-shoot-request.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
@@ -267,7 +270,7 @@ export class VendorsController {
       example: errorExample(404, 'Vendor profile not found', 'Not Found'),
     },
   })
-  @Roles(UserRole.VENDOR)
+  @Roles(UserRole.VENDOR, UserRole.VENDOR_STAFF)
   @Get('api/v1/vendors/me')
   getMyVendorProfile(@CurrentUser() user: AuthenticatedUser) {
     return this.vendorsService.getMyVendorProfile(user.sub);
@@ -298,10 +301,149 @@ export class VendorsController {
       example: errorExample(404, 'Vendor profile not found', 'Not Found'),
     },
   })
-  @Roles(UserRole.VENDOR)
+  @Roles(UserRole.VENDOR, UserRole.VENDOR_STAFF)
   @Get('api/v1/vendors/me/qr-code')
   getMyVendorQrCode(@CurrentUser() user: AuthenticatedUser) {
     return this.vendorsService.getMyVendorQrCode(user.sub);
+  }
+
+  @ApiOperation({ summary: 'List staff members for my vendor account' })
+  @ApiResponse({
+    status: 200,
+    description: 'Staff members returned successfully.',
+    schema: {
+      example: {
+        items: [
+          {
+            id: 'staff-id',
+            email: 'maria@example.com',
+            pin: '1504',
+            status: 'ACTIVE',
+            addedAt: '2026-09-14T09:00:00.000Z',
+          },
+        ],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: { example: unauthorizedExample },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Authenticated user does not have vendor owner role.',
+    schema: { example: forbiddenVendorExample },
+  })
+  @Roles(UserRole.VENDOR)
+  @Get('api/v1/vendors/me/staff')
+  listStaff(@CurrentUser() user: AuthenticatedUser) {
+    return this.vendorsService.listStaff(user.sub);
+  }
+
+  @ApiOperation({ summary: 'Create a staff account with email and 4-digit PIN' })
+  @ApiResponse({
+    status: 201,
+    description: 'Staff account created and PIN sent to email.',
+    schema: {
+      example: {
+        id: 'staff-id',
+        email: 'maria@example.com',
+        pin: '1504',
+        status: 'ACTIVE',
+        addedAt: '2026-09-14T09:00:00.000Z',
+        message: 'Staff account created and PIN sent to email',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Request body is invalid or staff account cannot be created.',
+    schema: {
+      example: errorExample(
+        400,
+        'Staff PIN must be exactly 4 digits',
+        'Bad Request',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Staff member already exists for this vendor.',
+    schema: {
+      example: errorExample(
+        409,
+        'Staff member already exists for this vendor',
+        'Conflict',
+      ),
+    },
+  })
+  @Roles(UserRole.VENDOR)
+  @Post('api/v1/vendors/me/staff')
+  addStaff(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateVendorStaffDto,
+  ) {
+    return this.vendorsService.addStaff(user.sub, dto);
+  }
+
+  @ApiOperation({ summary: 'Reset a staff member PIN manually' })
+  @ApiResponse({
+    status: 201,
+    description: 'Staff PIN reset and sent to email.',
+    schema: {
+      example: {
+        id: 'staff-id',
+        email: 'maria@example.com',
+        pin: '5678',
+        status: 'ACTIVE',
+        addedAt: '2026-09-14T09:00:00.000Z',
+        message: 'Staff PIN reset successfully and sent to email',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Staff member was not found.',
+    schema: {
+      example: errorExample(404, 'Staff member not found', 'Not Found'),
+    },
+  })
+  @Roles(UserRole.VENDOR)
+  @Post('api/v1/vendors/me/staff/:staffId/reset-pin')
+  resetStaffPin(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('staffId') staffId: string,
+    @Body() dto: ResetVendorStaffPinDto,
+  ) {
+    return this.vendorsService.resetStaffPin(user.sub, staffId, dto);
+  }
+
+  @ApiOperation({ summary: 'Delete a staff member from my vendor account' })
+  @ApiResponse({
+    status: 200,
+    description: 'Staff member deleted successfully.',
+    schema: {
+      example: {
+        deleted: true,
+        message: 'Staff member deleted successfully',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Staff member was not found.',
+    schema: {
+      example: errorExample(404, 'Staff member not found', 'Not Found'),
+    },
+  })
+  @Roles(UserRole.VENDOR)
+  @Delete('api/v1/vendors/me/staff/:staffId')
+  deleteStaff(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('staffId') staffId: string,
+  ) {
+    return this.vendorsService.deleteStaff(user.sub, staffId);
   }
 
   @ApiOperation({ summary: 'Get vendor dashboard analytics overview' })

@@ -676,7 +676,7 @@ export class VendorsRepository {
     };
   }
 
-  private vendorInclude() {
+  vendorInclude() {
     return {
       user: {
         include: {
