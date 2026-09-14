@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { AccountStatus } from '../../common/enums/account-status.enum';
+import { CloudinaryService } from '../../infrastructure/cloudinary/cloudinary.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { RewardsService } from '../rewards/rewards.service';
 import { RegisterDeviceTokenDto } from './dto/register-device-token.dto';
@@ -17,6 +19,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rewardsService: RewardsService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async getMe(userId: string) {
@@ -116,6 +119,59 @@ export class UsersService {
     }
 
     return updatedProfile;
+  }
+
+  async uploadProfileAvatar(userId: string, file?: Express.Multer.File) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || user.deletedAt) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!file) {
+      throw new BadRequestException('Profile photo file is required');
+    }
+
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException(
+        'Only image files are allowed for profile photo',
+      );
+    }
+
+    const maxSizeInBytes = 5 * 1024 * 1024;
+    if (file.size > maxSizeInBytes) {
+      throw new BadRequestException('Profile photo must be 5MB or smaller');
+    }
+
+    const upload = await this.cloudinaryService.uploadBuffer(file.buffer, {
+      folder: `bitedrop/users/${userId}/avatars`,
+      resourceType: 'image',
+    });
+
+    const profile = await this.prisma.userProfile.upsert({
+      where: { userId },
+      create: {
+        userId,
+        avatarUrl: upload.secure_url,
+      },
+      update: {
+        avatarUrl: upload.secure_url,
+      },
+    });
+
+    return {
+      message: 'Profile photo uploaded successfully',
+      avatarUrl: upload.secure_url,
+      publicId: upload.public_id,
+      width: upload.width,
+      height: upload.height,
+      format: upload.format,
+      resourceType: upload.resource_type,
+      originalFilename: file.originalname,
+      profile,
+    };
   }
 
   async updateSettings(userId: string, dto: UpdateSettingsDto) {
@@ -250,23 +306,99 @@ export class UsersService {
     return preferences;
   }
 
-  async deactivateAccount(userId: string) {
-    const user = await this.prisma.user.update({
+  async deleteAccountPermanently(userId: string) {
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      data: {
-        status: AccountStatus.DEACTIVATED,
-        deletedAt: new Date(),
-        refreshTokens: {
-          updateMany: {
-            where: { revokedAt: null },
-            data: { revokedAt: new Date() },
-          },
-        },
-      },
-      include: this.userInclude(),
+      include: { vendor: true },
     });
 
-    return this.toUserResponse(user);
+    if (!user || user.deletedAt) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.vendor) {
+      throw new BadRequestException(
+        'Vendor account deletion is not available from customer settings. Please contact support.',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.notification.deleteMany({
+        where: {
+          OR: [{ userId }, { actorUserId: userId }],
+        },
+      });
+      await tx.notificationPreference.deleteMany({ where: { userId } });
+
+      await tx.postCommentLike.deleteMany({ where: { userId } });
+      await tx.postComment.deleteMany({ where: { userId } });
+      await tx.postLike.deleteMany({ where: { userId } });
+      await tx.savedPost.deleteMany({ where: { userId } });
+      await tx.favoriteTruck.deleteMany({ where: { userId } });
+      await tx.foodTruckFollow.deleteMany({ where: { userId } });
+
+      await tx.communityRequestReaction.deleteMany({ where: { userId } });
+      await tx.communityRequestComment.deleteMany({ where: { userId } });
+      await tx.communityPostAction.deleteMany({ where: { userId } });
+
+      await tx.message.deleteMany({ where: { senderId: userId } });
+      await tx.conversationParticipant.deleteMany({ where: { userId } });
+      await tx.conversation.deleteMany({ where: { createdById: userId } });
+
+      await tx.bookingStatusHistory.updateMany({
+        where: { changedById: userId },
+        data: { changedById: null },
+      });
+      await tx.bookingHold.deleteMany({ where: { userId } });
+
+      await tx.reviewReport.deleteMany({
+        where: {
+          OR: [{ reportedById: userId }, { reviewedById: userId }],
+        },
+      });
+      await tx.review.deleteMany({
+        where: {
+          OR: [{ customerId: userId }, { moderatedById: userId }],
+        },
+      });
+
+      await tx.promotionRedemption.deleteMany({ where: { userId } });
+      await tx.rewardRedemption.deleteMany({ where: { userId } });
+      await tx.loyaltyTransaction.deleteMany({
+        where: { loyaltyAccount: { userId } },
+      });
+      await tx.userBadge.deleteMany({ where: { userId } });
+      await tx.loyaltyAccount.deleteMany({ where: { userId } });
+
+      await tx.referralReward.deleteMany({
+        where: { beneficiaryUserId: userId },
+      });
+      await tx.referral.deleteMany({
+        where: {
+          OR: [{ referrerUserId: userId }, { referredUserId: userId }],
+        },
+      });
+      await tx.referralCode.deleteMany({ where: { ownerUserId: userId } });
+
+      await tx.qrScan.deleteMany({ where: { userId } });
+      await tx.checkIn.deleteMany({ where: { userId } });
+
+      await tx.deviceToken.deleteMany({ where: { userId } });
+      await tx.userCuisineInterest.deleteMany({ where: { userId } });
+      await tx.userSetting.deleteMany({ where: { userId } });
+      await tx.userProfile.deleteMany({ where: { userId } });
+      await tx.passwordResetCode.deleteMany({ where: { userId } });
+      await tx.emailVerificationCode.deleteMany({ where: { userId } });
+      await tx.refreshToken.deleteMany({ where: { userId } });
+      await tx.userRoleAssignment.deleteMany({ where: { userId } });
+
+      await tx.user.delete({ where: { id: userId } });
+    });
+
+    return {
+      deleted: true,
+      message: 'Account permanently deleted successfully',
+    };
   }
 
   async updateAccountStatus(userId: string, status: AccountStatus) {

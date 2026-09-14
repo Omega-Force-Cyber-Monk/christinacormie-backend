@@ -6,14 +6,19 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
+  ApiBody,
   ApiBearerAuth,
+  ApiConsumes,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -112,6 +117,23 @@ const profileResponseExample = {
   postalCode: '78701',
   email: 'alex@example.com',
   phone: '+12025550123',
+};
+
+const profileAvatarUploadResponseExample = {
+  message: 'Profile photo uploaded successfully',
+  avatarUrl:
+    'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/users/user-id/avatars/avatar.jpg',
+  publicId: 'bitedrop/users/user-id/avatars/avatar',
+  width: 512,
+  height: 512,
+  format: 'jpg',
+  resourceType: 'image',
+  originalFilename: 'avatar.jpg',
+  profile: {
+    ...profileResponseExample,
+    avatarUrl:
+      'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/users/user-id/avatars/avatar.jpg',
+  },
 };
 
 const settingsResponseExample = {
@@ -392,6 +414,68 @@ export class UsersController {
   }
 
   @ApiOperation({
+    summary: 'Upload and save current user profile photo',
+    description:
+      'Use this multipart endpoint from the Settings profile photo picker. It uploads the image to Cloudinary and saves the returned URL as profile.avatarUrl.',
+  })
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Profile photo uploaded and saved successfully.',
+    schema: {
+      example: profileAvatarUploadResponseExample,
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'File is missing, file is not an image, file is too large, or Cloudinary is not configured.',
+    schema: {
+      example: errorExample(
+        400,
+        'Only image files are allowed for profile photo',
+        'Bad Request',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: {
+      example: unauthorizedExample,
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Authenticated user no longer exists.',
+    schema: {
+      example: errorExample(404, 'User not found', 'Not Found'),
+    },
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseInterceptors(FileInterceptor('file'))
+  @Post('me/profile/avatar/upload')
+  uploadProfileAvatar(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.usersService.uploadProfileAvatar(user.sub, file);
+  }
+
+  @ApiOperation({
     summary: 'Update settings (timezone, language, units) for current user',
   })
   @ApiBearerAuth()
@@ -481,17 +565,31 @@ export class UsersController {
     return this.usersService.updateNotificationPreferences(user.sub, dto);
   }
 
-  @ApiOperation({ summary: 'Deactivate current user account' })
+  @ApiOperation({
+    summary: 'Permanently delete current customer account',
+    description:
+      'Use this from Settings > Delete account. This permanently removes the customer account and related customer data. Vendor accounts are blocked from this endpoint to avoid deleting business/truck data accidentally.',
+  })
   @ApiBearerAuth()
   @ApiResponse({
     status: 200,
-    description:
-      'Account deactivated successfully. Active refresh tokens are revoked.',
+    description: 'Account permanently deleted successfully.',
     schema: {
       example: {
-        ...userResponseExample,
-        status: 'DEACTIVATED',
+        deleted: true,
+        message: 'Account permanently deleted successfully',
       },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Vendor account cannot be deleted from customer settings.',
+    schema: {
+      example: errorExample(
+        400,
+        'Vendor account deletion is not available from customer settings. Please contact support.',
+        'Bad Request',
+      ),
     },
   })
   @ApiResponse({
@@ -509,9 +607,9 @@ export class UsersController {
     },
   })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Patch('me/deactivate')
-  deactivateAccount(@CurrentUser() user: AuthenticatedUser) {
-    return this.usersService.deactivateAccount(user.sub);
+  @Delete('me')
+  deleteMyAccount(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.deleteAccountPermanently(user.sub);
   }
 
   @ApiOperation({ summary: 'Update account status of a user (Admin)' })
