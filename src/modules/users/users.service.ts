@@ -150,7 +150,7 @@ export class UsersService {
       resourceType: 'image',
     });
 
-    const profile = await this.prisma.userProfile.upsert({
+    await this.prisma.userProfile.upsert({
       where: { userId },
       create: {
         userId,
@@ -164,13 +164,6 @@ export class UsersService {
     return {
       message: 'Profile photo uploaded successfully',
       avatarUrl: upload.secure_url,
-      publicId: upload.public_id,
-      width: upload.width,
-      height: upload.height,
-      format: upload.format,
-      resourceType: upload.resource_type,
-      originalFilename: file.originalname,
-      profile,
     };
   }
 
@@ -323,9 +316,49 @@ export class UsersService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      const customerBookings = await tx.booking.findMany({
+        where: { customerId: userId },
+        select: { id: true },
+      });
+      const bookingIds = customerBookings.map((booking) => booking.id);
+
+      const createdCommunityRequests = await tx.communityRequest.findMany({
+        where: { createdById: userId },
+        select: { id: true },
+      });
+      const communityRequestIds = createdCommunityRequests.map(
+        (request) => request.id,
+      );
+
+      const userConversations = await tx.conversation.findMany({
+        where: {
+          OR: [
+            { createdById: userId },
+            { participants: { some: { userId } } },
+            ...(bookingIds.length
+              ? [{ bookingId: { in: bookingIds } }]
+              : []),
+            ...(communityRequestIds.length
+              ? [{ communityRequestId: { in: communityRequestIds } }]
+              : []),
+          ],
+        },
+        select: { id: true },
+      });
+      const conversationIds = userConversations.map(
+        (conversation) => conversation.id,
+      );
+
       await tx.notification.deleteMany({
         where: {
-          OR: [{ userId }, { actorUserId: userId }],
+          OR: [
+            { userId },
+            { actorUserId: userId },
+            ...(bookingIds.length ? [{ bookingId: { in: bookingIds } }] : []),
+            ...(conversationIds.length
+              ? [{ conversationId: { in: conversationIds } }]
+              : []),
+          ],
         },
       });
       await tx.notificationPreference.deleteMany({ where: { userId } });
@@ -341,9 +374,20 @@ export class UsersService {
       await tx.communityRequestComment.deleteMany({ where: { userId } });
       await tx.communityPostAction.deleteMany({ where: { userId } });
 
-      await tx.message.deleteMany({ where: { senderId: userId } });
-      await tx.conversationParticipant.deleteMany({ where: { userId } });
-      await tx.conversation.deleteMany({ where: { createdById: userId } });
+      if (conversationIds.length) {
+        await tx.message.deleteMany({
+          where: { conversationId: { in: conversationIds } },
+        });
+        await tx.conversationParticipant.deleteMany({
+          where: { conversationId: { in: conversationIds } },
+        });
+        await tx.conversation.deleteMany({
+          where: { id: { in: conversationIds } },
+        });
+      } else {
+        await tx.message.deleteMany({ where: { senderId: userId } });
+        await tx.conversationParticipant.deleteMany({ where: { userId } });
+      }
 
       await tx.bookingStatusHistory.updateMany({
         where: { changedById: userId },
@@ -351,14 +395,43 @@ export class UsersService {
       });
       await tx.bookingHold.deleteMany({ where: { userId } });
 
+      if (bookingIds.length) {
+        await tx.refund.deleteMany({
+          where: { payment: { bookingId: { in: bookingIds } } },
+        });
+        await tx.commission.deleteMany({
+          where: { bookingId: { in: bookingIds } },
+        });
+        await tx.payment.deleteMany({
+          where: { bookingId: { in: bookingIds } },
+        });
+        await tx.bookingQuote.deleteMany({
+          where: { bookingId: { in: bookingIds } },
+        });
+        await tx.bookingStatusHistory.deleteMany({
+          where: { bookingId: { in: bookingIds } },
+        });
+      }
+
       await tx.reviewReport.deleteMany({
         where: {
-          OR: [{ reportedById: userId }, { reviewedById: userId }],
+          OR: [
+            { reportedById: userId },
+            { reviewedById: userId },
+            { review: { customerId: userId } },
+            ...(bookingIds.length
+              ? [{ review: { bookingId: { in: bookingIds } } }]
+              : []),
+          ],
         },
       });
       await tx.review.deleteMany({
         where: {
-          OR: [{ customerId: userId }, { moderatedById: userId }],
+          OR: [
+            { customerId: userId },
+            { moderatedById: userId },
+            ...(bookingIds.length ? [{ bookingId: { in: bookingIds } }] : []),
+          ],
         },
       });
 
@@ -382,6 +455,48 @@ export class UsersService {
 
       await tx.qrScan.deleteMany({ where: { userId } });
       await tx.checkIn.deleteMany({ where: { userId } });
+
+      if (bookingIds.length) {
+        await tx.booking.deleteMany({ where: { id: { in: bookingIds } } });
+      }
+
+      if (communityRequestIds.length) {
+        await tx.message.deleteMany({
+          where: {
+            vendorOffer: {
+              communityRequestId: { in: communityRequestIds },
+            },
+          },
+        });
+        await tx.communityRequestMedia.deleteMany({
+          where: { communityRequestId: { in: communityRequestIds } },
+        });
+        await tx.communityRequestReaction.deleteMany({
+          where: { communityRequestId: { in: communityRequestIds } },
+        });
+        await tx.communityRequestComment.deleteMany({
+          where: { communityRequestId: { in: communityRequestIds } },
+        });
+        await tx.communityPostAction.deleteMany({
+          where: { postId: { in: communityRequestIds } },
+        });
+        await tx.vendorOffer.deleteMany({
+          where: { communityRequestId: { in: communityRequestIds } },
+        });
+        await tx.communityRequest.deleteMany({
+          where: { id: { in: communityRequestIds } },
+        });
+      }
+
+      await tx.newFoodTruckRequest.updateMany({
+        where: {
+          OR: [{ requestedById: userId }, { reviewedById: userId }],
+        },
+        data: {
+          requestedById: null,
+          reviewedById: null,
+        },
+      });
 
       await tx.deviceToken.deleteMany({ where: { userId } });
       await tx.userCuisineInterest.deleteMany({ where: { userId } });
