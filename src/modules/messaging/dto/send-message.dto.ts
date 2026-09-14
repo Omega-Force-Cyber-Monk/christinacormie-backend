@@ -4,7 +4,6 @@ import {
   IsOptional,
   IsString,
   IsUrl,
-  IsUUID,
   MaxLength,
 } from 'class-validator';
 
@@ -12,7 +11,6 @@ export enum MessagingMessageTypeDto {
   TEXT = 'TEXT',
   IMAGE = 'IMAGE',
   FILE = 'FILE',
-  OFFER = 'OFFER',
 }
 
 export class SendMessageDto {
@@ -43,13 +41,4 @@ export class SendMessageDto {
   @IsOptional()
   @IsUrl()
   attachmentUrl?: string;
-
-  @ApiPropertyOptional({
-    example: '7e7f3f6a-f047-49a4-8a01-4bbfd8e8ad1b',
-    description:
-      'Optional quote/offer reference when sending an OFFER message.',
-  })
-  @IsOptional()
-  @IsUUID()
-  vendorOfferId?: string;
 }
