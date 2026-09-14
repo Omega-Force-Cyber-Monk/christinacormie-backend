@@ -493,7 +493,7 @@ export class RewardsController {
     },
   })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.VENDOR)
+  @Roles(UserRole.VENDOR, UserRole.VENDOR_STAFF)
   @Post('api/v1/vendors/me/redemptions/confirm')
   confirmVendorRedemption(
     @CurrentUser() user: AuthenticatedUser,

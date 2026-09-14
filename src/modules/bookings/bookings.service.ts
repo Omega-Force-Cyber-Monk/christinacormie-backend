@@ -86,8 +86,8 @@ export class BookingsService {
   }
 
   async listVendorBookings(userId: string) {
-    await this.ensureVendor(userId);
-    return this.bookingsRepository.listVendorBookingsByUserId(userId);
+    const vendor = await this.ensureVendor(userId);
+    return this.bookingsRepository.listVendorBookingsByVendorId(vendor.id);
   }
 
   async getBookingDetails(userId: string, bookingId: string) {
@@ -437,7 +437,7 @@ export class BookingsService {
   }
 
   private async ensureVendor(userId: string) {
-    const vendor = await this.bookingsRepository.findVendorByUserId(userId);
+    const vendor = await this.bookingsRepository.findVendorForActor(userId);
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');

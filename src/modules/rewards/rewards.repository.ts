@@ -42,6 +42,35 @@ export class RewardsRepository {
     });
   }
 
+  async findVendorForActor(userId: string) {
+    const vendor = await this.findVendorByUserId(userId);
+
+    if (vendor) {
+      return vendor;
+    }
+
+    const staff = await this.prisma.vendorStaff.findFirst({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: {
+        vendor: {
+          select: {
+            id: true,
+            userId: true,
+            status: true,
+            isVerified: true,
+            deletedAt: true,
+          },
+        },
+      },
+    });
+
+    return staff?.vendor ?? null;
+  }
+
   findFoodTruckById(foodTruckId: string) {
     return this.prisma.foodTruck.findUnique({
       where: { id: foodTruckId },

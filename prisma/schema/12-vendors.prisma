@@ -27,6 +27,11 @@ enum PhotoShootRequestStatus {
   CANCELLED
 }
 
+enum StaffStatus {
+  ACTIVE
+  DISABLED
+}
+
 model Vendor {
   id                   String                       @id @default(uuid()) @db.Uuid
   userId               String                       @unique @map("user_id") @db.Uuid
@@ -66,8 +71,27 @@ model Vendor {
   leaderboardEntries   LeaderboardEntry[]
   qrKitShipments       QrKitShipment[]
   photoShootRequests   VendorPhotoShootRequest[]
+  staffMembers         VendorStaff[]
 
   @@map("vendors")
+}
+
+model VendorStaff {
+  id           String      @id @default(uuid()) @db.Uuid
+  vendorId     String      @map("vendor_id") @db.Uuid
+  userId       String      @unique @map("user_id") @db.Uuid
+  email        String      @db.VarChar(255)
+  pinHash      String      @map("pin_hash") @db.VarChar(255)
+  pinEncrypted String      @map("pin_encrypted")
+  status       StaffStatus @default(ACTIVE)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?   @map("deleted_at") @db.Timestamptz(6)
+  vendor       Vendor      @relation(fields: [vendorId], references: [id])
+  user         User        @relation(fields: [userId], references: [id])
+
+  @@unique([vendorId, email])
+  @@map("vendor_staff")
 }
 
 model VendorVerificationRequest {

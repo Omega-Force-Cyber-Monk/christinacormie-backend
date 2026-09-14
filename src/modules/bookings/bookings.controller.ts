@@ -208,7 +208,7 @@ export class BookingsController {
     schema: { example: vendorApprovalErrorExample },
   })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.VENDOR)
+  @Roles(UserRole.VENDOR, UserRole.VENDOR_STAFF)
   @Get('vendor/mine')
   listVendorBookings(@CurrentUser() user: AuthenticatedUser) {
     return this.bookingsService.listVendorBookings(user.sub);
