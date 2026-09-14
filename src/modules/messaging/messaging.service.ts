@@ -119,60 +119,6 @@ export class MessagingService {
     };
   }
 
-  async createBookingConversation(userId: string, bookingId: string) {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-      select: {
-        id: true,
-        bookingNumber: true,
-        customerId: true,
-        vendor: { select: { userId: true } },
-      },
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Booking not found');
-    }
-
-    const vendorUserId = booking.vendor.userId;
-    if (booking.customerId !== userId && vendorUserId !== userId) {
-      throw new ForbiddenException('Booking is not visible to this user');
-    }
-
-    const existing = await this.prisma.conversation.findFirst({
-      where: { type: 'BOOKING', bookingId: booking.id },
-      include: this.conversationInclude(userId),
-    });
-
-    if (existing) {
-      return {
-        message: 'Conversation already exists',
-        conversation: await this.presentConversation(existing, userId),
-      };
-    }
-
-    const participantIds = [...new Set([booking.customerId, vendorUserId])];
-    const conversation = await this.prisma.conversation.create({
-      data: {
-        type: 'BOOKING',
-        createdById: userId,
-        bookingId: booking.id,
-        title: `Booking ${booking.bookingNumber}`,
-        participants: {
-          create: participantIds.map((participantUserId) => ({
-            userId: participantUserId,
-          })),
-        },
-      },
-      include: this.conversationInclude(userId),
-    });
-
-    return {
-      message: 'Conversation created successfully',
-      conversation: await this.presentConversation(conversation, userId),
-    };
-  }
-
   async listMessages(
     userId: string,
     conversationId: string,
@@ -218,9 +164,9 @@ export class MessagingService {
     const messageType = dto.messageType ?? MessagingMessageTypeDto.TEXT;
     const content = dto.content?.trim();
 
-    if (!content && !dto.attachmentUrl && !dto.vendorOfferId) {
+    if (!content && !dto.attachmentUrl) {
       throw new BadRequestException(
-        'Message content, attachmentUrl, or vendorOfferId is required',
+        'Message content or attachmentUrl is required',
       );
     }
 
@@ -239,16 +185,6 @@ export class MessagingService {
       );
     }
 
-    if (messageType === MessagingMessageTypeDto.OFFER && !dto.vendorOfferId) {
-      throw new BadRequestException(
-        'vendorOfferId is required for offer messages',
-      );
-    }
-
-    if (dto.vendorOfferId) {
-      await this.ensureOfferCanBeShared(dto.vendorOfferId);
-    }
-
     const message = await this.prisma.$transaction(async (tx) => {
       const created = await tx.message.create({
         data: {
@@ -257,7 +193,6 @@ export class MessagingService {
           messageType,
           content: content ?? null,
           attachmentUrl: dto.attachmentUrl,
-          vendorOfferId: dto.vendorOfferId,
         },
         include: this.messageInclude(),
       });
@@ -379,8 +314,6 @@ export class MessagingService {
           select: {
             id: true,
             type: true,
-            bookingId: true,
-            communityRequestId: true,
             isClosed: true,
           },
         },
@@ -409,17 +342,6 @@ export class MessagingService {
 
     if (['SUSPENDED', 'DEACTIVATED', 'BLOCKED'].includes(user.status)) {
       throw new ForbiddenException('User account cannot use messaging');
-    }
-  }
-
-  private async ensureOfferCanBeShared(vendorOfferId: string) {
-    const offer = await this.prisma.vendorOffer.findUnique({
-      where: { id: vendorOfferId },
-      select: { id: true },
-    });
-
-    if (!offer) {
-      throw new NotFoundException('Vendor offer not found');
     }
   }
 
@@ -490,15 +412,6 @@ export class MessagingService {
           },
         },
       },
-      booking: {
-        select: {
-          id: true,
-          bookingNumber: true,
-          status: true,
-          foodTruck: { select: { id: true, name: true, slug: true } },
-        },
-      },
-      communityRequest: { select: { id: true, title: true, status: true } },
       messages: {
         where: { deletedAt: null },
         orderBy: { createdAt: 'desc' as const },
@@ -536,15 +449,6 @@ export class MessagingService {
           },
         },
       },
-      vendorOffer: {
-        select: {
-          id: true,
-          status: true,
-          quotedAmount: true,
-          depositAmount: true,
-          paymentPreference: true,
-        },
-      },
     };
   }
 
@@ -562,26 +466,29 @@ export class MessagingService {
       },
     });
 
+    const participants = conversation.participants.map((participant: any) => ({
+      id: participant.id,
+      userId: participant.userId,
+      lastReadAt: participant.lastReadAt,
+      isMuted: participant.isMuted,
+      user: this.presentUser(participant.user),
+    }));
+    const otherParticipant =
+      participants.find(
+        (participant: any) => participant.userId !== currentUserId,
+      ) ?? null;
+
     return {
       id: conversation.id,
       type: conversation.type,
       title: conversation.title,
-      bookingId: conversation.bookingId,
-      communityRequestId: conversation.communityRequestId,
       isClosed: conversation.isClosed,
       createdAt: conversation.createdAt,
       lastMessageAt: conversation.lastMessageAt,
       unreadCount,
       messageCount: conversation._count?.messages ?? 0,
-      participants: conversation.participants.map((participant: any) => ({
-        id: participant.id,
-        userId: participant.userId,
-        lastReadAt: participant.lastReadAt,
-        isMuted: participant.isMuted,
-        user: this.presentUser(participant.user),
-      })),
-      booking: conversation.booking ?? null,
-      communityRequest: conversation.communityRequest ?? null,
+      otherParticipant,
+      participants,
       lastMessage: conversation.messages?.[0]
         ? this.presentMessage(conversation.messages[0])
         : null,
@@ -596,8 +503,6 @@ export class MessagingService {
       messageType: message.messageType,
       content: message.content,
       attachmentUrl: message.attachmentUrl,
-      vendorOfferId: message.vendorOfferId,
-      vendorOffer: message.vendorOffer ?? null,
       createdAt: message.createdAt,
       editedAt: message.editedAt,
       sender: this.presentUser(message.sender),

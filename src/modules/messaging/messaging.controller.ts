@@ -34,13 +34,28 @@ const conversationExample = {
   id: '7e7f3f6a-f047-49a4-8a01-4bbfd8e8ad1b',
   type: 'DIRECT',
   title: 'Question about Taco Paradise',
-  bookingId: null,
-  communityRequestId: null,
   isClosed: false,
   createdAt: '2026-09-13T10:00:00.000Z',
   lastMessageAt: '2026-09-13T10:02:00.000Z',
   unreadCount: 1,
   messageCount: 3,
+  otherParticipant: {
+    id: 'participant-id',
+    userId: 'vendor-user-id',
+    lastReadAt: null,
+    isMuted: false,
+    user: {
+      id: 'vendor-user-id',
+      email: 'vendor@example.com',
+      displayName: 'Taco Paradise',
+      avatarUrl: null,
+      vendor: {
+        id: 'vendor-id',
+        businessName: 'Taco Paradise',
+        logoUrl: null,
+      },
+    },
+  },
   participants: [
     {
       id: 'participant-id',
@@ -56,8 +71,6 @@ const conversationExample = {
       },
     },
   ],
-  booking: null,
-  communityRequest: null,
   lastMessage: {
     id: 'message-id',
     conversationId: '7e7f3f6a-f047-49a4-8a01-4bbfd8e8ad1b',
@@ -65,8 +78,6 @@ const conversationExample = {
     messageType: 'TEXT',
     content: 'Hi, are you available?',
     attachmentUrl: null,
-    vendorOfferId: null,
-    vendorOffer: null,
     createdAt: '2026-09-13T10:02:00.000Z',
     editedAt: null,
   },
@@ -166,40 +177,6 @@ export class MessagingController {
     @Body() dto: CreateDirectConversationDto,
   ) {
     return this.messagingService.createDirectConversation(user.sub, dto);
-  }
-
-  @ApiOperation({
-    summary: 'Start or reuse a booking conversation',
-    description:
-      'Only the booking customer and assigned vendor owner can create/read this conversation.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Booking conversation created or reused.',
-    schema: {
-      example: {
-        message: 'Conversation created successfully',
-        conversation: { ...conversationExample, type: 'BOOKING' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Booking does not belong to the authenticated user.',
-    schema: {
-      example: errorExample(
-        403,
-        'Booking is not visible to this user',
-        'Forbidden',
-      ),
-    },
-  })
-  @Post('bookings/:bookingId/conversation')
-  createBookingConversation(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('bookingId', ParseUUIDPipe) bookingId: string,
-  ) {
-    return this.messagingService.createBookingConversation(user.sub, bookingId);
   }
 
   @ApiOperation({ summary: 'Get one conversation' })
