@@ -123,17 +123,6 @@ const profileAvatarUploadResponseExample = {
   message: 'Profile photo uploaded successfully',
   avatarUrl:
     'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/users/user-id/avatars/avatar.jpg',
-  publicId: 'bitedrop/users/user-id/avatars/avatar',
-  width: 512,
-  height: 512,
-  format: 'jpg',
-  resourceType: 'image',
-  originalFilename: 'avatar.jpg',
-  profile: {
-    ...profileResponseExample,
-    avatarUrl:
-      'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/users/user-id/avatars/avatar.jpg',
-  },
 };
 
 const settingsResponseExample = {
