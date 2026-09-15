@@ -262,6 +262,12 @@ export class AdminController {
     return this.adminService.listLeaderboards(query);
   }
 
+  @ApiOperation({ summary: 'Get consolidated admin dashboard data' })
+  @Get('dashboard')
+  getDashboard() {
+    return this.adminService.getDashboard();
+  }
+
   @ApiOperation({ summary: 'Get overall admin analytics summary' })
   @Get('analytics/overview')
   getOverviewAnalytics() {

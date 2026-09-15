@@ -285,6 +285,10 @@ export class AdminService {
     return this.adminRepository.listLeaderboards(query);
   }
 
+  getDashboard() {
+    return this.adminRepository.getDashboard();
+  }
+
   getOverviewAnalytics() {
     return this.adminRepository.getOverviewAnalytics();
   }

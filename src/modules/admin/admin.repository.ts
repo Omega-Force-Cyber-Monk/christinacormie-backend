@@ -539,8 +539,323 @@ export class AdminRepository {
     });
   }
 
+  async getDashboard() {
+    const now = new Date();
+    const currentMonthStart = this.startOfMonth(now);
+    const nextMonthStart = this.addMonths(currentMonthStart, 1);
+    const previousMonthStart = this.addMonths(currentMonthStart, -1);
+    const sixMonthStarts = Array.from({ length: 6 }, (_, index) =>
+      this.addMonths(currentMonthStart, index - 5),
+    );
+
+    const [
+      totalUsers,
+      previousTotalUsers,
+      activeVendors,
+      previousActiveVendors,
+      liveDrops,
+      previousLiveDrops,
+      monthlyBookings,
+      previousMonthlyBookings,
+      monthlyRevenueAgg,
+      previousMonthlyRevenueAgg,
+      monthlyCommissionAgg,
+      previousMonthlyCommissionAgg,
+      pendingPayouts,
+      previousPendingPayouts,
+      activeReviewReports,
+      previousActiveReviewReports,
+      revenueTrend,
+      bookingsTrend,
+      recentActivity,
+    ] = await Promise.all([
+      this.prisma.user.count({ where: { deletedAt: null } }),
+      this.prisma.user.count({
+        where: { deletedAt: null, createdAt: { lt: currentMonthStart } },
+      }),
+      this.prisma.vendor.count({
+        where: { deletedAt: null, status: 'APPROVED' },
+      }),
+      this.prisma.vendor.count({
+        where: {
+          deletedAt: null,
+          status: 'APPROVED',
+          createdAt: { lt: currentMonthStart },
+        },
+      }),
+      this.prisma.foodTruckDrop.count({
+        where: {
+          status: 'ACTIVE',
+          startsAt: { lte: now },
+          OR: [{ endsAt: null }, { endsAt: { gte: now } }],
+        },
+      }),
+      this.prisma.foodTruckDrop.count({
+        where: {
+          status: 'ACTIVE',
+          startsAt: { lte: currentMonthStart },
+          OR: [{ endsAt: null }, { endsAt: { gte: currentMonthStart } }],
+        },
+      }),
+      this.prisma.booking.count({
+        where: { createdAt: { gte: currentMonthStart, lt: nextMonthStart } },
+      }),
+      this.prisma.booking.count({
+        where: {
+          createdAt: { gte: previousMonthStart, lt: currentMonthStart },
+        },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          status: 'SUCCEEDED',
+          paidAt: { gte: currentMonthStart, lt: nextMonthStart },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          status: 'SUCCEEDED',
+          paidAt: { gte: previousMonthStart, lt: currentMonthStart },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.commission.aggregate({
+        where: { createdAt: { gte: currentMonthStart, lt: nextMonthStart } },
+        _sum: { commissionAmount: true },
+      }),
+      this.prisma.commission.aggregate({
+        where: {
+          createdAt: { gte: previousMonthStart, lt: currentMonthStart },
+        },
+        _sum: { commissionAmount: true },
+      }),
+      this.prisma.payout.count({ where: { status: 'PENDING' } }),
+      this.prisma.payout.count({
+        where: { status: 'PENDING', createdAt: { lt: currentMonthStart } },
+      }),
+      this.prisma.reviewReport.count({
+        where: { status: { in: ['PENDING', 'REVIEWING'] } },
+      }),
+      this.prisma.reviewReport.count({
+        where: {
+          status: { in: ['PENDING', 'REVIEWING'] },
+          createdAt: { lt: currentMonthStart },
+        },
+      }),
+      Promise.all(
+        sixMonthStarts.map(async (monthStart) => {
+          const nextStart = this.addMonths(monthStart, 1);
+          const aggregate = await this.prisma.payment.aggregate({
+            where: {
+              status: 'SUCCEEDED',
+              paidAt: { gte: monthStart, lt: nextStart },
+            },
+            _sum: { amount: true },
+          });
+
+          return {
+            month: this.monthLabel(monthStart),
+            revenue: Number(aggregate._sum.amount ?? 0),
+          };
+        }),
+      ),
+      Promise.all(
+        sixMonthStarts.map(async (monthStart) => {
+          const nextStart = this.addMonths(monthStart, 1);
+          const count = await this.prisma.booking.count({
+            where: { createdAt: { gte: monthStart, lt: nextStart } },
+          });
+
+          return {
+            month: this.monthLabel(monthStart),
+            bookings: count,
+          };
+        }),
+      ),
+      this.getRecentDashboardActivity(),
+    ]);
+
+    const monthlyRevenue = Number(monthlyRevenueAgg._sum.amount ?? 0);
+    const previousMonthlyRevenue = Number(
+      previousMonthlyRevenueAgg._sum.amount ?? 0,
+    );
+    const monthlyCommission = Number(
+      monthlyCommissionAgg._sum.commissionAmount ?? 0,
+    );
+    const previousMonthlyCommission = Number(
+      previousMonthlyCommissionAgg._sum.commissionAmount ?? 0,
+    );
+
+    return {
+      generatedAt: now,
+      cards: {
+        totalUsers: this.metric(totalUsers, previousTotalUsers),
+        activeVendors: this.metric(activeVendors, previousActiveVendors),
+        liveDrops: this.metric(liveDrops, previousLiveDrops),
+        monthlyBookings: this.metric(monthlyBookings, previousMonthlyBookings),
+        revenueThisMonth: this.metric(monthlyRevenue, previousMonthlyRevenue),
+        commissionEarned: this.metric(
+          monthlyCommission,
+          previousMonthlyCommission,
+        ),
+        pendingPayouts: this.metric(pendingPayouts, previousPendingPayouts),
+        activeDisputes: {
+          ...this.metric(activeReviewReports, previousActiveReviewReports),
+          source: 'review_reports',
+        },
+      },
+      charts: {
+        revenueTrend,
+        monthlyBookings: bookingsTrend,
+      },
+      recentActivity,
+    };
+  }
+
   private limit(query: AdminListQueryDto) {
     return Math.min(query.limit ?? 20, 100);
+  }
+
+  private async getRecentDashboardActivity() {
+    const [bookings, payouts, reviewReports, verificationRequests] =
+      await Promise.all([
+        this.prisma.booking.findMany({
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            bookingNumber: true,
+            status: true,
+            totalAmount: true,
+            createdAt: true,
+            customer: { select: { email: true, profile: true } },
+          },
+        }),
+        this.prisma.payout.findMany({
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            createdAt: true,
+            vendor: { select: { businessName: true } },
+          },
+        }),
+        this.prisma.reviewReport.findMany({
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            reason: true,
+            createdAt: true,
+            reportedBy: { select: { email: true, profile: true } },
+            review: {
+              select: {
+                id: true,
+                foodTruck: { select: { name: true } },
+              },
+            },
+          },
+        }),
+        this.prisma.vendorVerificationRequest.findMany({
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            vendor: { select: { businessName: true } },
+          },
+        }),
+      ]);
+
+    return [
+      ...bookings.map((booking) => ({
+        id: booking.id,
+        type: 'booking',
+        title: `${this.userDisplayName(booking.customer)} created booking`,
+        subtitle: `${booking.bookingNumber} · $${Number(
+          booking.totalAmount ?? 0,
+        ).toFixed(2)}`,
+        status: booking.status,
+        createdAt: booking.createdAt,
+      })),
+      ...payouts.map((payout) => ({
+        id: payout.id,
+        type: 'payout',
+        title: `${payout.vendor.businessName} requested payout`,
+        subtitle: `$${Number(payout.amount ?? 0).toFixed(2)}`,
+        status: payout.status,
+        createdAt: payout.createdAt,
+      })),
+      ...reviewReports.map((report) => ({
+        id: report.id,
+        type: 'review_report',
+        title: `${this.userDisplayName(report.reportedBy)} reported review`,
+        subtitle: `${report.reason} · ${
+          report.review.foodTruck?.name ?? 'Food truck'
+        }`,
+        status: report.status,
+        createdAt: report.createdAt,
+      })),
+      ...verificationRequests.map((request) => ({
+        id: request.id,
+        type: 'vendor_verification',
+        title: `${request.vendor.businessName} submitted vendor application`,
+        subtitle: 'Vendor verification',
+        status: request.status,
+        createdAt: request.createdAt,
+      })),
+    ]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 5);
+  }
+
+  private metric(value: number, previousValue: number) {
+    return {
+      value,
+      previousValue,
+      changePercent: this.changePercent(value, previousValue),
+    };
+  }
+
+  private changePercent(value: number, previousValue: number) {
+    if (previousValue === 0) {
+      return value === 0 ? 0 : 100;
+    }
+
+    return Math.round(((value - previousValue) / previousValue) * 1000) / 10;
+  }
+
+  private startOfMonth(date: Date) {
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  }
+
+  private addMonths(date: Date, months: number) {
+    return new Date(date.getFullYear(), date.getMonth() + months, 1);
+  }
+
+  private monthLabel(date: Date) {
+    return date.toLocaleString('en-US', { month: 'short' });
+  }
+
+  private userDisplayName(user: {
+    email: string | null;
+    profile: {
+      displayName: string | null;
+      firstName: string | null;
+      lastName: string | null;
+    } | null;
+  }) {
+    const profileName =
+      user.profile?.displayName ??
+      [user.profile?.firstName, user.profile?.lastName]
+        .filter(Boolean)
+        .join(' ');
+
+    return profileName || user.email || 'User';
   }
 
   private toVerificationStatus(
