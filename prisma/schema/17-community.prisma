@@ -12,6 +12,21 @@ enum CommunityActionType {
   IGNORE
 }
 
+enum CommunityPostReportReason {
+  SPAM_OR_IRRELEVANT
+  INAPPROPRIATE_CONTENT
+  HARASSMENT
+  SCAM_OR_FRAUD
+  NOT_FOOD_TRUCK_RELATED
+}
+
+enum CommunityPostReportStatus {
+  PENDING
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
 enum RequestVisibility {
   PUBLIC
   PRIVATE
@@ -96,6 +111,7 @@ model CommunityRequest {
   media               CommunityRequestMedia[]
   comments            CommunityRequestComment[]
   reactions           CommunityRequestReaction[]
+  reports             CommunityPostReport[]
   vendorOffers        VendorOffer[]
   bookings            Booking[]
   conversations       Conversation[]
@@ -116,6 +132,24 @@ model CommunityPostAction {
 
   @@unique([postId, userId, type])
   @@map("community_post_actions")
+}
+
+model CommunityPostReport {
+  id              String                    @id @default(uuid()) @db.Uuid
+  postId          String                    @map("post_id") @db.Uuid
+  reportedById    String                    @map("reported_by") @db.Uuid
+  reason          CommunityPostReportReason
+  status          CommunityPostReportStatus @default(PENDING)
+  reviewedById    String?                   @map("reviewed_by") @db.Uuid
+  resolutionNotes String?                   @map("resolution_notes")
+  reviewedAt      DateTime?                 @map("reviewed_at") @db.Timestamptz(6)
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  post            CommunityRequest          @relation(fields: [postId], references: [id])
+  reportedBy      User                      @relation("CommunityPostReportReportedBy", fields: [reportedById], references: [id])
+  reviewedBy      User?                     @relation("CommunityPostReportReviewedBy", fields: [reviewedById], references: [id])
+
+  @@unique([postId, reportedById])
+  @@map("community_post_reports")
 }
 
 model CommunityRequestMedia {
