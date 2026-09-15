@@ -110,6 +110,10 @@ export class AdminService {
     return this.adminRepository.listBookings(query);
   }
 
+  getBookingsManagement(query: AdminListQueryDto) {
+    return this.adminRepository.getBookingsManagement(query);
+  }
+
   async getBooking(bookingId: string) {
     const booking = await this.adminRepository.getBooking(bookingId);
 

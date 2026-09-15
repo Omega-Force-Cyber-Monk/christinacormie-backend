@@ -125,6 +125,12 @@ export class AdminController {
     return this.adminService.listBookings(query);
   }
 
+  @ApiOperation({ summary: 'Get consolidated bookings management data' })
+  @Get('bookings-management')
+  getBookingsManagement(@Query() query: AdminListQueryDto) {
+    return this.adminService.getBookingsManagement(query);
+  }
+
   @ApiOperation({ summary: 'Get booking details by ID' })
   @Get('bookings/:bookingId')
   getBooking(@Param('bookingId', ParseUUIDPipe) bookingId: string) {

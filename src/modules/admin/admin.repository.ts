@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { VerificationStatus } from '@prisma/client';
+import { ReportStatus, VerificationStatus } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 import { CreateMarketDto } from './dto/create-market.dto';
@@ -260,27 +260,7 @@ export class AdminRepository {
 
   listBookings(query: AdminListQueryDto) {
     return this.prisma.booking.findMany({
-      where: {
-        ...(query.status ? { status: query.status as any } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                {
-                  bookingNumber: {
-                    contains: query.search,
-                    mode: 'insensitive' as const,
-                  },
-                },
-                {
-                  eventName: {
-                    contains: query.search,
-                    mode: 'insensitive' as const,
-                  },
-                },
-              ],
-            }
-          : {}),
-      },
+      where: this.bookingWhere(query),
       select: this.bookingSelect(),
       orderBy: { createdAt: query.sortOrder ?? 'desc' },
       take: this.limit(query),
@@ -288,13 +268,67 @@ export class AdminRepository {
     });
   }
 
+  async getBookingsManagement(query: AdminListQueryDto) {
+    const now = new Date();
+    const currentMonthStart = this.startOfMonth(now);
+    const nextMonthStart = this.addMonths(currentMonthStart, 1);
+    const where = this.bookingWhere(query);
+
+    const [totalBookings, thisMonth, totalRevenue, disputed, bookings] =
+      await Promise.all([
+      this.prisma.booking.count(),
+      this.prisma.booking.count({
+        where: { createdAt: { gte: currentMonthStart, lt: nextMonthStart } },
+      }),
+      this.prisma.payment.aggregate({
+        where: { status: 'SUCCEEDED' },
+        _sum: { amount: true },
+      }),
+      this.prisma.reviewReport.count({
+        where: { status: { in: ['PENDING', 'REVIEWING'] } },
+      }),
+      this.prisma.booking.findMany({
+        where,
+        select: this.bookingManagementSelect(),
+        orderBy: { createdAt: query.sortOrder ?? 'desc' },
+        take: this.limit(query),
+        skip: query.offset ?? 0,
+      }),
+    ]);
+
+    return {
+      generatedAt: now,
+      summary: {
+        totalBookings,
+        thisMonth,
+        totalRevenue: Number(totalRevenue._sum.amount ?? 0),
+        disputed,
+        disputedSource: 'review_reports',
+      },
+      bookings: bookings.map((booking) => this.toBookingManagementRow(booking)),
+    };
+  }
+
   getBooking(bookingId: string) {
     return this.prisma.booking.findUnique({
       where: { id: bookingId },
       select: {
-        ...this.bookingSelect(),
-        quotes: true,
-        payments: true,
+        ...this.bookingManagementSelect(),
+        eventDescription: true,
+        contactPhone: true,
+        budgetAmount: true,
+        paymentPreference: true,
+        preferredMenuItemIds: true,
+        customMenuItems: true,
+        referenceImageUrls: true,
+        specialInstructions: true,
+        isAdultConfirmed: true,
+        termsAccepted: true,
+        acceptedAt: true,
+        confirmedAt: true,
+        completedAt: true,
+        cancelledAt: true,
+        cancellationReason: true,
         statusHistory: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -716,6 +750,86 @@ export class AdminRepository {
     return Math.min(query.limit ?? 20, 100);
   }
 
+  private bookingWhere(query: AdminListQueryDto) {
+    return {
+      ...(query.status ? { status: query.status as any } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                bookingNumber: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                eventName: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                address: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                customer: {
+                  email: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                customer: {
+                  phone: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                customer: {
+                  profile: {
+                    displayName: {
+                      contains: query.search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                },
+              },
+              {
+                vendor: {
+                  businessName: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                vendor: {
+                  businessEmail: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                foodTruck: {
+                  name: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+
   private async getRecentDashboardActivity() {
     const [bookings, payouts, reviewReports, verificationRequests] =
       await Promise.all([
@@ -926,6 +1040,7 @@ export class AdminRepository {
       vendorId: true,
       foodTruckId: true,
       bookingType: true,
+      eventType: true,
       status: true,
       eventName: true,
       startsAt: true,
@@ -933,11 +1048,153 @@ export class AdminRepository {
       guestCount: true,
       address: true,
       subtotal: true,
+      serviceFee: true,
+      taxAmount: true,
+      discountAmount: true,
       totalAmount: true,
       createdAt: true,
-      customer: { select: { id: true, email: true, profile: true } },
-      vendor: { select: { id: true, businessName: true } },
+      customer: {
+        select: { id: true, email: true, phone: true, profile: true },
+      },
+      vendor: {
+        select: {
+          id: true,
+          businessName: true,
+          businessEmail: true,
+          businessPhone: true,
+        },
+      },
       foodTruck: { select: { id: true, name: true, slug: true } },
+    };
+  }
+
+  private bookingManagementSelect() {
+    return {
+      ...this.bookingSelect(),
+      paymentPreference: true,
+      quotes: {
+        orderBy: { createdAt: 'desc' as const },
+        take: 1,
+        select: {
+          id: true,
+          pricingModel: true,
+          paymentPreference: true,
+          depositAmount: true,
+          depositPercent: true,
+          balanceDueAtEvent: true,
+          totalAmount: true,
+          status: true,
+          createdAt: true,
+        },
+      },
+      payments: {
+        orderBy: { createdAt: 'desc' as const },
+        take: 1,
+        select: {
+          id: true,
+          amount: true,
+          currency: true,
+          status: true,
+          paidAt: true,
+          createdAt: true,
+          commission: true,
+          refunds: true,
+        },
+      },
+      review: {
+        select: {
+          id: true,
+          status: true,
+          reports: {
+            where: {
+              status: { in: [ReportStatus.PENDING, ReportStatus.REVIEWING] },
+            },
+            select: {
+              id: true,
+              reason: true,
+              status: true,
+              createdAt: true,
+            },
+          },
+        },
+      },
+    };
+  }
+
+  private toBookingManagementRow(booking: any) {
+    const quote = booking.quotes?.[0] ?? null;
+    const payment = booking.payments?.[0] ?? null;
+
+    return {
+      id: booking.id,
+      bookingNumber: booking.bookingNumber,
+      customer: {
+        id: booking.customerId,
+        name: this.userDisplayName(booking.customer),
+        email: booking.customer?.email ?? null,
+        phone: booking.customer?.phone ?? null,
+      },
+      vendor: {
+        id: booking.vendorId,
+        businessName: booking.vendor?.businessName ?? null,
+        email: booking.vendor?.businessEmail ?? null,
+        phone: booking.vendor?.businessPhone ?? null,
+      },
+      foodTruck: booking.foodTruck,
+      event: {
+        name: booking.eventName,
+        type: booking.eventType,
+        bookingType: booking.bookingType,
+        startsAt: booking.startsAt,
+        endsAt: booking.endsAt,
+        guestCount: booking.guestCount,
+        address: booking.address,
+      },
+      amount: Number(booking.totalAmount ?? 0),
+      fees: {
+        subtotal: Number(booking.subtotal ?? 0),
+        serviceFee: Number(booking.serviceFee ?? 0),
+        taxAmount: Number(booking.taxAmount ?? 0),
+        discountAmount: Number(booking.discountAmount ?? 0),
+      },
+      paymentModel: quote?.paymentPreference ?? booking.paymentPreference,
+      pricingModel: quote?.pricingModel ?? null,
+      status: booking.status,
+      payment: payment
+        ? {
+            id: payment.id,
+            amount: Number(payment.amount ?? 0),
+            currency: payment.currency,
+            status: payment.status,
+            paidAt: payment.paidAt,
+            createdAt: payment.createdAt,
+            commission: payment.commission
+              ? {
+                  ...payment.commission,
+                  grossAmount: Number(payment.commission.grossAmount ?? 0),
+                  commissionRate: Number(
+                    payment.commission.commissionRate ?? 0,
+                  ),
+                  commissionAmount: Number(
+                    payment.commission.commissionAmount ?? 0,
+                  ),
+                  vendorNetAmount: Number(
+                    payment.commission.vendorNetAmount ?? 0,
+                  ),
+                }
+              : null,
+            refunds: (payment.refunds ?? []).map((refund) => ({
+              ...refund,
+              amount: Number(refund.amount ?? 0),
+            })),
+          }
+        : null,
+      dispute: {
+        isDisputed: Boolean(booking.review?.reports?.length),
+        reports: booking.review?.reports ?? [],
+        source: 'review_reports',
+      },
+      createdAt: booking.createdAt,
     };
   }
 
