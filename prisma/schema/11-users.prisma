@@ -48,6 +48,8 @@ model User {
   communityRequests                  CommunityRequest[]            @relation("CommunityRequestCreatedBy")
   communityRequestComments           CommunityRequestComment[]
   communityRequestReactions          CommunityRequestReaction[]
+  communityPostReportsFiled          CommunityPostReport[]         @relation("CommunityPostReportReportedBy")
+  communityPostReportsReviewed       CommunityPostReport[]         @relation("CommunityPostReportReviewedBy")
   newFoodTruckRequests               NewFoodTruckRequest[]         @relation("NewFoodTruckRequestedBy")
   reviewedNewFoodTruckRequests       NewFoodTruckRequest[]         @relation("NewFoodTruckReviewedBy")
   customerBookings                   Booking[]                     @relation("BookingCustomer")

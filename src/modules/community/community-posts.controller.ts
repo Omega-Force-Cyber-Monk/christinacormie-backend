@@ -38,6 +38,7 @@ import {
 } from './dto/community-post-query.dto';
 import { CommentRequestDto } from './dto/comment-request.dto';
 import { ReactRequestDto } from './dto/react-request.dto';
+import { ReportCommunityPostDto } from './dto/report-community-post.dto';
 import { CreateVendorOfferDto } from './dto/create-vendor-offer.dto';
 import { CommunityErrorFilter } from './community-error.filter';
 
@@ -452,6 +453,69 @@ export class CommunityPostsController {
     @Param('postId', ParseUUIDPipe) id: string,
   ) {
     return this.posts.undoAction(user.sub, id, 'IGNORE');
+  }
+
+  @Post('posts/:postId/reports')
+  @ApiOperation({
+    summary: 'Report a visible Community post',
+    description:
+      'Stores a report for review. Reporting does not automatically hide the post; use POST /api/v1/community/posts/:postId/ignore if the user taps Hide this post.',
+  })
+  @ApiResponse({
+    status: 201,
+    schema: {
+      example: {
+        message: 'Report submitted successfully',
+        report: {
+          id: 'report-id',
+          postId: 'd9ff4b0e-77e9-4ec5-9280-e73005770557',
+          reason: 'SPAM_OR_IRRELEVANT',
+          status: 'PENDING',
+          createdAt: '2026-09-15T09:00:00.000Z',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Report reason is missing or invalid.',
+    schema: {
+      example: error(
+        400,
+        [
+          'reason must be one of: SPAM_OR_IRRELEVANT, INAPPROPRIATE_CONTENT, HARASSMENT, SCAM_OR_FRAUD, NOT_FOOD_TRUCK_RELATED',
+        ].join(', '),
+        'Bad Request',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'User is trying to report their own post.',
+    schema: {
+      example: error(403, 'You cannot report your own post', 'Forbidden'),
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Community post was not found or is not available.',
+    schema: {
+      example: error(404, 'Community request not found', 'Not Found'),
+    },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'User already reported this post.',
+    schema: {
+      example: error(409, 'You have already reported this post', 'Conflict'),
+    },
+  })
+  report(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('postId', ParseUUIDPipe) id: string,
+    @Body() dto: ReportCommunityPostDto,
+  ) {
+    return this.posts.report(user.sub, id, dto);
   }
 
   @Post('posts/:postId/comments')
