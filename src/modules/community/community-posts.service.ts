@@ -17,6 +17,7 @@ import {
   CommunityPostQueryDto,
   UpdateCommunityPostDto,
 } from './dto/community-post-query.dto';
+import { ReportCommunityPostDto } from './dto/report-community-post.dto';
 import { validateCommunityPost } from './community-validation';
 
 @Injectable()
@@ -408,6 +409,47 @@ export class CommunityPostsService {
         type === 'INTEREST'
           ? 'Interest withdrawn successfully'
           : 'Post restored to your Community feed',
+    };
+  }
+
+  async report(userId: string, postId: string, dto: ReportCommunityPostDto) {
+    await this.repository.ensurePublisher(userId);
+    const post = await this.community.getRequestDetails(userId, postId);
+
+    if (post.createdById === userId) {
+      throw new ForbiddenException('You cannot report your own post');
+    }
+
+    const existingReport = await this.prisma.communityPostReport.findUnique({
+      where: {
+        postId_reportedById: {
+          postId,
+          reportedById: userId,
+        },
+      },
+    });
+
+    if (existingReport) {
+      throw new ConflictException('You have already reported this post');
+    }
+
+    const report = await this.prisma.communityPostReport.create({
+      data: {
+        postId,
+        reportedById: userId,
+        reason: dto.reason,
+      },
+    });
+
+    return {
+      message: 'Report submitted successfully',
+      report: {
+        id: report.id,
+        postId: report.postId,
+        reason: report.reason,
+        status: report.status,
+        createdAt: report.createdAt,
+      },
     };
   }
 
