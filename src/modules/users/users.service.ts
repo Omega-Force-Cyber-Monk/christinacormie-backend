@@ -373,6 +373,17 @@ export class UsersService {
       await tx.communityRequestReaction.deleteMany({ where: { userId } });
       await tx.communityRequestComment.deleteMany({ where: { userId } });
       await tx.communityPostAction.deleteMany({ where: { userId } });
+      await tx.communityPostReport.deleteMany({
+        where: {
+          OR: [
+            { reportedById: userId },
+            { reviewedById: userId },
+            ...(communityRequestIds.length
+              ? [{ postId: { in: communityRequestIds } }]
+              : []),
+          ],
+        },
+      });
 
       if (conversationIds.length) {
         await tx.message.deleteMany({
@@ -478,6 +489,9 @@ export class UsersService {
           where: { communityRequestId: { in: communityRequestIds } },
         });
         await tx.communityPostAction.deleteMany({
+          where: { postId: { in: communityRequestIds } },
+        });
+        await tx.communityPostReport.deleteMany({
           where: { postId: { in: communityRequestIds } },
         });
         await tx.vendorOffer.deleteMany({
