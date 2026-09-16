@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import {
+  AccountStatus,
   MenuItemStatus,
   PaymentStatus,
   ReportStatus,
+  UserRole,
   VendorStatus,
   VerificationStatus,
 } from '@prisma/client';
@@ -16,6 +18,36 @@ import { UpdateMarketDto } from './dto/update-market.dto';
 import { UpdateVerificationDocumentDto } from './dto/update-verification-document.dto';
 import { UpsertLeaderboardRuleDto } from './dto/upsert-leaderboard-rule.dto';
 import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
+
+type UserManagementProfile = {
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+} | null;
+
+type UserManagementRowData = {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  status: AccountStatus;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  profile: UserManagementProfile;
+  loyaltyAccount: {
+    availablePoints: number;
+    lifetimePoints: number;
+    redeemedPoints: number;
+  } | null;
+  userRoles: Array<{ role: UserRole }>;
+  _count: {
+    customerBookings: number;
+    referralsMade: number;
+  };
+};
 
 @Injectable()
 export class AdminRepository {
@@ -68,6 +100,52 @@ export class AdminRepository {
       take: this.limit(query),
       skip: query.offset ?? 0,
     });
+  }
+
+  async getUsersManagement(query: AdminListQueryDto) {
+    const now = new Date();
+    const currentMonthStart = this.startOfMonth(now);
+    const weekStart = this.startOfWeek(now);
+    const where = this.userWhere(query);
+
+    const [totalUsers, activeThisMonth, newThisWeek, suspended, users] =
+      await Promise.all([
+        this.prisma.user.count({ where: { deletedAt: null } }),
+        this.prisma.user.count({
+          where: {
+            deletedAt: null,
+            status: AccountStatus.ACTIVE,
+            OR: [
+              { lastLoginAt: { gte: currentMonthStart } },
+              { createdAt: { gte: currentMonthStart } },
+            ],
+          },
+        }),
+        this.prisma.user.count({
+          where: { deletedAt: null, createdAt: { gte: weekStart } },
+        }),
+        this.prisma.user.count({
+          where: { deletedAt: null, status: AccountStatus.SUSPENDED },
+        }),
+        this.prisma.user.findMany({
+          where,
+          select: this.userManagementSelect(),
+          orderBy: this.userOrderBy(query),
+          take: this.limit(query),
+          skip: query.offset ?? 0,
+        }),
+      ]);
+
+    return {
+      generatedAt: now,
+      summary: {
+        totalUsers,
+        activeThisMonth,
+        newThisWeek,
+        suspended,
+      },
+      users: users.map((user) => this.toUserManagementRow(user)),
+    };
   }
 
   getUser(userId: string) {
@@ -1195,6 +1273,14 @@ export class AdminRepository {
     return date.toLocaleString('en-US', { month: 'short' });
   }
 
+  private startOfWeek(date: Date) {
+    const start = new Date(date);
+    const day = start.getDay();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - day);
+    return start;
+  }
+
   private userDisplayName(user: {
     email: string | null;
     profile: {
@@ -1210,6 +1296,175 @@ export class AdminRepository {
         .join(' ');
 
     return profileName || user.email || 'User';
+  }
+
+  private userWhere(query: AdminListQueryDto) {
+    return {
+      deletedAt: null,
+      ...(query.status ? { status: query.status as AccountStatus } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                email: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                phone: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                profile: {
+                  displayName: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                profile: {
+                  firstName: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                profile: {
+                  lastName: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                profile: {
+                  city: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                profile: {
+                  state: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private userOrderBy(query: AdminListQueryDto) {
+    if (query.sortBy === 'updatedAt') {
+      return { updatedAt: query.sortOrder ?? 'desc' };
+    }
+
+    if (query.sortBy === 'status') {
+      return { status: query.sortOrder ?? 'asc' };
+    }
+
+    return { createdAt: query.sortOrder ?? 'desc' };
+  }
+
+  private userManagementSelect() {
+    return {
+      id: true,
+      email: true,
+      phone: true,
+      status: true,
+      lastLoginAt: true,
+      createdAt: true,
+      updatedAt: true,
+      profile: true,
+      loyaltyAccount: {
+        select: {
+          availablePoints: true,
+          lifetimePoints: true,
+          redeemedPoints: true,
+        },
+      },
+      userRoles: {
+        select: { role: true },
+      },
+      _count: {
+        select: {
+          customerBookings: true,
+          referralsMade: true,
+        },
+      },
+    };
+  }
+
+  private toUserManagementRow(user: UserManagementRowData) {
+    const totalBookings = user._count?.customerBookings ?? 0;
+    const referrals = user._count?.referralsMade ?? 0;
+    const loyaltyPoints = user.loyaltyAccount?.availablePoints ?? 0;
+    const name = this.userDisplayName(user);
+
+    return {
+      id: user.id,
+      userId: this.shortDisplayId('U', user.id),
+      name,
+      initials: this.initials(name),
+      email: user.email,
+      phone: user.phone,
+      location: this.userLocation(user.profile),
+      joinDate: user.createdAt,
+      memberSince: user.createdAt,
+      lastLoginAt: user.lastLoginAt,
+      activity: {
+        totalBookings,
+        referrals,
+      },
+      totalBookings,
+      referrals,
+      loyaltyPoints,
+      lifetimePoints: user.loyaltyAccount?.lifetimePoints ?? 0,
+      redeemedPoints: user.loyaltyAccount?.redeemedPoints ?? 0,
+      status: user.status,
+      roles: (user.userRoles ?? []).map((userRole) => userRole.role),
+      profile: user.profile,
+      canSuspend: user.status !== AccountStatus.SUSPENDED,
+      canRetrieve: user.status === AccountStatus.SUSPENDED,
+      contact: {
+        name,
+        email: user.email,
+        phone: user.phone,
+        location: this.userLocation(user.profile),
+      },
+    };
+  }
+
+  private userLocation(profile: UserManagementProfile) {
+    const parts = [profile?.city, profile?.state].filter(Boolean);
+
+    if (parts.length) {
+      return parts.join(', ');
+    }
+
+    return profile?.country ?? null;
+  }
+
+  private shortDisplayId(prefix: string, id: string) {
+    return `${prefix}-${id.replace(/-/g, '').slice(-4).toUpperCase()}`;
+  }
+
+  private initials(name: string) {
+    return name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('');
   }
 
   private toVerificationStatus(

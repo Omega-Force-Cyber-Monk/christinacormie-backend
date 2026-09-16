@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UsersService } from '../users/users.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { UpdateAccountStatusDto } from '../users/dto/update-account-status.dto';
@@ -24,6 +25,10 @@ export class AdminService {
 
   listUsers(query: AdminListQueryDto) {
     return this.adminRepository.listUsers(query);
+  }
+
+  getUsersManagement(query: AdminListQueryDto) {
+    return this.adminRepository.getUsersManagement(query);
   }
 
   async getUser(userId: string) {
@@ -53,6 +58,35 @@ export class AdminService {
       {
         newStatus: dto.status,
       },
+    );
+    return updated;
+  }
+
+  async suspendUser(adminUserId: string, userId: string) {
+    const updated = await this.usersService.updateAccountStatus(
+      userId,
+      AccountStatus.SUSPENDED,
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'SUSPEND_USER',
+      'User',
+      userId,
+    );
+    return updated;
+  }
+
+  async retrieveUser(adminUserId: string, userId: string) {
+    const updated = await this.usersService.updateAccountStatus(
+      userId,
+      AccountStatus.ACTIVE,
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'RETRIEVE_USER',
+      'User',
+      userId,
+      { status: AccountStatus.ACTIVE },
     );
     return updated;
   }

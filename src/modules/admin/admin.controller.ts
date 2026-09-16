@@ -53,6 +53,12 @@ export class AdminController {
     return this.adminService.listUsers(query);
   }
 
+  @ApiOperation({ summary: 'Get consolidated user management data' })
+  @Get('users-management')
+  getUsersManagement(@Query() query: AdminListQueryDto) {
+    return this.adminService.getUsersManagement(query);
+  }
+
   @ApiOperation({ summary: 'Get user details by user ID' })
   @Get('users/:userId')
   getUser(@Param('userId', ParseUUIDPipe) userId: string) {
@@ -67,6 +73,24 @@ export class AdminController {
     @Body() dto: UpdateAccountStatusDto,
   ) {
     return this.adminService.updateUserStatus(user.sub, userId, dto);
+  }
+
+  @ApiOperation({ summary: 'Suspend a user account' })
+  @Patch('users/:userId/suspend')
+  suspendUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
+    return this.adminService.suspendUser(user.sub, userId);
+  }
+
+  @ApiOperation({ summary: 'Retrieve/reactivate a user account' })
+  @Patch('users/:userId/retrieve')
+  retrieveUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
+    return this.adminService.retrieveUser(user.sub, userId);
   }
 
   @ApiOperation({ summary: 'List vendors pending approval' })
