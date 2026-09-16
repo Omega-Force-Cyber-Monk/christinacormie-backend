@@ -7,8 +7,10 @@ import { AdminRepository } from './admin.repository';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 import { CreateMarketDto } from './dto/create-market.dto';
 import { ModerateCommunityRequestDto } from './dto/moderate-community-request.dto';
+import { UpdateNewFoodTruckRequestDto } from './dto/update-new-food-truck-request.dto';
 import { UpdateFoodTruckAdminDto } from './dto/update-food-truck-admin.dto';
 import { UpdateMarketDto } from './dto/update-market.dto';
+import { UpdateVerificationDocumentDto } from './dto/update-verification-document.dto';
 import { UpsertLeaderboardRuleDto } from './dto/upsert-leaderboard-rule.dto';
 import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
 
@@ -59,6 +61,10 @@ export class AdminService {
     return this.adminRepository.listVendors(query);
   }
 
+  getVendorsManagement(query: AdminListQueryDto) {
+    return this.adminRepository.getVendorsManagement(query);
+  }
+
   async getVendor(vendorId: string) {
     const vendor = await this.adminRepository.getVendor(vendorId);
 
@@ -69,8 +75,123 @@ export class AdminService {
     return vendor;
   }
 
+  listNewFoodTruckRequests(query: AdminListQueryDto) {
+    return this.adminRepository.listNewFoodTruckRequests(query);
+  }
+
+  async updateNewFoodTruckRequest(
+    adminUserId: string,
+    requestId: string,
+    dto: UpdateNewFoodTruckRequestDto,
+  ) {
+    const request = await this.adminRepository.updateNewFoodTruckRequest(
+      requestId,
+      adminUserId,
+      dto,
+    );
+
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'UPDATE_NEW_FOOD_TRUCK_REQUEST',
+      'NewFoodTruckRequest',
+      requestId,
+      dto as any,
+    );
+
+    return request;
+  }
+
+  async suspendVendor(adminUserId: string, vendorId: string) {
+    const vendor = await this.adminRepository.updateVendorStatus(
+      vendorId,
+      'SUSPENDED',
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'SUSPEND_VENDOR',
+      'Vendor',
+      vendorId,
+    );
+    return vendor;
+  }
+
+  async retrieveVendor(adminUserId: string, vendorId: string) {
+    const existing = await this.adminRepository.getVendor(vendorId);
+
+    if (!existing) {
+      throw new NotFoundException('Vendor not found');
+    }
+
+    const nextStatus = existing.isVerified ? 'APPROVED' : 'PENDING_APPROVAL';
+    const vendor = await this.adminRepository.updateVendorStatus(
+      vendorId,
+      nextStatus,
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'RETRIEVE_VENDOR',
+      'Vendor',
+      vendorId,
+      { status: nextStatus },
+    );
+    return vendor;
+  }
+
+  async removeVendorBadge(
+    adminUserId: string,
+    vendorId: string,
+    badgeId: string,
+  ) {
+    const badge = await this.adminRepository.removeVendorBadge(
+      vendorId,
+      badgeId,
+    );
+
+    if (!badge) {
+      throw new NotFoundException('Vendor badge not found');
+    }
+
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'REMOVE_VENDOR_BADGE',
+      'VendorBadge',
+      badge.id,
+      { vendorId, badgeId },
+    );
+
+    return badge;
+  }
+
   listVerificationRequests(query: AdminListQueryDto) {
     return this.adminRepository.listVerificationRequests(query);
+  }
+
+  async updateVerificationDocument(
+    adminUserId: string,
+    requestId: string,
+    documentKey: string,
+    dto: UpdateVerificationDocumentDto,
+  ) {
+    const request = await this.adminRepository.updateVerificationDocument(
+      requestId,
+      documentKey,
+      adminUserId,
+      dto,
+    );
+
+    if (!request) {
+      throw new NotFoundException('Verification document not found');
+    }
+
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'UPDATE_VENDOR_VERIFICATION_DOCUMENT',
+      'VendorVerificationRequest',
+      requestId,
+      { documentKey, ...dto },
+    );
+
+    return request;
   }
 
   listFoodTrucks(query: AdminListQueryDto) {

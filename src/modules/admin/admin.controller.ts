@@ -29,8 +29,10 @@ import { AdminService } from './admin.service';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 import { CreateMarketDto } from './dto/create-market.dto';
 import { ModerateCommunityRequestDto } from './dto/moderate-community-request.dto';
+import { UpdateNewFoodTruckRequestDto } from './dto/update-new-food-truck-request.dto';
 import { UpdateFoodTruckAdminDto } from './dto/update-food-truck-admin.dto';
 import { UpdateMarketDto } from './dto/update-market.dto';
+import { UpdateVerificationDocumentDto } from './dto/update-verification-document.dto';
 import { UpsertLeaderboardRuleDto } from './dto/upsert-leaderboard-rule.dto';
 import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
 
@@ -79,10 +81,64 @@ export class AdminController {
     return this.adminService.listVendors(query);
   }
 
+  @ApiOperation({ summary: 'Get consolidated vendor management data' })
+  @Get('vendors-management')
+  getVendorsManagement(@Query() query: AdminListQueryDto) {
+    return this.adminService.getVendorsManagement(query);
+  }
+
+  @ApiOperation({ summary: 'List new food truck requests for admin review' })
+  @Get('vendors/truck-requests')
+  listNewFoodTruckRequests(@Query() query: AdminListQueryDto) {
+    return this.adminService.listNewFoodTruckRequests(query);
+  }
+
+  @ApiOperation({ summary: 'Update a new food truck request status' })
+  @Patch('vendors/truck-requests/:requestId')
+  updateNewFoodTruckRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: UpdateNewFoodTruckRequestDto,
+  ) {
+    return this.adminService.updateNewFoodTruckRequest(
+      user.sub,
+      requestId,
+      dto,
+    );
+  }
+
   @ApiOperation({ summary: 'Get vendor details by vendor ID' })
   @Get('vendors/:vendorId')
   getVendor(@Param('vendorId', ParseUUIDPipe) vendorId: string) {
     return this.adminService.getVendor(vendorId);
+  }
+
+  @ApiOperation({ summary: 'Suspend a vendor account' })
+  @Patch('vendors/:vendorId/suspend')
+  suspendVendor(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('vendorId', ParseUUIDPipe) vendorId: string,
+  ) {
+    return this.adminService.suspendVendor(user.sub, vendorId);
+  }
+
+  @ApiOperation({ summary: 'Retrieve/reactivate a vendor account' })
+  @Patch('vendors/:vendorId/retrieve')
+  retrieveVendor(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('vendorId', ParseUUIDPipe) vendorId: string,
+  ) {
+    return this.adminService.retrieveVendor(user.sub, vendorId);
+  }
+
+  @ApiOperation({ summary: 'Remove a badge from a vendor' })
+  @Delete('vendors/:vendorId/badges/:badgeId')
+  removeVendorBadge(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('vendorId', ParseUUIDPipe) vendorId: string,
+    @Param('badgeId', ParseUUIDPipe) badgeId: string,
+  ) {
+    return this.adminService.removeVendorBadge(user.sub, vendorId, badgeId);
   }
 
   @ApiOperation({ summary: 'List vendor verification requests' })
@@ -95,6 +151,22 @@ export class AdminController {
   @Get('verification-requests')
   listVerificationRequests(@Query() query: AdminListQueryDto) {
     return this.adminService.listVerificationRequests(query);
+  }
+
+  @ApiOperation({ summary: 'Update one submitted verification document' })
+  @Patch('verification-requests/:requestId/documents/:documentKey')
+  updateVerificationDocument(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Param('documentKey') documentKey: string,
+    @Body() dto: UpdateVerificationDocumentDto,
+  ) {
+    return this.adminService.updateVerificationDocument(
+      user.sub,
+      requestId,
+      documentKey,
+      dto,
+    );
   }
 
   @ApiOperation({ summary: 'List all food trucks' })

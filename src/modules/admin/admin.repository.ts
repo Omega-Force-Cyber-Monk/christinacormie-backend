@@ -1,11 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { ReportStatus, VerificationStatus } from '@prisma/client';
+import {
+  MenuItemStatus,
+  PaymentStatus,
+  ReportStatus,
+  VendorStatus,
+  VerificationStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 import { CreateMarketDto } from './dto/create-market.dto';
 import { ModerateCommunityRequestDto } from './dto/moderate-community-request.dto';
+import { UpdateNewFoodTruckRequestDto } from './dto/update-new-food-truck-request.dto';
 import { UpdateFoodTruckAdminDto } from './dto/update-food-truck-admin.dto';
 import { UpdateMarketDto } from './dto/update-market.dto';
+import { UpdateVerificationDocumentDto } from './dto/update-verification-document.dto';
 import { UpsertLeaderboardRuleDto } from './dto/upsert-leaderboard-rule.dto';
 import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
 
@@ -78,33 +86,15 @@ export class AdminRepository {
 
   listVendors(query: AdminListQueryDto) {
     return this.prisma.vendor.findMany({
-      where: {
-        ...(query.status ? { status: query.status as any } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                {
-                  businessName: {
-                    contains: query.search,
-                    mode: 'insensitive' as const,
-                  },
-                },
-                {
-                  businessEmail: {
-                    contains: query.search,
-                    mode: 'insensitive' as const,
-                  },
-                },
-              ],
-            }
-          : {}),
-      },
+      where: this.vendorWhere(query),
       include: {
         user: {
           select: {
             id: true,
             email: true,
+            phone: true,
             status: true,
+            profile: true,
           },
         },
         verificationRequests: {
@@ -117,6 +107,10 @@ export class AdminRepository {
             id: true,
             name: true,
             status: true,
+            averageRating: true,
+            totalReviews: true,
+            followerCount: true,
+            cuisines: { include: { cuisine: true } },
           },
         },
       },
@@ -126,28 +120,215 @@ export class AdminRepository {
     });
   }
 
+  async getVendorsManagement(query: AdminListQueryDto) {
+    const where = this.vendorWhere(query);
+
+    const [
+      totalVendors,
+      activeVendors,
+      pendingApproval,
+      suspended,
+      truckRequestsCount,
+      communicatedCount,
+      photoShootRequestCount,
+      vendors,
+    ] = await Promise.all([
+      this.prisma.vendor.count({ where: { deletedAt: null } }),
+      this.prisma.vendor.count({
+        where: { deletedAt: null, status: VendorStatus.APPROVED },
+      }),
+      this.prisma.vendor.count({
+        where: { deletedAt: null, status: VendorStatus.PENDING_APPROVAL },
+      }),
+      this.prisma.vendor.count({
+        where: { deletedAt: null, status: VendorStatus.SUSPENDED },
+      }),
+      this.prisma.newFoodTruckRequest.count(),
+      this.prisma.newFoodTruckRequest.count({
+        where: { status: 'COMMUNICATED' },
+      }),
+      this.prisma.vendorPhotoShootRequest.count(),
+      this.prisma.vendor.findMany({
+        where,
+        select: this.vendorManagementSelect(),
+        orderBy: { createdAt: query.sortOrder ?? 'desc' },
+        take: this.limit(query),
+        skip: query.offset ?? 0,
+      }),
+    ]);
+
+    return {
+      summary: {
+        totalVendors,
+        active: activeVendors,
+        pendingApproval,
+        suspended,
+      },
+      tabs: {
+        allVendors: totalVendors,
+        truckRequests: truckRequestsCount,
+        communicated: communicatedCount,
+        photoShootRequests: photoShootRequestCount,
+      },
+      vendors: vendors.map((vendor) => this.toVendorManagementRow(vendor)),
+    };
+  }
+
   getVendor(vendorId: string) {
     return this.prisma.vendor.findUnique({
       where: { id: vendorId },
+      select: this.vendorManagementSelect(),
+    });
+  }
+
+  listNewFoodTruckRequests(query: AdminListQueryDto) {
+    return this.prisma.newFoodTruckRequest.findMany({
+      where: {
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.search
+          ? {
+              OR: [
+                {
+                  truckName: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+                {
+                  ownerName: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+                {
+                  ownerEmail: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+                {
+                  city: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              ],
+            }
+          : {}),
+      },
       include: {
-        user: {
+        requestedBy: {
+          select: { id: true, email: true, phone: true, profile: true },
+        },
+        reviewedBy: {
+          select: { id: true, email: true, profile: true },
+        },
+      },
+      orderBy: { createdAt: query.sortOrder ?? 'desc' },
+      take: this.limit(query),
+      skip: query.offset ?? 0,
+    });
+  }
+
+  updateNewFoodTruckRequest(
+    requestId: string,
+    adminUserId: string,
+    dto: UpdateNewFoodTruckRequestDto,
+  ) {
+    return this.prisma.newFoodTruckRequest.update({
+      where: { id: requestId },
+      data: {
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
+        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+        reviewedById: adminUserId,
+        reviewedAt: new Date(),
+      },
+      include: {
+        requestedBy: {
+          select: { id: true, email: true, phone: true, profile: true },
+        },
+        reviewedBy: {
+          select: { id: true, email: true, profile: true },
+        },
+      },
+    });
+  }
+
+  updateVendorStatus(vendorId: string, status: string) {
+    return this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        status: status as any,
+        updatedAt: new Date(),
+      },
+      select: this.vendorManagementSelect(),
+    });
+  }
+
+  async removeVendorBadge(vendorId: string, badgeId: string) {
+    const badge = await this.prisma.vendorBadge.findUnique({
+      where: { vendorId_badgeId: { vendorId, badgeId } },
+    });
+
+    if (!badge || badge.revokedAt) {
+      return null;
+    }
+
+    return this.prisma.vendorBadge.update({
+      where: { vendorId_badgeId: { vendorId, badgeId } },
+      data: { revokedAt: new Date() },
+      include: { badge: true },
+    });
+  }
+
+  async updateVerificationDocument(
+    requestId: string,
+    documentKey: string,
+    adminUserId: string,
+    dto: UpdateVerificationDocumentDto,
+  ) {
+    const request = await this.prisma.vendorVerificationRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!request || !Array.isArray(request.documents)) {
+      return null;
+    }
+
+    let found = false;
+    const documents = request.documents.map((document) => {
+      if (!this.matchesDocumentKey(document, documentKey)) {
+        return document;
+      }
+
+      found = true;
+
+      return {
+        ...(document as Record<string, unknown>),
+        status: dto.status,
+        reviewedById: adminUserId,
+        reviewedAt: new Date().toISOString(),
+        ...(dto.rejectionReason !== undefined
+          ? { rejectionReason: dto.rejectionReason }
+          : {}),
+      };
+    });
+
+    if (!found) {
+      return null;
+    }
+
+    return this.prisma.vendorVerificationRequest.update({
+      where: { id: requestId },
+      data: { documents: documents as any },
+      include: {
+        vendor: {
           select: {
             id: true,
-            email: true,
-            phone: true,
+            businessName: true,
             status: true,
+            isVerified: true,
           },
-        },
-        verificationRequests: {
-          orderBy: { createdAt: 'desc' },
-        },
-        foodTrucks: {
-          select: this.foodTruckSelect(),
-        },
-        paymentAccount: true,
-        vendorBadges: {
-          where: { revokedAt: null },
-          include: { badge: true },
         },
       },
     });
@@ -276,25 +457,25 @@ export class AdminRepository {
 
     const [totalBookings, thisMonth, totalRevenue, disputed, bookings] =
       await Promise.all([
-      this.prisma.booking.count(),
-      this.prisma.booking.count({
-        where: { createdAt: { gte: currentMonthStart, lt: nextMonthStart } },
-      }),
-      this.prisma.payment.aggregate({
-        where: { status: 'SUCCEEDED' },
-        _sum: { amount: true },
-      }),
-      this.prisma.reviewReport.count({
-        where: { status: { in: ['PENDING', 'REVIEWING'] } },
-      }),
-      this.prisma.booking.findMany({
-        where,
-        select: this.bookingManagementSelect(),
-        orderBy: { createdAt: query.sortOrder ?? 'desc' },
-        take: this.limit(query),
-        skip: query.offset ?? 0,
-      }),
-    ]);
+        this.prisma.booking.count(),
+        this.prisma.booking.count({
+          where: { createdAt: { gte: currentMonthStart, lt: nextMonthStart } },
+        }),
+        this.prisma.payment.aggregate({
+          where: { status: 'SUCCEEDED' },
+          _sum: { amount: true },
+        }),
+        this.prisma.reviewReport.count({
+          where: { status: { in: ['PENDING', 'REVIEWING'] } },
+        }),
+        this.prisma.booking.findMany({
+          where,
+          select: this.bookingManagementSelect(),
+          orderBy: { createdAt: query.sortOrder ?? 'desc' },
+          take: this.limit(query),
+          skip: query.offset ?? 0,
+        }),
+      ]);
 
     return {
       generatedAt: now,
@@ -750,6 +931,65 @@ export class AdminRepository {
     return Math.min(query.limit ?? 20, 100);
   }
 
+  private vendorWhere(query: AdminListQueryDto) {
+    return {
+      deletedAt: null,
+      ...(query.status ? { status: query.status as any } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                businessName: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                businessEmail: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                businessPhone: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                user: {
+                  email: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                user: {
+                  profile: {
+                    displayName: {
+                      contains: query.search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                },
+              },
+              {
+                foodTrucks: {
+                  some: {
+                    name: {
+                      contains: query.search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+
   private bookingWhere(query: AdminListQueryDto) {
     return {
       ...(query.status ? { status: query.status as any } : {}),
@@ -1030,6 +1270,223 @@ export class AdminRepository {
         select: this.marketSelect(),
       },
     };
+  }
+
+  private vendorManagementSelect() {
+    return {
+      id: true,
+      userId: true,
+      marketId: true,
+      businessName: true,
+      businessEmail: true,
+      businessPhone: true,
+      description: true,
+      logoUrl: true,
+      websiteUrl: true,
+      selectedPlan: true,
+      status: true,
+      isVerified: true,
+      verifiedAt: true,
+      reliabilityScore: true,
+      approvedAt: true,
+      rejectionReason: true,
+      createdAt: true,
+      updatedAt: true,
+      user: {
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          status: true,
+          profile: true,
+        },
+      },
+      market: {
+        select: this.marketSelect(),
+      },
+      verificationRequests: {
+        orderBy: { createdAt: 'desc' as const },
+        select: {
+          id: true,
+          status: true,
+          documents: true,
+          notes: true,
+          reviewedAt: true,
+          rejectionReason: true,
+          createdAt: true,
+          reviewedBy: {
+            select: { id: true, email: true, profile: true },
+          },
+        },
+      },
+      foodTrucks: {
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          description: true,
+          status: true,
+          truckType: true,
+          currentAddress: true,
+          primaryCity: true,
+          averageRating: true,
+          totalReviews: true,
+          totalBookings: true,
+          followerCount: true,
+          createdAt: true,
+          cuisines: { include: { cuisine: true } },
+          serviceAreas: {
+            select: {
+              id: true,
+              name: true,
+              centerAddress: true,
+              radiusKm: true,
+            },
+          },
+          menus: {
+            where: { isActive: true },
+            select: {
+              id: true,
+              name: true,
+              categories: {
+                select: {
+                  id: true,
+                  name: true,
+                  items: {
+                    where: { status: MenuItemStatus.AVAILABLE },
+                    select: {
+                      id: true,
+                      name: true,
+                      price: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      payments: {
+        where: { status: PaymentStatus.SUCCEEDED },
+        select: { amount: true },
+      },
+      vendorBadges: {
+        where: { revokedAt: null },
+        include: { badge: true },
+      },
+      photoShootRequests: {
+        orderBy: { createdAt: 'desc' as const },
+        take: 3,
+      },
+    };
+  }
+
+  private toVendorManagementRow(vendor: any) {
+    const trucks = vendor.foodTrucks ?? [];
+    const primaryTruck = trucks[0] ?? null;
+    const cuisines = this.vendorCuisines(trucks);
+    const menuItems = this.vendorMenuItems(trucks);
+    const prices = menuItems.map((item) => Number(item.price ?? 0));
+    const totalRevenue = (vendor.payments ?? []).reduce(
+      (sum, payment) => sum + Number(payment.amount ?? 0),
+      0,
+    );
+    const totalReviews = trucks.reduce(
+      (sum, truck) => sum + (truck.totalReviews ?? 0),
+      0,
+    );
+    const totalFollowers = trucks.reduce(
+      (sum, truck) => sum + (truck.followerCount ?? 0),
+      0,
+    );
+    const totalBookings = trucks.reduce(
+      (sum, truck) => sum + (truck.totalBookings ?? 0),
+      0,
+    );
+
+    return {
+      id: vendor.id,
+      businessName: vendor.businessName,
+      status: vendor.status,
+      isVerified: vendor.isVerified,
+      ownerName: this.userDisplayName(vendor.user),
+      email: vendor.businessEmail ?? vendor.user?.email ?? null,
+      phone: vendor.businessPhone ?? vendor.user?.phone ?? null,
+      cuisine: cuisines[0] ?? null,
+      cuisines,
+      rating: Number(primaryTruck?.averageRating ?? 0),
+      reviews: totalReviews,
+      followers: totalFollowers,
+      totalBookings,
+      revenueGenerated: totalRevenue,
+      description: vendor.description ?? primaryTruck?.description ?? null,
+      serviceArea:
+        primaryTruck?.serviceAreas?.map((area) => area.name).join(', ') ??
+        primaryTruck?.currentAddress ??
+        null,
+      menuItems: menuItems.slice(0, 12).map((item) => item.name),
+      priceRange: this.priceRange(prices),
+      memberSince: vendor.createdAt,
+      primaryTruck,
+      foodTrucks: trucks,
+      verificationRequests: vendor.verificationRequests ?? [],
+      documents: vendor.verificationRequests?.[0]?.documents ?? [],
+      badges: vendor.vendorBadges ?? [],
+      photoShootRequests: vendor.photoShootRequests ?? [],
+    };
+  }
+
+  private vendorCuisines(foodTrucks: any[]) {
+    return Array.from(
+      new Set(
+        foodTrucks.flatMap((truck) =>
+          (truck.cuisines ?? [])
+            .map((item) => item.cuisine?.name)
+            .filter(Boolean),
+        ),
+      ),
+    );
+  }
+
+  private vendorMenuItems(foodTrucks: any[]) {
+    return foodTrucks.flatMap((truck) =>
+      (truck.menus ?? []).flatMap((menu) =>
+        (menu.categories ?? []).flatMap((category) => category.items ?? []),
+      ),
+    );
+  }
+
+  private priceRange(prices: number[]) {
+    const validPrices = prices.filter((price) => Number.isFinite(price));
+
+    if (!validPrices.length) {
+      return null;
+    }
+
+    const min = Math.min(...validPrices);
+    const max = Math.max(...validPrices);
+
+    return min === max
+      ? `$${min.toFixed(2)}`
+      : `$${min.toFixed(2)}-$${max.toFixed(2)}`;
+  }
+
+  private matchesDocumentKey(document: unknown, documentKey: string) {
+    if (!document || typeof document !== 'object') {
+      return false;
+    }
+
+    const candidate = document as Record<string, unknown>;
+    const normalizedKey = documentKey.trim().toLowerCase();
+
+    return ['id', 'type', 'name', 'label'].some((field) => {
+      const value = candidate[field];
+      return (
+        typeof value === 'string' &&
+        value.trim().toLowerCase() === normalizedKey
+      );
+    });
   }
 
   private bookingSelect() {
