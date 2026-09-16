@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
   AccountStatus,
+  CommunityPostCategory,
+  CommunityPostReportStatus,
   MenuItemStatus,
   PaymentStatus,
   ReportStatus,
@@ -47,6 +49,18 @@ type UserManagementRowData = {
     customerBookings: number;
     referralsMade: number;
   };
+};
+
+type CommunityAuthor = {
+  id: string;
+  email: string | null;
+  phone?: string | null;
+  profile: {
+    displayName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    avatarUrl?: string | null;
+  } | null;
 };
 
 @Injectable()
@@ -682,22 +696,77 @@ export class AdminRepository {
 
   listCommunityRequests(query: AdminListQueryDto) {
     return this.prisma.communityRequest.findMany({
-      where: {
-        ...(query.status ? { status: query.status as any } : {}),
-        ...(query.search
-          ? {
-              title: {
-                contains: query.search,
-                mode: 'insensitive' as const,
-              },
-            }
-          : {}),
-      },
+      where: this.communityWhere(query),
       select: this.communityRequestSelect(),
       orderBy: { createdAt: query.sortOrder ?? 'desc' },
       take: this.limit(query),
       skip: query.offset ?? 0,
     });
+  }
+
+  async getCommunityManagement(query: AdminListQueryDto) {
+    const now = new Date();
+    const todayStart = this.startOfDay(now);
+    const tomorrowStart = this.addDays(todayStart, 1);
+    const where = this.communityWhere(query);
+
+    const [totalPosts, today, reported, removedToday, postsByCategory, posts] =
+      await Promise.all([
+        this.prisma.communityRequest.count({ where: { deletedAt: null } }),
+        this.prisma.communityRequest.count({
+          where: {
+            deletedAt: null,
+            createdAt: { gte: todayStart, lt: tomorrowStart },
+          },
+        }),
+        this.prisma.communityPostReport.count({
+          where: {
+            status: {
+              in: [
+                CommunityPostReportStatus.PENDING,
+                CommunityPostReportStatus.REVIEWING,
+              ],
+            },
+          },
+        }),
+        this.prisma.communityRequest.count({
+          where: {
+            deletedAt: { gte: todayStart, lt: tomorrowStart },
+          },
+        }),
+        this.prisma.communityRequest.groupBy({
+          by: ['category'],
+          where: { deletedAt: null },
+          _count: { id: true },
+        }),
+        this.prisma.communityRequest.findMany({
+          where,
+          select: this.communityRequestSelect(),
+          orderBy: { createdAt: query.sortOrder ?? 'desc' },
+          take: this.limit(query),
+          skip: query.offset ?? 0,
+        }),
+      ]);
+
+    return {
+      generatedAt: now,
+      summary: {
+        totalPosts,
+        today,
+        reported,
+        removedToday,
+      },
+      tabs: {
+        allPosts: totalPosts,
+        ...Object.fromEntries(
+          postsByCategory.map((item) => [
+            this.communityCategoryKey(item.category),
+            item._count.id,
+          ]),
+        ),
+      },
+      posts: posts.map((post) => this.toCommunityManagementRow(post)),
+    };
   }
 
   moderateCommunityRequest(
@@ -713,6 +782,36 @@ export class AdminRepository {
           : {}),
       },
       select: this.communityRequestSelect(),
+    });
+  }
+
+  async removeCommunityRequest(requestId: string, adminUserId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const removed = await tx.communityRequest.update({
+        where: { id: requestId },
+        data: { deletedAt: new Date() },
+        select: this.communityRequestSelect(),
+      });
+
+      await tx.communityPostReport.updateMany({
+        where: {
+          postId: requestId,
+          status: {
+            in: [
+              CommunityPostReportStatus.PENDING,
+              CommunityPostReportStatus.REVIEWING,
+            ],
+          },
+        },
+        data: {
+          status: CommunityPostReportStatus.RESOLVED,
+          reviewedById: adminUserId,
+          reviewedAt: new Date(),
+          resolutionNotes: 'Post removed by admin',
+        },
+      });
+
+      return removed;
     });
   }
 
@@ -1281,6 +1380,18 @@ export class AdminRepository {
     return start;
   }
 
+  private startOfDay(date: Date) {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  private addDays(date: Date, days: number) {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+  }
+
   private userDisplayName(user: {
     email: string | null;
     profile: {
@@ -1465,6 +1576,147 @@ export class AdminRepository {
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase())
       .join('');
+  }
+
+  private communityWhere(query: AdminListQueryDto) {
+    const category = this.toCommunityCategory(query.category);
+
+    return {
+      ...(query.status ? { status: query.status as any } : {}),
+      ...(category ? { category } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                description: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                createdBy: {
+                  email: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                createdBy: {
+                  profile: {
+                    displayName: {
+                      contains: query.search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private toCommunityCategory(
+    category?: string,
+  ): CommunityPostCategory | undefined {
+    if (!category) {
+      return undefined;
+    }
+
+    const normalizedCategory = category.trim().toUpperCase();
+
+    if (
+      Object.values(CommunityPostCategory).includes(
+        normalizedCategory as CommunityPostCategory,
+      )
+    ) {
+      return normalizedCategory as CommunityPostCategory;
+    }
+
+    return undefined;
+  }
+
+  private communityCategoryKey(category: CommunityPostCategory) {
+    return category
+      .toLowerCase()
+      .replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+  }
+
+  private toCommunityManagementRow(post: any) {
+    const author = post.createdBy as CommunityAuthor;
+    const authorName = this.userDisplayName(author);
+    const activeReports = (post.reports ?? []).filter((report) =>
+      [
+        CommunityPostReportStatus.PENDING,
+        CommunityPostReportStatus.REVIEWING,
+      ].includes(report.status),
+    );
+    const primaryReport = activeReports[0] ?? post.reports?.[0] ?? null;
+    const comments = post.comments ?? [];
+    const reactions = post.reactions ?? [];
+
+    return {
+      id: post.id,
+      postId: this.shortDisplayId('P', post.id),
+      title: post.title,
+      content: post.description ?? post.title,
+      category: post.category,
+      type: post.requestType,
+      status: post.status,
+      visibility: post.visibility,
+      author: {
+        id: author.id,
+        userId: this.shortDisplayId('U', author.id),
+        name: authorName,
+        initials: this.initials(authorName),
+        email: author.email,
+        phone: author.phone ?? null,
+        avatarUrl: author.profile?.avatarUrl ?? null,
+      },
+      postedAt: post.createdAt,
+      createdAt: post.createdAt,
+      deletedAt: post.deletedAt,
+      likes: reactions.length,
+      commentsCount: comments.length,
+      media: post.media ?? [],
+      imageUrls: (post.media ?? [])
+        .filter((media) => media.mediaType?.toLowerCase().startsWith('image'))
+        .map((media) => media.mediaUrl),
+      isReported: activeReports.length > 0,
+      reportReason: primaryReport?.reason ?? null,
+      reportStatus: primaryReport?.status ?? null,
+      reports: post.reports ?? [],
+      comments: comments.map((comment) => {
+        const commenter = comment.user as CommunityAuthor;
+        const commenterName = this.userDisplayName(commenter);
+
+        return {
+          id: comment.id,
+          content: comment.content,
+          createdAt: comment.createdAt,
+          deletedAt: comment.deletedAt,
+          author: {
+            id: commenter.id,
+            name: commenterName,
+            initials: this.initials(commenterName),
+            email: commenter.email,
+            avatarUrl: commenter.profile?.avatarUrl ?? null,
+          },
+          likes: 0,
+        };
+      }),
+      moderation: {
+        canRemove: !post.deletedAt,
+        canContactAuthor: Boolean(author.email || author.phone),
+      },
+    };
   }
 
   private toVerificationStatus(
@@ -1915,6 +2167,7 @@ export class AdminRepository {
       id: true,
       createdById: true,
       targetFoodTruckId: true,
+      category: true,
       visibility: true,
       requestType: true,
       status: true,
@@ -1929,13 +2182,26 @@ export class AdminRepository {
       expiresAt: true,
       createdAt: true,
       deletedAt: true,
-      createdBy: { select: { id: true, email: true, profile: true } },
+      createdBy: {
+        select: { id: true, email: true, phone: true, profile: true },
+      },
       targetFoodTruck: { select: { id: true, name: true, slug: true } },
       media: true,
+      reactions: true,
+      reports: {
+        orderBy: { createdAt: 'desc' as const },
+        include: {
+          reportedBy: { select: { id: true, email: true, profile: true } },
+          reviewedBy: { select: { id: true, email: true, profile: true } },
+        },
+      },
       comments: {
         where: { deletedAt: null },
         take: 20,
         orderBy: { createdAt: 'desc' as const },
+        include: {
+          user: { select: { id: true, email: true, profile: true } },
+        },
       },
       vendorOffers: true,
     };

@@ -319,6 +319,10 @@ export class AdminService {
     return this.adminRepository.listCommunityRequests(query);
   }
 
+  getCommunityManagement(query: AdminListQueryDto) {
+    return this.adminRepository.getCommunityManagement(query);
+  }
+
   async moderateCommunityRequest(
     adminUserId: string,
     requestId: string,
@@ -334,6 +338,20 @@ export class AdminService {
       'CommunityRequest',
       requestId,
       dto as any,
+    );
+    return updated;
+  }
+
+  async removeCommunityRequest(adminUserId: string, requestId: string) {
+    const updated = await this.adminRepository.removeCommunityRequest(
+      requestId,
+      adminUserId,
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'REMOVE_COMMUNITY_REQUEST',
+      'CommunityRequest',
+      requestId,
     );
     return updated;
   }

@@ -273,6 +273,12 @@ export class AdminController {
     return this.adminService.listCommunityRequests(query);
   }
 
+  @ApiOperation({ summary: 'Get consolidated community moderation data' })
+  @Get('community-management')
+  getCommunityManagement(@Query() query: AdminListQueryDto) {
+    return this.adminService.getCommunityManagement(query);
+  }
+
   @ApiOperation({ summary: 'Moderate a community request' })
   @Patch('community/requests/:requestId')
   moderateCommunityRequest(
@@ -281,6 +287,15 @@ export class AdminController {
     @Body() dto: ModerateCommunityRequestDto,
   ) {
     return this.adminService.moderateCommunityRequest(user.sub, requestId, dto);
+  }
+
+  @ApiOperation({ summary: 'Remove a community post' })
+  @Delete('community/requests/:requestId')
+  removeCommunityRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+  ) {
+    return this.adminService.removeCommunityRequest(user.sub, requestId);
   }
 
   @ApiOperation({ summary: 'Delete a community comment' })

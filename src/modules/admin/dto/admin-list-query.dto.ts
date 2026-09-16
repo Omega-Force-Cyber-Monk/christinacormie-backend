@@ -13,6 +13,11 @@ export class AdminListQueryDto {
   @IsString()
   status?: string;
 
+  @ApiPropertyOptional({ example: 'NEED_TRUCK' })
+  @IsOptional()
+  @IsString()
+  category?: string;
+
   @ApiPropertyOptional({
     example: 'createdAt',
     enum: ['createdAt', 'updatedAt', 'name', 'status'],
