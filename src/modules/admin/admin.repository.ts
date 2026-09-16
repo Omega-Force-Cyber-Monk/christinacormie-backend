@@ -3,6 +3,7 @@ import {
   AccountStatus,
   CommunityPostCategory,
   CommunityPostReportStatus,
+  LoyaltyTransactionType,
   MenuItemStatus,
   PaymentStatus,
   PayoutStatus,
@@ -1167,6 +1168,278 @@ export class AdminRepository {
     });
   }
 
+  async getRewardsManagement(query: AdminListQueryDto) {
+    const now = new Date();
+    const todayStart = this.startOfDay(now);
+    const tomorrowStart = this.addDays(todayStart, 1);
+    const limit = this.limit(query);
+
+    const [
+      redeemedPoints,
+      redeemedCredits,
+      activeUsers,
+      qrScansToday,
+      loyaltyAccounts,
+      redemptions,
+      activeLeaderboard,
+      fallbackVendors,
+      paymentSummary,
+    ] = await Promise.all([
+      this.prisma.loyaltyTransaction.aggregate({
+        where: { transactionType: LoyaltyTransactionType.REDEEM },
+        _sum: { points: true },
+      }),
+      this.prisma.rewardRedemption.aggregate({
+        _sum: { rewardValue: true },
+      }),
+      this.prisma.loyaltyAccount.count({
+        where: {
+          OR: [
+            { availablePoints: { gt: 0 } },
+            { lifetimePoints: { gt: 0 } },
+            { redeemedPoints: { gt: 0 } },
+          ],
+        },
+      }),
+      this.prisma.qrScan.count({
+        where: { scannedAt: { gte: todayStart, lt: tomorrowStart } },
+      }),
+      this.prisma.loyaltyAccount.findMany({
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              profile: {
+                select: {
+                  displayName: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              userBadges: {
+                where: { revokedAt: null },
+                include: { badge: true },
+              },
+            },
+          },
+          _count: { select: { transactions: true } },
+        },
+        orderBy: [{ lifetimePoints: 'desc' }, { availablePoints: 'desc' }],
+        take: limit,
+      }),
+      this.prisma.rewardRedemption.findMany({
+        include: {
+          rewardRule: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              profile: {
+                select: {
+                  displayName: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              loyaltyAccount: true,
+              userBadges: {
+                where: { revokedAt: null },
+                include: { badge: true },
+              },
+            },
+          },
+        },
+        orderBy: { redeemedAt: query.sortOrder ?? 'desc' },
+        take: limit,
+        skip: query.offset ?? 0,
+      }),
+      this.prisma.leaderboard.findFirst({
+        where: { isActive: true },
+        include: {
+          entries: {
+            orderBy: { rank: 'asc' },
+            take: limit,
+            include: {
+              vendor: {
+                select: {
+                  id: true,
+                  businessName: true,
+                  user: {
+                    select: {
+                      email: true,
+                      profile: {
+                        select: {
+                          displayName: true,
+                          firstName: true,
+                          lastName: true,
+                        },
+                      },
+                    },
+                  },
+                  payments: {
+                    where: { status: PaymentStatus.SUCCEEDED },
+                    select: { amount: true },
+                  },
+                },
+              },
+              foodTruck: {
+                select: {
+                  id: true,
+                  name: true,
+                  primaryCity: true,
+                  totalBookings: true,
+                  totalReviews: true,
+                  totalCheckIns: true,
+                  followerCount: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { startsAt: 'desc' },
+      }),
+      this.prisma.vendor.findMany({
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          businessName: true,
+          user: {
+            select: {
+              email: true,
+              profile: {
+                select: {
+                  displayName: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+          payments: {
+            where: { status: PaymentStatus.SUCCEEDED },
+            select: { amount: true },
+          },
+          foodTrucks: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              name: true,
+              primaryCity: true,
+              totalBookings: true,
+              totalReviews: true,
+              totalCheckIns: true,
+              followerCount: true,
+            },
+          },
+        },
+        take: limit,
+      }),
+      this.rewardsPaymentSummary(now),
+    ]);
+
+    const foodTruckIds = redemptions
+      .map((redemption) => redemption.foodTruckId)
+      .filter((id): id is string => Boolean(id));
+    const vendorIds = redemptions
+      .map((redemption) => redemption.vendorId)
+      .filter((id): id is string => Boolean(id));
+
+    const [redemptionFoodTrucks, redemptionVendors] = await Promise.all([
+      foodTruckIds.length
+        ? this.prisma.foodTruck.findMany({
+            where: { id: { in: foodTruckIds } },
+            select: {
+              id: true,
+              name: true,
+              vendor: {
+                select: {
+                  id: true,
+                  businessName: true,
+                  user: {
+                    select: {
+                      email: true,
+                      profile: {
+                        select: {
+                          displayName: true,
+                          firstName: true,
+                          lastName: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+      vendorIds.length
+        ? this.prisma.vendor.findMany({
+            where: { id: { in: vendorIds } },
+            select: {
+              id: true,
+              businessName: true,
+              user: {
+                select: {
+                  email: true,
+                  profile: {
+                    select: {
+                      displayName: true,
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const foodTruckById = new Map<string, any>(
+      redemptionFoodTrucks.map((truck) => [truck.id, truck] as [string, any]),
+    );
+    const vendorById = new Map<string, any>(
+      redemptionVendors.map((vendor) => [vendor.id, vendor] as [string, any]),
+    );
+    const topUsers = loyaltyAccounts.map((account, index) =>
+      this.toRewardTopUser(account, index + 1),
+    );
+
+    return {
+      generatedAt: now,
+      summary: {
+        pointsRedeemed: Math.abs(redeemedPoints._sum.points ?? 0),
+        creditsIssued: Number(redeemedCredits._sum.rewardValue ?? 0),
+        activeUsers,
+        qrScansToday,
+      },
+      paymentSummary,
+      tabs: {
+        leaderboard: activeLeaderboard?.entries.length ?? fallbackVendors.length,
+        redeemTransactions: redemptions.length,
+        topUsers: topUsers.length,
+      },
+      tierCounts: this.rewardTierCounts(
+        loyaltyAccounts.map((account) => account.lifetimePoints),
+      ),
+      leaderboard: this.toRewardLeaderboardRows(
+        activeLeaderboard?.entries ?? [],
+        fallbackVendors,
+      ),
+      redeemTransactions: redemptions.map((redemption) =>
+        this.toRewardRedemptionRow(redemption, foodTruckById, vendorById),
+      ),
+      topUsers,
+      schemaGaps: {
+        rewardCredits: 'Stored on reward_redemptions.reward_value.',
+        userTier:
+          'Derived from loyalty_accounts.lifetime_points using rewards tier thresholds.',
+        qrScansToday: 'Stored on qr_scans.scanned_at.',
+      },
+    };
+  }
+
   async getDashboard() {
     const now = new Date();
     const currentMonthStart = this.startOfMonth(now);
@@ -2303,6 +2576,258 @@ export class AdminRepository {
       status: refund.status,
       booking: null,
     };
+  }
+
+  private async rewardsPaymentSummary(now: Date) {
+    const currentMonthStart = this.startOfMonth(now);
+    const nextMonthStart = this.addMonths(currentMonthStart, 1);
+    const [pendingPayouts, totalPayments, monthlyRevenue, commissionEarned] =
+      await Promise.all([
+        this.prisma.payout.count({ where: { status: PayoutStatus.PENDING } }),
+        this.prisma.payment.aggregate({
+          where: { status: PaymentStatus.SUCCEEDED },
+          _sum: { amount: true },
+        }),
+        this.prisma.payment.aggregate({
+          where: {
+            status: PaymentStatus.SUCCEEDED,
+            paidAt: { gte: currentMonthStart, lt: nextMonthStart },
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.commission.aggregate({
+          _sum: { commissionAmount: true },
+        }),
+      ]);
+
+    return {
+      pendingPayouts,
+      totalAmount: Number(totalPayments._sum.amount ?? 0),
+      revenueThisMonth: Number(monthlyRevenue._sum.amount ?? 0),
+      commissionEarned: Number(commissionEarned._sum.commissionAmount ?? 0),
+    };
+  }
+
+  private toRewardLeaderboardRows(entries: any[], fallbackVendors: any[]) {
+    if (entries.length) {
+      return entries.map((entry) => {
+        const revenue = this.sumAmounts(entry.vendor?.payments ?? []);
+        return {
+          rank: entry.rank,
+          vendorId: entry.vendorId,
+          foodTruckId: entry.foodTruckId,
+          truckName: entry.foodTruck?.name ?? entry.vendor?.businessName ?? null,
+          ownerName: this.userDisplayName(entry.vendor?.user),
+          location: entry.foodTruck?.primaryCity ?? null,
+          pointsGiven: Math.round(Number(entry.score ?? 0)),
+          bookings: entry.foodTruck?.totalBookings ?? 0,
+          revenue,
+          score: Number(entry.score ?? 0),
+          metrics: {
+            bookings: entry.foodTruck?.totalBookings ?? 0,
+            reviews: entry.foodTruck?.totalReviews ?? 0,
+            checkIns: entry.foodTruck?.totalCheckIns ?? 0,
+            followers: entry.foodTruck?.followerCount ?? 0,
+          },
+        };
+      });
+    }
+
+    return fallbackVendors
+      .map((vendor) => {
+        const primaryTruck = vendor.foodTrucks[0] ?? null;
+        const bookings = vendor.foodTrucks.reduce(
+          (sum, truck) => sum + (truck.totalBookings ?? 0),
+          0,
+        );
+        const reviews = vendor.foodTrucks.reduce(
+          (sum, truck) => sum + (truck.totalReviews ?? 0),
+          0,
+        );
+        const checkIns = vendor.foodTrucks.reduce(
+          (sum, truck) => sum + (truck.totalCheckIns ?? 0),
+          0,
+        );
+        const followers = vendor.foodTrucks.reduce(
+          (sum, truck) => sum + (truck.followerCount ?? 0),
+          0,
+        );
+        const revenue = this.sumAmounts(vendor.payments ?? []);
+        return {
+          vendor,
+          primaryTruck,
+          bookings,
+          reviews,
+          checkIns,
+          followers,
+          revenue,
+          pointsGiven: Math.round(bookings * 100 + checkIns * 10 + reviews * 25),
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.pointsGiven - a.pointsGiven ||
+          b.revenue - a.revenue ||
+          b.bookings - a.bookings,
+      )
+      .map((row, index) => ({
+        rank: index + 1,
+        vendorId: row.vendor.id,
+        foodTruckId: row.primaryTruck?.id ?? null,
+        truckName: row.primaryTruck?.name ?? row.vendor.businessName,
+        ownerName: this.userDisplayName(row.vendor.user),
+        location: row.primaryTruck?.primaryCity ?? null,
+        pointsGiven: row.pointsGiven,
+        bookings: row.bookings,
+        revenue: row.revenue,
+        score: row.pointsGiven,
+        metrics: {
+          bookings: row.bookings,
+          reviews: row.reviews,
+          checkIns: row.checkIns,
+          followers: row.followers,
+        },
+      }));
+  }
+
+  private toRewardRedemptionRow(
+    redemption: any,
+    foodTruckById: Map<string, any>,
+    vendorById: Map<string, any>,
+  ) {
+    const account = redemption.user?.loyaltyAccount;
+    const tier = this.loyaltyTier(account?.lifetimePoints ?? 0);
+    const truck = redemption.foodTruckId
+      ? foodTruckById.get(redemption.foodTruckId)
+      : null;
+    const vendor = redemption.vendorId
+      ? vendorById.get(redemption.vendorId)
+      : truck?.vendor;
+    const credit = Number(
+      redemption.rewardValue ?? redemption.pointsSpent / 100,
+    );
+
+    return {
+      id: redemption.id,
+      transactionId: this.shortDisplayId('RDM', redemption.id),
+      user: {
+        id: redemption.userId,
+        name: this.userDisplayName(redemption.user),
+        email: redemption.user?.email ?? null,
+        tier,
+      },
+      truck: truck
+        ? { id: truck.id, name: truck.name }
+        : redemption.foodTruckId
+          ? { id: redemption.foodTruckId, name: null }
+          : null,
+      truckOwner: vendor
+        ? {
+            id: vendor.id,
+            name: this.userDisplayName(vendor.user),
+            businessName: vendor.businessName,
+          }
+        : null,
+      points: -Math.abs(redemption.pointsSpent),
+      credit,
+      date: redemption.usedAt ?? redemption.redeemedAt,
+      status: this.rewardRedemptionStatus(redemption),
+      rewardRule: redemption.rewardRule
+        ? {
+            id: redemption.rewardRule.id,
+            name: redemption.rewardRule.name,
+            rewardType: redemption.rewardRule.rewardType,
+          }
+        : null,
+      code: redemption.backupCode ?? null,
+    };
+  }
+
+  private toRewardTopUser(account: any, rank: number) {
+    const tier = this.loyaltyTier(account.lifetimePoints ?? 0);
+    return {
+      rank,
+      userId: account.userId,
+      name: this.userDisplayName(account.user),
+      email: account.user?.email ?? null,
+      tier,
+      points: account.lifetimePoints ?? 0,
+      availablePoints: account.availablePoints ?? 0,
+      redeemedPoints: account.redeemedPoints ?? 0,
+      transactions: account._count?.transactions ?? 0,
+      progressToLegendPercent: Math.min(
+        100,
+        Math.round(((account.lifetimePoints ?? 0) / 10000) * 100),
+      ),
+    };
+  }
+
+  private rewardTierCounts(points: number[]) {
+    return points.reduce(
+      (counts, total) => {
+        const tier = this.loyaltyTier(total);
+        counts[tier.slug] = (counts[tier.slug] ?? 0) + 1;
+        return counts;
+      },
+      {
+        bitedrop_legend: 0,
+        drop_hunter: 0,
+        explorer: 0,
+        foodie: 0,
+      },
+    );
+  }
+
+  private loyaltyTier(points: number) {
+    if (points >= 10000) {
+      return {
+        slug: 'bitedrop_legend',
+        name: 'BiteDrop Legend',
+        level: 4,
+        requiredPoints: 10000,
+        nextTierPoints: null,
+      };
+    }
+
+    if (points >= 2000) {
+      return {
+        slug: 'drop_hunter',
+        name: 'Drop Hunter',
+        level: 3,
+        requiredPoints: 2000,
+        nextTierPoints: 10000,
+      };
+    }
+
+    if (points >= 500) {
+      return {
+        slug: 'explorer',
+        name: 'Explorer',
+        level: 2,
+        requiredPoints: 500,
+        nextTierPoints: 2000,
+      };
+    }
+
+    return {
+      slug: 'foodie',
+      name: 'Foodie',
+      level: 1,
+      requiredPoints: 0,
+      nextTierPoints: 500,
+    };
+  }
+
+  private rewardRedemptionStatus(redemption: any) {
+    if (redemption.usedAt) {
+      return 'completed';
+    }
+
+    return String(redemption.status ?? 'active').toLowerCase();
+  }
+
+  private sumAmounts(items: Array<{ amount: unknown }>) {
+    return items.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
   }
 
   private toPaymentMethodRow(account: any) {

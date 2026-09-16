@@ -597,6 +597,10 @@ export class AdminService {
     return this.adminRepository.listLeaderboards(query);
   }
 
+  getRewardsManagement(query: AdminListQueryDto) {
+    return this.adminRepository.getRewardsManagement(query);
+  }
+
   getDashboard() {
     return this.adminRepository.getDashboard();
   }
