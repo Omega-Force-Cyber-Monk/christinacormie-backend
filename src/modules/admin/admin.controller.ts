@@ -447,6 +447,12 @@ export class AdminController {
     return this.adminService.listLeaderboards(query);
   }
 
+  @ApiOperation({ summary: 'Get consolidated rewards management data' })
+  @Get('rewards-management')
+  getRewardsManagement(@Query() query: AdminListQueryDto) {
+    return this.adminService.getRewardsManagement(query);
+  }
+
   @ApiOperation({ summary: 'Get consolidated admin dashboard data' })
   @Get('dashboard')
   getDashboard() {
