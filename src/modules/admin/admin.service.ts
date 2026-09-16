@@ -3,7 +3,10 @@ import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UsersService } from '../users/users.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { UpdateAccountStatusDto } from '../users/dto/update-account-status.dto';
-import { ModerateReviewDto } from '../reviews/dto/moderate-review.dto';
+import {
+  ModerateReviewDto,
+  ReviewStatusDto,
+} from '../reviews/dto/moderate-review.dto';
 import { AdminRepository } from './admin.repository';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 import { CreateMarketDto } from './dto/create-market.dto';
@@ -295,6 +298,10 @@ export class AdminService {
     return this.adminRepository.listReviews(query);
   }
 
+  getReviewsManagement(query: AdminListQueryDto) {
+    return this.adminRepository.getReviewsManagement(query);
+  }
+
   async moderateReview(
     adminUserId: string,
     reviewId: string,
@@ -311,6 +318,84 @@ export class AdminService {
       'Review',
       reviewId,
       dto as any,
+    );
+    return result;
+  }
+
+  async removeReviewCompletely(adminUserId: string, reviewId: string) {
+    const result = await this.reviewsService.moderateReview(
+      adminUserId,
+      reviewId,
+      {
+        status: ReviewStatusDto.REMOVED,
+        contentHidden: true,
+        ratingVisible: false,
+        moderationReason: 'Removed by admin',
+      },
+    );
+    await this.adminRepository.resolveReviewReportsForReview(
+      reviewId,
+      adminUserId,
+      'RESOLVED',
+      'Review removed by admin',
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'REMOVE_REVIEW',
+      'Review',
+      reviewId,
+    );
+    return result;
+  }
+
+  async hideReviewTextOnly(adminUserId: string, reviewId: string) {
+    const result = await this.reviewsService.moderateReview(
+      adminUserId,
+      reviewId,
+      {
+        status: ReviewStatusDto.HIDDEN,
+        contentHidden: true,
+        ratingVisible: true,
+        moderationReason: 'Review text hidden by admin',
+      },
+    );
+    await this.adminRepository.resolveReviewReportsForReview(
+      reviewId,
+      adminUserId,
+      'RESOLVED',
+      'Review text hidden by admin',
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'HIDE_REVIEW_TEXT',
+      'Review',
+      reviewId,
+    );
+    return result;
+  }
+
+  async keepReview(adminUserId: string, reviewId: string) {
+    const result = await this.reviewsService.moderateReview(
+      adminUserId,
+      reviewId,
+      {
+        status: ReviewStatusDto.PUBLISHED,
+        contentHidden: false,
+        ratingVisible: true,
+        moderationReason: 'Review kept after admin review',
+      },
+    );
+    await this.adminRepository.resolveReviewReportsForReview(
+      reviewId,
+      adminUserId,
+      'DISMISSED',
+      'Review kept by admin',
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'KEEP_REVIEW',
+      'Review',
+      reviewId,
     );
     return result;
   }

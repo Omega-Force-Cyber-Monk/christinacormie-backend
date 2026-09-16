@@ -257,6 +257,12 @@ export class AdminController {
     return this.adminService.listReviews(query);
   }
 
+  @ApiOperation({ summary: 'Get consolidated review management data' })
+  @Get('reviews-management')
+  getReviewsManagement(@Query() query: AdminListQueryDto) {
+    return this.adminService.getReviewsManagement(query);
+  }
+
   @ApiOperation({ summary: 'Moderate a review' })
   @Patch('reviews/:reviewId/moderation')
   moderateReview(
@@ -265,6 +271,33 @@ export class AdminController {
     @Body() dto: ModerateReviewDto,
   ) {
     return this.adminService.moderateReview(user.sub, reviewId, dto);
+  }
+
+  @ApiOperation({ summary: 'Remove a review completely' })
+  @Delete('reviews/:reviewId')
+  removeReviewCompletely(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+  ) {
+    return this.adminService.removeReviewCompletely(user.sub, reviewId);
+  }
+
+  @ApiOperation({ summary: 'Hide review text but keep rating visible' })
+  @Patch('reviews/:reviewId/hide-text')
+  hideReviewTextOnly(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+  ) {
+    return this.adminService.hideReviewTextOnly(user.sub, reviewId);
+  }
+
+  @ApiOperation({ summary: 'Keep a reported review published' })
+  @Patch('reviews/:reviewId/keep')
+  keepReview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+  ) {
+    return this.adminService.keepReview(user.sub, reviewId);
   }
 
   @ApiOperation({ summary: 'List community requests' })

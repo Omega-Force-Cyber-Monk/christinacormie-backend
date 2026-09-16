@@ -6,6 +6,7 @@ import {
   MenuItemStatus,
   PaymentStatus,
   ReportStatus,
+  ReviewStatus,
   UserRole,
   VendorStatus,
   VerificationStatus,
@@ -681,16 +682,82 @@ export class AdminRepository {
 
   listReviews(query: AdminListQueryDto) {
     return this.prisma.review.findMany({
-      where: query.status ? { status: query.status as any } : {},
-      include: {
-        customer: { select: { id: true, email: true, profile: true } },
-        vendor: { select: { id: true, businessName: true } },
-        foodTruck: { select: { id: true, name: true, slug: true } },
-        reports: true,
-      },
+      where: this.reviewWhere(query),
+      select: this.reviewManagementSelect(),
       orderBy: { createdAt: query.sortOrder ?? 'desc' },
       take: this.limit(query),
       skip: query.offset ?? 0,
+    });
+  }
+
+  async getReviewsManagement(query: AdminListQueryDto) {
+    const now = new Date();
+    const weekStart = this.startOfWeek(now);
+    const where = this.reviewWhere(query);
+
+    const [totalReviews, averageRating, reported, removedThisWeek, reviews] =
+      await Promise.all([
+        this.prisma.review.count(),
+        this.prisma.review.aggregate({
+          where: { status: { not: ReviewStatus.REMOVED }, ratingVisible: true },
+          _avg: { rating: true },
+        }),
+        this.prisma.reviewReport.count({
+          where: {
+            status: { in: [ReportStatus.PENDING, ReportStatus.REVIEWING] },
+          },
+        }),
+        this.prisma.review.count({
+          where: {
+            status: ReviewStatus.REMOVED,
+            moderatedAt: { gte: weekStart },
+          },
+        }),
+        this.prisma.review.findMany({
+          where,
+          select: this.reviewManagementSelect(),
+          orderBy: { createdAt: query.sortOrder ?? 'desc' },
+          take: this.limit(query),
+          skip: query.offset ?? 0,
+        }),
+      ]);
+
+    return {
+      generatedAt: now,
+      summary: {
+        totalReviews,
+        averageRating:
+          Math.round(Number(averageRating._avg.rating ?? 0) * 10) / 10,
+        reported,
+        removedThisWeek,
+      },
+      tabs: {
+        allReviews: totalReviews,
+        reportedOnly: reported,
+        bookings: totalReviews,
+        checkIn: 0,
+      },
+      reviews: reviews.map((review) => this.toReviewManagementRow(review)),
+    };
+  }
+
+  resolveReviewReportsForReview(
+    reviewId: string,
+    adminUserId: string,
+    status: 'RESOLVED' | 'DISMISSED',
+    resolutionNotes: string,
+  ) {
+    return this.prisma.reviewReport.updateMany({
+      where: {
+        reviewId,
+        status: { in: [ReportStatus.PENDING, ReportStatus.REVIEWING] },
+      },
+      data: {
+        status,
+        reviewedById: adminUserId,
+        reviewedAt: new Date(),
+        resolutionNotes,
+      },
     });
   }
 
@@ -1715,6 +1782,197 @@ export class AdminRepository {
       moderation: {
         canRemove: !post.deletedAt,
         canContactAuthor: Boolean(author.email || author.phone),
+      },
+    };
+  }
+
+  private reviewWhere(query: AdminListQueryDto) {
+    const reportedOnly =
+      query.status?.trim().toUpperCase() === 'REPORTED' ||
+      query.category?.trim().toUpperCase() === 'REPORTED';
+    const source = query.category?.trim().toUpperCase();
+    const status = this.toReviewStatus(query.status);
+
+    return {
+      ...(status ? { status } : {}),
+      ...(reportedOnly
+        ? {
+            reports: {
+              some: {
+                status: { in: [ReportStatus.PENDING, ReportStatus.REVIEWING] },
+              },
+            },
+          }
+        : {}),
+      ...(source === 'CHECK_IN' ? { id: '__no_check_in_review_source__' } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                content: {
+                  contains: query.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                customer: {
+                  email: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                customer: {
+                  profile: {
+                    displayName: {
+                      contains: query.search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                },
+              },
+              {
+                vendor: {
+                  businessName: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                foodTruck: {
+                  name: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                booking: {
+                  bookingNumber: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private toReviewStatus(status?: string): ReviewStatus | undefined {
+    if (!status) {
+      return undefined;
+    }
+
+    const normalizedStatus = status.trim().toUpperCase();
+
+    if (
+      Object.values(ReviewStatus).includes(normalizedStatus as ReviewStatus)
+    ) {
+      return normalizedStatus as ReviewStatus;
+    }
+
+    return undefined;
+  }
+
+  private reviewManagementSelect() {
+    return {
+      id: true,
+      bookingId: true,
+      customerId: true,
+      vendorId: true,
+      foodTruckId: true,
+      rating: true,
+      title: true,
+      content: true,
+      isVerified: true,
+      status: true,
+      contentHidden: true,
+      ratingVisible: true,
+      moderatedAt: true,
+      moderationReason: true,
+      createdAt: true,
+      booking: {
+        select: {
+          id: true,
+          bookingNumber: true,
+          bookingType: true,
+          status: true,
+          completedAt: true,
+        },
+      },
+      customer: {
+        select: { id: true, email: true, phone: true, profile: true },
+      },
+      vendor: {
+        select: { id: true, businessName: true, businessEmail: true },
+      },
+      foodTruck: {
+        select: { id: true, name: true, slug: true },
+      },
+      reports: {
+        orderBy: { createdAt: 'desc' as const },
+        include: {
+          reportedBy: { select: { id: true, email: true, profile: true } },
+          reviewedBy: { select: { id: true, email: true, profile: true } },
+        },
+      },
+    };
+  }
+
+  private toReviewManagementRow(review: any) {
+    const customer = review.customer as CommunityAuthor;
+    const customerName = this.userDisplayName(customer);
+    const activeReports = (review.reports ?? []).filter((report) =>
+      [ReportStatus.PENDING, ReportStatus.REVIEWING].includes(report.status),
+    );
+    const primaryReport = activeReports[0] ?? review.reports?.[0] ?? null;
+
+    return {
+      id: review.id,
+      reviewId: this.shortDisplayId('R', review.id),
+      rating: review.rating,
+      title: review.title,
+      content: review.content,
+      visibleContent: review.contentHidden ? null : review.content,
+      isVerified: review.isVerified,
+      status: review.status,
+      contentHidden: review.contentHidden,
+      ratingVisible: review.ratingVisible,
+      source: 'BOOKING',
+      sourceLabel: 'Booking',
+      customer: {
+        id: customer.id,
+        name: customerName,
+        initials: this.initials(customerName),
+        email: customer.email,
+        phone: customer.phone ?? null,
+        avatarUrl: customer.profile?.avatarUrl ?? null,
+      },
+      vendor: review.vendor,
+      foodTruck: review.foodTruck,
+      booking: review.booking,
+      isReported: activeReports.length > 0,
+      reportReason: primaryReport?.reason ?? null,
+      reportDescription: primaryReport?.description ?? null,
+      reportStatus: primaryReport?.status ?? null,
+      reports: review.reports ?? [],
+      moderationReason: review.moderationReason,
+      createdAt: review.createdAt,
+      moderatedAt: review.moderatedAt,
+      actions: {
+        canRemoveCompletely: review.status !== ReviewStatus.REMOVED,
+        canHideTextOnly: !review.contentHidden,
+        canKeepReview: activeReports.length > 0,
       },
     };
   }
