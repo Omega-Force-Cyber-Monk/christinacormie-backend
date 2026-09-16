@@ -53,6 +53,10 @@ model User {
   newFoodTruckRequests               NewFoodTruckRequest[]         @relation("NewFoodTruckRequestedBy")
   reviewedNewFoodTruckRequests       NewFoodTruckRequest[]         @relation("NewFoodTruckReviewedBy")
   customerBookings                   Booking[]                     @relation("BookingCustomer")
+  completionRequestedBookings        Booking[]                     @relation("BookingCompletionRequestedBy")
+  completionApprovedBookings         Booking[]                     @relation("BookingCompletionApprovedBy")
+  bookingIssuesReported              BookingIssue[]                @relation("BookingIssueReportedBy")
+  bookingIssueMessages               BookingIssueMessage[]         @relation("BookingIssueMessageSender")
   bookingHolds                       BookingHold[]
   bookingStatusChanges               BookingStatusHistory[]        @relation("BookingStatusChangedBy")
   payments                           Payment[]                     @relation("PaymentPayer")

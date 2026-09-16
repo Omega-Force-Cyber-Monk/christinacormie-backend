@@ -7,11 +7,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AcceptBookingQuoteDto } from './dto/accept-booking-quote.dto';
+import {
+  BookingIssueDto,
+  BookingIssueMessageDto,
+} from './dto/booking-issue.dto';
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
 import { BookingTypeDto, CreateBookingDto } from './dto/create-booking.dto';
 import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
+import { UserRole } from '../../common/enums/user-role.enum';
+import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentsService } from '../payments/payments.service';
 import { RewardsService } from '../rewards/rewards.service';
 import { bookingEventWindow } from './booking-event-window';
 import { BookingsRepository } from './bookings.repository';
@@ -24,6 +31,7 @@ export class BookingsService {
   constructor(
     private readonly bookingsRepository: BookingsRepository,
     private readonly notificationsService: NotificationsService,
+    private readonly paymentsService: PaymentsService,
     private readonly rewardsService: RewardsService,
   ) {}
 
@@ -108,6 +116,229 @@ export class BookingsService {
     }
 
     return booking;
+  }
+
+  async getBookingTracking(user: AuthenticatedUser, bookingId: string) {
+    const { booking, roleView } = await this.ensureBookingVisible(
+      user,
+      bookingId,
+    );
+
+    return this.presentTracking(booking, roleView);
+  }
+
+  async requestCompletion(userId: string, bookingId: string) {
+    const booking = await this.ensureVendorBooking(userId, bookingId);
+
+    if (!['CONFIRMED', 'IN_PROGRESS'].includes(booking.status)) {
+      throw new BadRequestException(
+        'Completion can be requested only after the booking is confirmed',
+      );
+    }
+
+    if (booking.completionRequestedAt) {
+      throw new BadRequestException('Completion request already sent');
+    }
+
+    if (booking.completedAt || booking.status === 'COMPLETED') {
+      throw new BadRequestException('Booking is already completed');
+    }
+
+    if (booking.startsAt > new Date()) {
+      throw new BadRequestException(
+        'Completion can be requested on or after the event day',
+      );
+    }
+
+    const updated = await this.bookingsRepository.requestCompletion(
+      bookingId,
+      userId,
+    );
+
+    await this.notificationsService.createNotification({
+      userId: booking.customerId,
+      actorUserId: userId,
+      type: 'BOOKING',
+      title: 'Completion requested',
+      message: `Booking ${booking.bookingNumber} is ready for your approval.`,
+      bookingId,
+      foodTruckId: booking.foodTruckId,
+      actionUrl: `/api/v1/bookings/${bookingId}/tracking`,
+    });
+
+    return {
+      message: 'Completion request sent successfully',
+      booking: updated,
+    };
+  }
+
+  async approveCompletion(userId: string, bookingId: string) {
+    const booking =
+      await this.bookingsRepository.findBookingForTracking(bookingId);
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    if (booking.customerId !== userId) {
+      throw new ForbiddenException('Booking does not belong to this customer');
+    }
+
+    if (!booking.completionRequestedAt) {
+      throw new BadRequestException('Completion request has not been sent yet');
+    }
+
+    if (booking.status === 'COMPLETED' || booking.completedAt) {
+      throw new BadRequestException('Booking is already completed');
+    }
+
+    if (booking.issues.length) {
+      throw new ConflictException(
+        'This booking has an open issue and cannot be completed yet',
+      );
+    }
+
+    const payout = await this.paymentsService.releaseBookingPayout(bookingId);
+    const paymentReleasedAt = payout.paidAt ?? new Date();
+    const updated = await this.bookingsRepository.approveCompletion(
+      bookingId,
+      userId,
+      paymentReleasedAt,
+    );
+
+    await this.notificationsService.notifyVendorBookingUpdate(
+      userId,
+      updated,
+      'Booking completed',
+    );
+
+    return {
+      message: 'Booking completed and payment released successfully',
+      booking: updated,
+    };
+  }
+
+  async reportIssue(userId: string, bookingId: string, dto: BookingIssueDto) {
+    const booking =
+      await this.bookingsRepository.findBookingForTracking(bookingId);
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    if (booking.customerId !== userId) {
+      throw new ForbiddenException('Booking does not belong to this customer');
+    }
+
+    if (!booking.completionRequestedAt) {
+      throw new BadRequestException('Completion request has not been sent yet');
+    }
+
+    if (booking.status === 'COMPLETED' || booking.completedAt) {
+      throw new BadRequestException('Completed bookings cannot be disputed');
+    }
+
+    const issue = await this.bookingsRepository.createIssue(
+      bookingId,
+      userId,
+      dto.message,
+    );
+
+    await this.notificationsService.createNotification({
+      userId: booking.vendor.userId,
+      actorUserId: userId,
+      type: 'BOOKING',
+      title: 'Booking issue reported',
+      message: `An issue was reported for booking ${booking.bookingNumber}.`,
+      bookingId,
+      foodTruckId: booking.foodTruckId,
+      actionUrl: `/api/v1/bookings/${bookingId}/issues/${issue.id}/messages`,
+    });
+
+    return {
+      message: 'Issue submitted successfully',
+      issue: this.presentIssue(issue),
+    };
+  }
+
+  async listIssueMessages(
+    user: AuthenticatedUser,
+    bookingId: string,
+    issueId: string,
+  ) {
+    const { issue } = await this.ensureIssueVisible(user, bookingId, issueId);
+
+    return {
+      issue: this.presentIssue(issue),
+      messages: issue.messages.map((message) =>
+        this.presentIssueMessage(message),
+      ),
+    };
+  }
+
+  async sendIssueMessage(
+    user: AuthenticatedUser,
+    bookingId: string,
+    issueId: string,
+    dto: BookingIssueMessageDto,
+  ) {
+    const { senderRole } = await this.ensureIssueVisible(
+      user,
+      bookingId,
+      issueId,
+    );
+    const issue = await this.bookingsRepository.findIssueForBooking(
+      bookingId,
+      issueId,
+    );
+
+    if (!issue || issue.status !== 'OPEN') {
+      throw new BadRequestException('Booking issue is already resolved');
+    }
+
+    const message = await this.bookingsRepository.addIssueMessage(
+      issueId,
+      user.sub,
+      senderRole,
+      dto.message,
+    );
+
+    return {
+      message: 'Message sent successfully',
+      item: this.presentIssueMessage(message),
+    };
+  }
+
+  async resolveIssue(adminUserId: string, bookingId: string, issueId: string) {
+    const issue = await this.bookingsRepository.findIssueForBooking(
+      bookingId,
+      issueId,
+    );
+
+    if (!issue) {
+      throw new NotFoundException('Booking issue not found');
+    }
+
+    if (issue.status !== 'OPEN') {
+      throw new BadRequestException('Booking issue is already resolved');
+    }
+
+    const resolved = await this.bookingsRepository.resolveIssue(issueId);
+
+    await this.notificationsService.createNotification({
+      userId: issue.booking.customerId,
+      actorUserId: adminUserId,
+      type: 'BOOKING',
+      title: 'Booking issue resolved',
+      message: 'Your booking issue has been marked as resolved.',
+      bookingId,
+      actionUrl: `/api/v1/bookings/${bookingId}/tracking`,
+    });
+
+    return {
+      message: 'Issue resolved successfully',
+      issue: this.presentIssue(resolved),
+    };
   }
 
   async vendorAcceptBooking(
@@ -325,6 +556,206 @@ export class BookingsService {
     );
 
     return booking;
+  }
+
+  private async ensureBookingVisible(
+    user: AuthenticatedUser,
+    bookingId: string,
+  ) {
+    const booking =
+      await this.bookingsRepository.findBookingForTracking(bookingId);
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    if (booking.customerId === user.sub) {
+      return { booking, roleView: 'CUSTOMER' as const };
+    }
+
+    if (user.roles.includes(UserRole.ADMIN)) {
+      return { booking, roleView: 'ADMIN' as const };
+    }
+
+    const vendor = await this.ensureVendor(user.sub);
+
+    if (booking.vendorId !== vendor.id) {
+      throw new ForbiddenException('Booking is not visible to this user');
+    }
+
+    return { booking, roleView: 'VENDOR' as const };
+  }
+
+  private async ensureIssueVisible(
+    user: AuthenticatedUser,
+    bookingId: string,
+    issueId: string,
+  ) {
+    const issue = await this.bookingsRepository.findIssueForBooking(
+      bookingId,
+      issueId,
+    );
+
+    if (!issue) {
+      throw new NotFoundException('Booking issue not found');
+    }
+
+    if (user.roles.includes(UserRole.ADMIN)) {
+      return { issue, senderRole: 'ADMIN' as const };
+    }
+
+    if (issue.booking.customerId === user.sub) {
+      return { issue, senderRole: 'CUSTOMER' as const };
+    }
+
+    const vendor = await this.ensureVendor(user.sub);
+
+    if (issue.booking.vendorId !== vendor.id) {
+      throw new ForbiddenException('Booking issue is not visible to this user');
+    }
+
+    return { issue, senderRole: 'VENDOR' as const };
+  }
+
+  private presentTracking(
+    booking: Awaited<ReturnType<BookingsRepository['findBookingForTracking']>>,
+    roleView: 'CUSTOMER' | 'VENDOR' | 'ADMIN',
+  ) {
+    const now = new Date();
+    const payment = booking!.payments.find(
+      (item) => item.status === 'SUCCEEDED',
+    );
+    const depositDone = Boolean(payment);
+    const confirmedDone = ['CONFIRMED', 'IN_PROGRESS', 'COMPLETED'].includes(
+      booking!.status,
+    );
+    const eventStarted = booking!.startsAt <= now;
+    const completionRequested = Boolean(booking!.completionRequestedAt);
+    const completed =
+      booking!.status === 'COMPLETED' || Boolean(booking!.completedAt);
+    const paymentReleased = Boolean(booking!.paymentReleasedAt);
+
+    const step = (
+      key: string,
+      label: string,
+      done: boolean,
+      current: boolean,
+      completedAt?: Date | null,
+    ) => ({
+      key,
+      label,
+      status: done ? 'DONE' : current ? 'CURRENT' : 'PENDING',
+      completedAt: completedAt?.toISOString() ?? null,
+    });
+
+    const eventDone = completionRequested || completed;
+    const eventCurrent = eventStarted && !eventDone;
+
+    const customerSteps = [
+      step(
+        'BOOKING_CONFIRMED',
+        'Booking confirmed',
+        confirmedDone,
+        !confirmedDone,
+        booking!.confirmedAt,
+      ),
+      step(
+        'DEPOSIT',
+        'Deposit',
+        depositDone,
+        confirmedDone && !depositDone,
+        payment?.paidAt,
+      ),
+      step('EVENT_DAY', 'Event day', eventDone, eventCurrent, null),
+      step(
+        'REQUEST_PENDING',
+        'Request Pending',
+        completed,
+        completionRequested && !completed,
+        booking!.completionRequestedAt,
+      ),
+      step(
+        'PAYMENT_RELEASED',
+        'Payment released',
+        paymentReleased,
+        completed && !paymentReleased,
+        booking!.paymentReleasedAt,
+      ),
+    ];
+
+    const vendorSteps = [
+      step(
+        'BOOKING_CONFIRMED',
+        'Booking confirmed',
+        confirmedDone,
+        !confirmedDone,
+        booking!.confirmedAt,
+      ),
+      step(
+        'DEPOSIT',
+        'Deposit',
+        depositDone,
+        confirmedDone && !depositDone,
+        payment?.paidAt,
+      ),
+      step('EVENT_DAY', 'Event day', eventDone, eventCurrent, null),
+      step(
+        'COMPLETION_REQUEST_SENT',
+        'Completion request sent',
+        completed,
+        completionRequested && !completed,
+        booking!.completionRequestedAt,
+      ),
+      step('COMPLETED', 'Completed', completed, false, booking!.completedAt),
+    ];
+
+    const steps = roleView === 'VENDOR' ? vendorSteps : customerSteps;
+
+    return {
+      bookingId: booking!.id,
+      bookingNumber: booking!.bookingNumber,
+      roleView,
+      currentStep:
+        steps.find((item) => item.status === 'CURRENT')?.key ??
+        [...steps].reverse().find((item) => item.status === 'DONE')?.key ??
+        steps[0].key,
+      completion: {
+        requestedAt: booking!.completionRequestedAt?.toISOString() ?? null,
+        approvedAt: booking!.completionApprovedAt?.toISOString() ?? null,
+        paymentReleasedAt: booking!.paymentReleasedAt?.toISOString() ?? null,
+        hasOpenIssue: Boolean(booking!.issues.length),
+      },
+      steps,
+    };
+  }
+
+  private presentIssue(issue: any) {
+    return {
+      id: issue.id,
+      bookingId: issue.bookingId,
+      status: issue.status,
+      message: issue.message,
+      createdAt: issue.createdAt,
+      resolvedAt: issue.resolvedAt ?? null,
+    };
+  }
+
+  private presentIssueMessage(message: any) {
+    const profile = message.sender?.profile;
+    const displayName =
+      profile?.displayName ||
+      [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
+      message.sender?.vendor?.businessName ||
+      message.sender?.email ||
+      message.senderRole;
+
+    return {
+      id: message.id,
+      senderRole: message.senderRole,
+      senderName: displayName || message.senderRole,
+      message: message.message,
+      createdAt: message.createdAt,
+    };
   }
 
   private validateBookingWindow(startsAt: Date, endsAt: Date) {

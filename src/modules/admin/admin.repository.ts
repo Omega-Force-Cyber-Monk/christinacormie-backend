@@ -295,6 +295,28 @@ export class AdminRepository {
         ...this.bookingSelect(),
         quotes: true,
         payments: true,
+        payouts: true,
+        issues: {
+          orderBy: { createdAt: 'desc' as const },
+          include: {
+            reportedBy: {
+              select: { id: true, email: true, profile: true, vendor: true },
+            },
+            messages: {
+              orderBy: { createdAt: 'asc' as const },
+              include: {
+                sender: {
+                  select: {
+                    id: true,
+                    email: true,
+                    profile: true,
+                    vendor: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         statusHistory: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -623,6 +645,11 @@ export class AdminRepository {
       customer: { select: { id: true, email: true, profile: true } },
       vendor: { select: { id: true, businessName: true } },
       foodTruck: { select: { id: true, name: true, slug: true } },
+      _count: {
+        select: {
+          issues: { where: { status: 'OPEN' as const } },
+        },
+      },
     };
   }
 

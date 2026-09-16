@@ -151,6 +151,26 @@ export class PaymentsRepository {
     });
   }
 
+  findSucceededPaymentForBooking(bookingId: string) {
+    return this.prisma.payment.findFirst({
+      where: {
+        bookingId,
+        status: 'SUCCEEDED' as any,
+      },
+      include: {
+        booking: true,
+        vendor: {
+          include: {
+            paymentAccount: true,
+          },
+        },
+        commission: true,
+        payout: true,
+      },
+      orderBy: { paidAt: 'desc' },
+    });
+  }
+
   createPaymentRecord(data: {
     bookingId: string;
     payerUserId: string;
@@ -258,6 +278,8 @@ export class PaymentsRepository {
       await tx.payout.create({
         data: {
           vendorId: payment.vendorId,
+          bookingId: payment.bookingId,
+          paymentId: payment.id,
           amount: commission.vendorNetAmount,
           currency: payment.currency,
           status: 'PENDING' as any,
@@ -288,6 +310,57 @@ export class PaymentsRepository {
     return this.prisma.payment.update({
       where: { id: paymentId },
       data: { status: status as any },
+    });
+  }
+
+  createPendingPayoutForPayment(data: {
+    paymentId: string;
+    bookingId: string;
+    vendorId: string;
+    amount: number;
+    currency: string;
+  }) {
+    return this.prisma.payout.create({
+      data: {
+        paymentId: data.paymentId,
+        bookingId: data.bookingId,
+        vendorId: data.vendorId,
+        amount: data.amount,
+        currency: data.currency.toUpperCase(),
+        status: 'PENDING' as any,
+      },
+    });
+  }
+
+  markPayoutProcessing(payoutId: string) {
+    return this.prisma.payout.update({
+      where: { id: payoutId },
+      data: {
+        status: 'PROCESSING' as any,
+        failureReason: null,
+      },
+    });
+  }
+
+  markPayoutPaid(payoutId: string, stripeTransferId: string) {
+    return this.prisma.payout.update({
+      where: { id: payoutId },
+      data: {
+        status: 'PAID' as any,
+        stripeTransferId,
+        paidAt: new Date(),
+        failureReason: null,
+      },
+    });
+  }
+
+  markPayoutFailed(payoutId: string, reason: string) {
+    return this.prisma.payout.update({
+      where: { id: payoutId },
+      data: {
+        status: 'FAILED' as any,
+        failureReason: reason,
+      },
     });
   }
 

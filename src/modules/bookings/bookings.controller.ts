@@ -21,6 +21,10 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { AcceptBookingQuoteDto } from './dto/accept-booking-quote.dto';
+import {
+  BookingIssueDto,
+  BookingIssueMessageDto,
+} from './dto/booking-issue.dto';
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
@@ -252,6 +256,54 @@ export class BookingsController {
     @Param('bookingId') bookingId: string,
   ) {
     return this.bookingsService.getBookingDetails(user.sub, bookingId);
+  }
+
+  @ApiOperation({ summary: 'Get booking tracking timeline' })
+  @ApiResponse({
+    status: 200,
+    description: 'Booking tracking timeline returned successfully.',
+    schema: {
+      example: {
+        bookingId: 'booking-id',
+        bookingNumber: 'BD-20260908-AB12CD',
+        roleView: 'CUSTOMER',
+        currentStep: 'EVENT_DAY',
+        completion: {
+          requestedAt: null,
+          approvedAt: null,
+          paymentReleasedAt: null,
+          hasOpenIssue: false,
+        },
+        steps: [
+          {
+            key: 'BOOKING_CONFIRMED',
+            label: 'Booking confirmed',
+            status: 'DONE',
+            completedAt: '2026-09-08T06:40:00.000Z',
+          },
+          {
+            key: 'DEPOSIT',
+            label: 'Deposit',
+            status: 'DONE',
+            completedAt: '2026-09-08T06:41:00.000Z',
+          },
+          {
+            key: 'EVENT_DAY',
+            label: 'Event day',
+            status: 'CURRENT',
+            completedAt: null,
+          },
+        ],
+      },
+    },
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get(':bookingId/tracking')
+  getBookingTracking(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId') bookingId: string,
+  ) {
+    return this.bookingsService.getBookingTracking(user, bookingId);
   }
 
   @ApiOperation({
@@ -610,5 +662,121 @@ export class BookingsController {
     @Body() dto: AcceptBookingQuoteDto,
   ) {
     return this.bookingsService.customerAcceptQuote(user.sub, quoteId, dto);
+  }
+
+  @ApiOperation({ summary: 'Request booking completion approval (Vendor)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Completion request sent successfully.',
+    schema: {
+      example: {
+        message: 'Completion request sent successfully',
+        booking: { ...bookingExample, status: 'IN_PROGRESS' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Booking is not confirmed, already completed, or too early.',
+    schema: {
+      example: errorExample(
+        400,
+        'Completion can be requested on or after the event day',
+        'Bad Request',
+      ),
+    },
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Patch(':bookingId/request-completion')
+  requestCompletion(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId') bookingId: string,
+  ) {
+    return this.bookingsService.requestCompletion(user.sub, bookingId);
+  }
+
+  @ApiOperation({ summary: 'Approve booking completion and release payment' })
+  @ApiResponse({
+    status: 200,
+    description: 'Booking completed and payment released successfully.',
+    schema: {
+      example: {
+        message: 'Booking completed and payment released successfully',
+        booking: { ...bookingExample, status: 'COMPLETED' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'An open issue blocks completion approval.',
+    schema: {
+      example: errorExample(
+        409,
+        'This booking has an open issue and cannot be completed yet',
+        'Conflict',
+      ),
+    },
+  })
+  @UseGuards(JwtAuthGuard)
+  @Patch(':bookingId/approve-completion')
+  approveCompletion(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId') bookingId: string,
+  ) {
+    return this.bookingsService.approveCompletion(user.sub, bookingId);
+  }
+
+  @ApiOperation({ summary: 'Report a booking completion issue' })
+  @ApiBody({ type: BookingIssueDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Issue submitted successfully.',
+    schema: {
+      example: {
+        message: 'Issue submitted successfully',
+        issue: {
+          id: 'issue-id',
+          bookingId: 'booking-id',
+          status: 'OPEN',
+          message: 'The service was not completed as agreed.',
+          createdAt: '2026-09-08T06:45:00.000Z',
+          resolvedAt: null,
+        },
+      },
+    },
+  })
+  @UseGuards(JwtAuthGuard)
+  @Post(':bookingId/issues')
+  reportIssue(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId') bookingId: string,
+    @Body() dto: BookingIssueDto,
+  ) {
+    return this.bookingsService.reportIssue(user.sub, bookingId, dto);
+  }
+
+  @ApiOperation({ summary: 'List booking issue messages' })
+  @UseGuards(JwtAuthGuard)
+  @Get(':bookingId/issues/:issueId/messages')
+  listIssueMessages(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId') bookingId: string,
+    @Param('issueId') issueId: string,
+  ) {
+    return this.bookingsService.listIssueMessages(user, bookingId, issueId);
+  }
+
+  @ApiOperation({ summary: 'Send a booking issue message' })
+  @ApiBody({ type: BookingIssueMessageDto })
+  @UseGuards(JwtAuthGuard)
+  @Post(':bookingId/issues/:issueId/messages')
+  sendIssueMessage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId') bookingId: string,
+    @Param('issueId') issueId: string,
+    @Body() dto: BookingIssueMessageDto,
+  ) {
+    return this.bookingsService.sendIssueMessage(user, bookingId, issueId, dto);
   }
 }

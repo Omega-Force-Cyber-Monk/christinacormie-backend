@@ -335,9 +335,7 @@ export class UsersService {
           OR: [
             { createdById: userId },
             { participants: { some: { userId } } },
-            ...(bookingIds.length
-              ? [{ bookingId: { in: bookingIds } }]
-              : []),
+            ...(bookingIds.length ? [{ bookingId: { in: bookingIds } }] : []),
             ...(communityRequestIds.length
               ? [{ communityRequestId: { in: communityRequestIds } }]
               : []),
@@ -404,9 +402,23 @@ export class UsersService {
         where: { changedById: userId },
         data: { changedById: null },
       });
+      await tx.booking.updateMany({
+        where: { completionRequestedById: userId },
+        data: { completionRequestedById: null },
+      });
+      await tx.booking.updateMany({
+        where: { completionApprovedById: userId },
+        data: { completionApprovedById: null },
+      });
       await tx.bookingHold.deleteMany({ where: { userId } });
 
       if (bookingIds.length) {
+        await tx.bookingIssueMessage.deleteMany({
+          where: { issue: { bookingId: { in: bookingIds } } },
+        });
+        await tx.bookingIssue.deleteMany({
+          where: { bookingId: { in: bookingIds } },
+        });
         await tx.refund.deleteMany({
           where: { payment: { bookingId: { in: bookingIds } } },
         });
@@ -423,6 +435,8 @@ export class UsersService {
           where: { bookingId: { in: bookingIds } },
         });
       }
+      await tx.bookingIssueMessage.deleteMany({ where: { senderId: userId } });
+      await tx.bookingIssue.deleteMany({ where: { reportedById: userId } });
 
       await tx.reviewReport.deleteMany({
         where: {
@@ -576,15 +590,11 @@ export class UsersService {
   private isProfileComplete(profile: any) {
     const hasName = Boolean(
       profile.displayName ||
-        profile.firstName ||
-        `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim(),
+      profile.firstName ||
+      `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim(),
     );
 
-    return Boolean(
-      hasName &&
-        profile.email &&
-        profile.dateOfBirth,
-    );
+    return Boolean(hasName && profile.email && profile.dateOfBirth);
   }
 
   private toUserResponse(user: any) {

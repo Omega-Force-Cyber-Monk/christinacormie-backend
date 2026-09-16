@@ -5,12 +5,19 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { UsersModule } from '../users/users.module';
 import { VendorsModule } from '../vendors/vendors.module';
+import { BookingsModule } from '../bookings/bookings.module';
 import { AdminController } from './admin.controller';
 import { AdminRepository } from './admin.repository';
 import { AdminService } from './admin.service';
 
 @Module({
-  imports: [JwtModule.register({}), UsersModule, ReviewsModule, VendorsModule],
+  imports: [
+    JwtModule.register({}),
+    UsersModule,
+    ReviewsModule,
+    VendorsModule,
+    BookingsModule,
+  ],
   controllers: [AdminController],
   providers: [AdminService, AdminRepository, JwtAuthGuard, RolesGuard],
 })
