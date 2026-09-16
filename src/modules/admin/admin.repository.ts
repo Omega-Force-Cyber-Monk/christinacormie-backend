@@ -5,6 +5,7 @@ import {
   CommunityPostReportStatus,
   MenuItemStatus,
   PaymentStatus,
+  PayoutStatus,
   ReportStatus,
   ReviewStatus,
   UserRole,
@@ -631,6 +632,174 @@ export class AdminRepository {
       orderBy: { createdAt: query.sortOrder ?? 'desc' },
       take: this.limit(query),
       skip: query.offset ?? 0,
+    });
+  }
+
+  async getPaymentsManagement(query: AdminListQueryDto) {
+    const now = new Date();
+    const currentMonthStart = this.startOfMonth(now);
+    const nextMonthStart = this.addMonths(currentMonthStart, 1);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+
+    const [
+      pendingPayouts,
+      totalPayments,
+      monthlyRevenue,
+      commissionEarned,
+      payoutRequests,
+      payments,
+      payouts,
+      refunds,
+      paymentAccounts,
+      yearlyPayments,
+      yearlyCommissions,
+      yearlyPayouts,
+    ] = await Promise.all([
+      this.prisma.payout.count({ where: { status: PayoutStatus.PENDING } }),
+      this.prisma.payment.aggregate({
+        where: { status: PaymentStatus.SUCCEEDED },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          status: PaymentStatus.SUCCEEDED,
+          paidAt: { gte: currentMonthStart, lt: nextMonthStart },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.commission.aggregate({
+        _sum: { commissionAmount: true },
+      }),
+      this.prisma.payout.findMany({
+        where: query.status
+          ? { status: query.status as PayoutStatus }
+          : undefined,
+        include: this.payoutInclude(),
+        orderBy: { createdAt: query.sortOrder ?? 'desc' },
+        take: this.limit(query),
+        skip: query.offset ?? 0,
+      }),
+      this.prisma.payment.findMany({
+        include: this.paymentTransactionInclude(),
+        orderBy: { createdAt: 'desc' },
+        take: this.limit(query),
+      }),
+      this.prisma.payout.findMany({
+        include: this.payoutTransactionInclude(),
+        orderBy: { createdAt: 'desc' },
+        take: this.limit(query),
+      }),
+      this.prisma.refund.findMany({
+        include: {
+          payment: {
+            include: {
+              vendor: { select: { id: true, businessName: true } },
+              commission: true,
+            },
+          },
+        },
+        orderBy: { processedAt: 'desc' },
+        take: this.limit(query),
+      }),
+      this.prisma.vendorPaymentAccount.findMany({
+        include: {
+          vendor: {
+            select: {
+              id: true,
+              businessName: true,
+              businessEmail: true,
+              payouts: { orderBy: { createdAt: 'desc' }, take: 1 },
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      }),
+      this.prisma.payment.findMany({
+        where: {
+          status: PaymentStatus.SUCCEEDED,
+          paidAt: { gte: yearStart },
+        },
+        select: { amount: true, paidAt: true, createdAt: true },
+      }),
+      this.prisma.commission.findMany({
+        where: { createdAt: { gte: yearStart } },
+        select: { commissionAmount: true, createdAt: true },
+      }),
+      this.prisma.payout.findMany({
+        where: { createdAt: { gte: yearStart } },
+        select: { amount: true, status: true, paidAt: true, createdAt: true },
+      }),
+    ]);
+
+    const revenueOverview = this.toRevenueOverview(
+      now,
+      yearlyPayments,
+      yearlyCommissions,
+      yearlyPayouts,
+    );
+    const transactions = [
+      ...payments.map((payment) => this.toPaymentTransaction(payment)),
+      ...payouts.map((payout) => this.toPayoutTransaction(payout)),
+      ...refunds.map((refund) => this.toRefundTransaction(refund)),
+    ]
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, this.limit(query));
+
+    return {
+      generatedAt: now,
+      summary: {
+        pendingPayouts,
+        totalAmount: Number(totalPayments._sum.amount ?? 0),
+        revenueThisMonth: Number(monthlyRevenue._sum.amount ?? 0),
+        commissionEarned: Number(commissionEarned._sum.commissionAmount ?? 0),
+      },
+      tabs: {
+        payoutRequests: payoutRequests.length,
+        revenueOverview: true,
+        transactionHistory: transactions.length,
+        paymentMethods: paymentAccounts.length,
+      },
+      payoutRequests: payoutRequests.map((payout) =>
+        this.toPayoutRequestRow(payout),
+      ),
+      revenueOverview,
+      transactions,
+      paymentMethods: {
+        summary: {
+          bankTransfers: 0,
+          paypalAccounts: 0,
+          stripeConnected: paymentAccounts.filter(
+            (account) => account.stripeAccountId,
+          ).length,
+        },
+        methods: paymentAccounts.map((account) =>
+          this.toPaymentMethodRow(account),
+        ),
+      },
+      schemaGaps: {
+        bankAccounts:
+          'Vendor bank transfer account details are not stored separately; only Stripe Connect account metadata exists.',
+        paypalAccounts:
+          'PayPal payout account details are not present in the current schema.',
+        taxInfo:
+          'W-9, tax ID type, YTD tax threshold, and 1099-K flags are not present in the current schema.',
+      },
+    };
+  }
+
+  updatePayoutStatus(
+    payoutId: string,
+    status: 'PAID' | 'CANCELLED' | 'PROCESSING',
+    failureReason?: string,
+  ) {
+    return this.prisma.payout.update({
+      where: { id: payoutId },
+      data: {
+        status,
+        ...(status === 'PAID' ? { paidAt: new Date() } : {}),
+        ...(failureReason !== undefined ? { failureReason } : {}),
+      },
+      include: this.payoutInclude(),
     });
   }
 
@@ -1459,6 +1628,10 @@ export class AdminRepository {
     return result;
   }
 
+  private startOfYear(date: Date) {
+    return new Date(date.getFullYear(), 0, 1);
+  }
+
   private userDisplayName(user: {
     email: string | null;
     profile: {
@@ -1974,6 +2147,245 @@ export class AdminRepository {
         canHideTextOnly: !review.contentHidden,
         canKeepReview: activeReports.length > 0,
       },
+    };
+  }
+
+  private payoutInclude() {
+    return {
+      vendor: {
+        select: {
+          id: true,
+          businessName: true,
+          businessEmail: true,
+          businessPhone: true,
+          user: {
+            select: { id: true, email: true, phone: true, profile: true },
+          },
+          paymentAccount: true,
+          bookings: {
+            where: { status: 'COMPLETED' as any },
+            select: { id: true },
+          },
+          commissions: {
+            select: { vendorNetAmount: true, commissionAmount: true },
+          },
+        },
+      },
+    };
+  }
+
+  private paymentTransactionInclude() {
+    return {
+      vendor: { select: { id: true, businessName: true } },
+      booking: { select: { id: true, bookingNumber: true, status: true } },
+      commission: true,
+    };
+  }
+
+  private payoutTransactionInclude() {
+    return {
+      vendor: { select: { id: true, businessName: true } },
+    };
+  }
+
+  private toPayoutRequestRow(payout: any) {
+    const paymentAccount = payout.vendor?.paymentAccount;
+    const ytdEarnings = (payout.vendor?.commissions ?? []).reduce(
+      (sum, commission) => sum + Number(commission.vendorNetAmount ?? 0),
+      0,
+    );
+
+    return {
+      id: payout.id,
+      payoutId: this.shortDisplayId('PO', payout.id),
+      vendorId: payout.vendorId,
+      vendorName: payout.vendor?.businessName ?? null,
+      ownerName: this.userDisplayName(payout.vendor?.user),
+      ownerEmail:
+        payout.vendor?.businessEmail ?? payout.vendor?.user?.email ?? null,
+      amount: Number(payout.amount ?? 0),
+      currency: payout.currency,
+      completedBookings: payout.vendor?.bookings?.length ?? 0,
+      payoutMethod: this.payoutMethod(paymentAccount),
+      requestedAt: payout.createdAt,
+      status: this.payoutDisplayStatus(payout.status),
+      failureReason: payout.failureReason,
+      paidAt: payout.paidAt,
+      taxInfo: {
+        w9Submitted: null,
+        taxIdType: null,
+        ytdEarnings,
+        threshold1099K: 600,
+        requires1099K: ytdEarnings >= 600,
+      },
+      actions: {
+        canApprove: payout.status === PayoutStatus.PENDING,
+        canReject: payout.status === PayoutStatus.PENDING,
+        canHold: payout.status === PayoutStatus.PENDING,
+      },
+    };
+  }
+
+  private payoutMethod(paymentAccount: any) {
+    if (paymentAccount?.stripeAccountId) {
+      return {
+        type: 'STRIPE_CONNECT',
+        label: 'Stripe Connected',
+        accountId: paymentAccount.stripeAccountId,
+        onboardingCompleted: paymentAccount.onboardingCompleted,
+        chargesEnabled: paymentAccount.chargesEnabled,
+        payoutsEnabled: paymentAccount.payoutsEnabled,
+        disabledReason: paymentAccount.disabledReason,
+      };
+    }
+
+    return {
+      type: 'UNKNOWN',
+      label: 'Not configured',
+    };
+  }
+
+  private payoutDisplayStatus(status: PayoutStatus) {
+    if (status === PayoutStatus.PAID) {
+      return 'APPROVED';
+    }
+
+    if (status === PayoutStatus.PROCESSING) {
+      return 'ON_HOLD';
+    }
+
+    return status;
+  }
+
+  private toPaymentTransaction(payment: any) {
+    return {
+      id: payment.id,
+      transactionId: this.shortDisplayId('TXN', payment.id),
+      type: 'BOOKING',
+      vendorId: payment.vendorId,
+      vendorName: payment.vendor?.businessName ?? null,
+      amount: Number(payment.amount ?? 0),
+      commission: Number(payment.commission?.commissionAmount ?? 0),
+      method: payment.stripePaymentIntentId ? 'Stripe' : 'Unknown',
+      date: payment.paidAt ?? payment.createdAt,
+      status: payment.status,
+      booking: payment.booking,
+    };
+  }
+
+  private toPayoutTransaction(payout: any) {
+    return {
+      id: payout.id,
+      transactionId: this.shortDisplayId('TXN', payout.id),
+      type: 'PAYOUT',
+      vendorId: payout.vendorId,
+      vendorName: payout.vendor?.businessName ?? null,
+      amount: Number(payout.amount ?? 0),
+      commission: 0,
+      method: payout.stripeTransferId ? 'Stripe Transfer' : 'Stripe Connect',
+      date: payout.paidAt ?? payout.createdAt,
+      status: this.payoutDisplayStatus(payout.status),
+      booking: null,
+    };
+  }
+
+  private toRefundTransaction(refund: any) {
+    return {
+      id: refund.id,
+      transactionId: this.shortDisplayId('TXN', refund.id),
+      type: 'REFUND',
+      vendorId: refund.payment?.vendorId ?? null,
+      vendorName: refund.payment?.vendor?.businessName ?? null,
+      amount: -Number(refund.amount ?? 0),
+      commission: -Number(refund.payment?.commission?.commissionAmount ?? 0),
+      method: refund.stripeRefundId ? 'Stripe' : 'Unknown',
+      date: refund.processedAt ?? new Date(0),
+      status: refund.status,
+      booking: null,
+    };
+  }
+
+  private toPaymentMethodRow(account: any) {
+    return {
+      id: account.id,
+      vendorId: account.vendorId,
+      vendorName: account.vendor?.businessName ?? null,
+      type: 'STRIPE_CONNECT',
+      label: `Stripe · Connected account ${account.stripeAccountId}`,
+      isPrimary: true,
+      isVerified: account.onboardingCompleted && account.payoutsEnabled,
+      onboardingCompleted: account.onboardingCompleted,
+      chargesEnabled: account.chargesEnabled,
+      payoutsEnabled: account.payoutsEnabled,
+      disabledReason: account.disabledReason,
+      updatedAt: account.updatedAt,
+    };
+  }
+
+  private toRevenueOverview(
+    now: Date,
+    payments: Array<{ amount: unknown; paidAt: Date | null; createdAt: Date }>,
+    commissions: Array<{ commissionAmount: unknown; createdAt: Date }>,
+    payouts: Array<{ amount: unknown; status: PayoutStatus; createdAt: Date }>,
+  ) {
+    const yearStart = this.startOfYear(now);
+    const months = Array.from({ length: now.getMonth() + 1 }, (_, index) => {
+      const date = new Date(now.getFullYear(), index, 1);
+      return {
+        month: this.monthLabel(date),
+        monthIndex: index,
+        revenue: 0,
+        commission: 0,
+        payouts: 0,
+      };
+    });
+
+    for (const payment of payments) {
+      const date = payment.paidAt ?? payment.createdAt;
+      if (date >= yearStart) {
+        months[date.getMonth()].revenue += Number(payment.amount ?? 0);
+      }
+    }
+
+    for (const commission of commissions) {
+      months[commission.createdAt.getMonth()].commission += Number(
+        commission.commissionAmount ?? 0,
+      );
+    }
+
+    for (const payout of payouts) {
+      if (
+        payout.status === PayoutStatus.PAID ||
+        payout.status === PayoutStatus.PENDING
+      ) {
+        months[payout.createdAt.getMonth()].payouts += Number(
+          payout.amount ?? 0,
+        );
+      }
+    }
+
+    const totalRevenueYtd = months.reduce((sum, item) => sum + item.revenue, 0);
+    const platformCommissionYtd = months.reduce(
+      (sum, item) => sum + item.commission,
+      0,
+    );
+    const vendorPayoutsYtd = months.reduce(
+      (sum, item) => sum + item.payouts,
+      0,
+    );
+
+    return {
+      summary: {
+        totalRevenueYtd,
+        platformCommissionYtd,
+        vendorPayoutsYtd,
+      },
+      monthlyRevenueBreakdown: months,
+      commissionVsPayouts: months.map((item) => ({
+        month: item.month,
+        commission: item.commission,
+        payouts: item.payouts,
+      })),
     };
   }
 

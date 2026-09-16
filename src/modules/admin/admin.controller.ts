@@ -239,6 +239,41 @@ export class AdminController {
     return this.adminService.listPayments(query);
   }
 
+  @ApiOperation({ summary: 'Get consolidated payments and payouts data' })
+  @Get('payments-management')
+  getPaymentsManagement(@Query() query: AdminListQueryDto) {
+    return this.adminService.getPaymentsManagement(query);
+  }
+
+  @ApiOperation({ summary: 'Approve a vendor payout' })
+  @Patch('payouts/:payoutId/approve')
+  approvePayout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('payoutId', ParseUUIDPipe) payoutId: string,
+  ) {
+    return this.adminService.approvePayout(user.sub, payoutId);
+  }
+
+  @ApiOperation({ summary: 'Reject a vendor payout' })
+  @Patch('payouts/:payoutId/reject')
+  rejectPayout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('payoutId', ParseUUIDPipe) payoutId: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.adminService.rejectPayout(user.sub, payoutId, reason);
+  }
+
+  @ApiOperation({ summary: 'Place a vendor payout on hold' })
+  @Patch('payouts/:payoutId/hold')
+  holdPayout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('payoutId', ParseUUIDPipe) payoutId: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.adminService.holdPayout(user.sub, payoutId, reason);
+  }
+
   @ApiOperation({ summary: 'List platform commissions' })
   @Get('commissions')
   listCommissions(@Query() query: AdminListQueryDto) {

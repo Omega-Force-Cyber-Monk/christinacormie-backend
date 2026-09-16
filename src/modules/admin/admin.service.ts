@@ -286,6 +286,56 @@ export class AdminService {
     return this.adminRepository.listPayments(query);
   }
 
+  getPaymentsManagement(query: AdminListQueryDto) {
+    return this.adminRepository.getPaymentsManagement(query);
+  }
+
+  async approvePayout(adminUserId: string, payoutId: string) {
+    const payout = await this.adminRepository.updatePayoutStatus(
+      payoutId,
+      'PAID',
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'APPROVE_PAYOUT',
+      'Payout',
+      payoutId,
+    );
+    return payout;
+  }
+
+  async rejectPayout(adminUserId: string, payoutId: string, reason?: string) {
+    const payout = await this.adminRepository.updatePayoutStatus(
+      payoutId,
+      'CANCELLED',
+      reason ?? 'Rejected by admin',
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'REJECT_PAYOUT',
+      'Payout',
+      payoutId,
+      { reason },
+    );
+    return payout;
+  }
+
+  async holdPayout(adminUserId: string, payoutId: string, reason?: string) {
+    const payout = await this.adminRepository.updatePayoutStatus(
+      payoutId,
+      'PROCESSING',
+      reason ?? 'Placed on hold by admin',
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'HOLD_PAYOUT',
+      'Payout',
+      payoutId,
+      { reason },
+    );
+    return payout;
+  }
+
   listCommissions(query: AdminListQueryDto) {
     return this.adminRepository.listCommissions(query);
   }
