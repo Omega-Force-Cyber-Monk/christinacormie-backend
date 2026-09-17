@@ -63,13 +63,13 @@ model FeaturedPlacement {
 }
 
 model PlatformSetting {
-  id          String   @id @default(uuid()) @db.Uuid
-  key         String   @unique @db.VarChar(255)
+  id          String  @id @default(uuid()) @db.Uuid
+  key         String  @unique @db.VarChar(255)
   value       Json
   description String?
-  isPublic    Boolean  @default(false) @map("is_public")
-  updatedById String?  @map("updated_by") @db.Uuid
-  updatedBy   User?    @relation("PlatformSettingUpdatedBy", fields: [updatedById], references: [id])
+  isPublic    Boolean @default(false) @map("is_public")
+  updatedById String? @map("updated_by") @db.Uuid
+  updatedBy   User?   @relation("PlatformSettingUpdatedBy", fields: [updatedById], references: [id])
 
   @@map("platform_settings")
 }

@@ -1,8 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UsersService } from '../users/users.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { BookingsService } from '../bookings/bookings.service';
+import { ResolveBookingIssueDto } from '../bookings/dto/resolve-booking-issue.dto';
+import { PaymentsService } from '../payments/payments.service';
 import { UpdateAccountStatusDto } from '../users/dto/update-account-status.dto';
 import {
   ModerateReviewDto,
@@ -26,6 +32,7 @@ export class AdminService {
     private readonly usersService: UsersService,
     private readonly reviewsService: ReviewsService,
     private readonly bookingsService: BookingsService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   listUsers(query: AdminListQueryDto) {
@@ -284,8 +291,18 @@ export class AdminService {
     return booking;
   }
 
-  resolveBookingIssue(adminUserId: string, bookingId: string, issueId: string) {
-    return this.bookingsService.resolveIssue(adminUserId, bookingId, issueId);
+  resolveBookingIssue(
+    adminUserId: string,
+    bookingId: string,
+    issueId: string,
+    dto: ResolveBookingIssueDto,
+  ) {
+    return this.bookingsService.resolveIssue(
+      adminUserId,
+      bookingId,
+      issueId,
+      dto,
+    );
   }
 
   listPayments(query: AdminListQueryDto) {
@@ -297,13 +314,21 @@ export class AdminService {
   }
 
   async approvePayout(adminUserId: string, payoutId: string) {
-    const payout = await this.adminRepository.updatePayoutStatus(
-      payoutId,
-      'PAID',
-    );
+    const payout = await this.paymentsService.retryFailedPayout(payoutId);
     await this.adminRepository.createAuditLog(
       adminUserId,
-      'APPROVE_PAYOUT',
+      'RETRY_FAILED_PAYOUT',
+      'Payout',
+      payoutId,
+    );
+    return payout;
+  }
+
+  async retryPayout(adminUserId: string, payoutId: string) {
+    const payout = await this.paymentsService.retryFailedPayout(payoutId);
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'RETRY_FAILED_PAYOUT',
       'Payout',
       payoutId,
     );
@@ -311,35 +336,21 @@ export class AdminService {
   }
 
   async rejectPayout(adminUserId: string, payoutId: string, reason?: string) {
-    const payout = await this.adminRepository.updatePayoutStatus(
-      payoutId,
-      'CANCELLED',
-      reason ?? 'Rejected by admin',
+    void adminUserId;
+    void payoutId;
+    void reason;
+    throw new BadRequestException(
+      'Manual payout cancellation is not supported. Resolve the related booking issue with FULL_REFUND to refund the customer and cancel the payout.',
     );
-    await this.adminRepository.createAuditLog(
-      adminUserId,
-      'REJECT_PAYOUT',
-      'Payout',
-      payoutId,
-      { reason },
-    );
-    return payout;
   }
 
   async holdPayout(adminUserId: string, payoutId: string, reason?: string) {
-    const payout = await this.adminRepository.updatePayoutStatus(
-      payoutId,
-      'PROCESSING',
-      reason ?? 'Placed on hold by admin',
+    void adminUserId;
+    void payoutId;
+    void reason;
+    throw new BadRequestException(
+      'Manual payout hold is not supported. An open booking issue automatically freezes payout until admin resolution.',
     );
-    await this.adminRepository.createAuditLog(
-      adminUserId,
-      'HOLD_PAYOUT',
-      'Payout',
-      payoutId,
-      { reason },
-    );
-    return payout;
   }
 
   listCommissions(query: AdminListQueryDto) {

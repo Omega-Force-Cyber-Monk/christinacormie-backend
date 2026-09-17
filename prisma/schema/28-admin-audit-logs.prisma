@@ -7,7 +7,7 @@ model AdminAuditLog {
   metadata    Json?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  adminUser   User     @relation("AdminAuditLogUser", fields: [adminUserId], references: [id])
+  adminUser User @relation("AdminAuditLogUser", fields: [adminUserId], references: [id])
 
   @@index([adminUserId])
   @@index([entityType, entityId])

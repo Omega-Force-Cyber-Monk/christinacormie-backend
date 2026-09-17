@@ -13,6 +13,10 @@ import {
 } from './dto/booking-issue.dto';
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
 import { BookingTypeDto, CreateBookingDto } from './dto/create-booking.dto';
+import {
+  BookingIssueResolutionDecisionDto,
+  ResolveBookingIssueDto,
+} from './dto/resolve-booking-issue.dto';
 import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
 import { UserRole } from '../../common/enums/user-role.enum';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
@@ -354,7 +358,12 @@ export class BookingsService {
     };
   }
 
-  async resolveIssue(adminUserId: string, bookingId: string, issueId: string) {
+  async resolveIssue(
+    adminUserId: string,
+    bookingId: string,
+    issueId: string,
+    dto: ResolveBookingIssueDto,
+  ) {
     const issue = await this.bookingsRepository.findIssueForBooking(
       bookingId,
       issueId,
@@ -368,21 +377,94 @@ export class BookingsService {
       throw new BadRequestException('Booking issue is already resolved');
     }
 
-    const resolved = await this.bookingsRepository.resolveIssue(issueId);
+    if (issue.booking.status === 'COMPLETED') {
+      throw new BadRequestException(
+        'Completed bookings cannot be resolved through issue decisions',
+      );
+    }
+
+    if (dto.decision === BookingIssueResolutionDecisionDto.RELEASE_PAYOUT) {
+      const payout = await this.paymentsService.releaseBookingPayout(bookingId);
+      const paymentReleasedAt = payout.paidAt ?? new Date();
+      const resolved = await this.bookingsRepository.resolveIssue(
+        issueId,
+        adminUserId,
+        dto.decision,
+        dto.resolutionNote,
+      );
+      const booking =
+        await this.bookingsRepository.completeBookingAfterIssueResolution(
+          bookingId,
+          adminUserId,
+          paymentReleasedAt,
+        );
+
+      await this.notificationsService.createNotification({
+        userId: issue.booking.customerId,
+        actorUserId: adminUserId,
+        type: 'BOOKING',
+        title: 'Booking issue resolved',
+        message:
+          'Your booking issue was reviewed. The booking has been completed and payment released.',
+        bookingId,
+        actionUrl: `/api/v1/bookings/${bookingId}/tracking`,
+      });
+
+      await this.notificationsService.notifyVendorBookingUpdate(
+        adminUserId,
+        booking,
+        'Booking issue resolved',
+      );
+
+      return {
+        message: 'Issue resolved, booking completed, and payout released',
+        decision: dto.decision,
+        issue: this.presentIssue(resolved),
+        booking,
+        payment: { payout },
+      };
+    }
+
+    const refundResult =
+      await this.paymentsService.refundBookingPaymentForIssue(
+        bookingId,
+        dto.resolutionNote,
+      );
+    const resolved = await this.bookingsRepository.resolveIssue(
+      issueId,
+      adminUserId,
+      dto.decision,
+      dto.resolutionNote,
+    );
+    const booking = await this.bookingsRepository.cancelBookingAfterIssueRefund(
+      bookingId,
+      adminUserId,
+      dto.resolutionNote ?? 'Admin resolved booking issue with full refund',
+    );
 
     await this.notificationsService.createNotification({
       userId: issue.booking.customerId,
       actorUserId: adminUserId,
       type: 'BOOKING',
       title: 'Booking issue resolved',
-      message: 'Your booking issue has been marked as resolved.',
+      message:
+        'Your booking issue was reviewed. A full refund has been started.',
       bookingId,
       actionUrl: `/api/v1/bookings/${bookingId}/tracking`,
     });
 
+    await this.notificationsService.notifyVendorBookingUpdate(
+      adminUserId,
+      booking,
+      'Booking issue resolved with refund',
+    );
+
     return {
-      message: 'Issue resolved successfully',
+      message: 'Issue resolved and full refund started',
+      decision: dto.decision,
       issue: this.presentIssue(resolved),
+      booking,
+      payment: refundResult,
     };
   }
 
@@ -780,6 +862,9 @@ export class BookingsService {
       bookingId: issue.bookingId,
       status: issue.status,
       message: issue.message,
+      resolutionDecision: issue.resolutionDecision ?? null,
+      resolutionNote: issue.resolutionNote ?? null,
+      resolvedById: issue.resolvedById ?? null,
       createdAt: issue.createdAt,
       resolvedAt: issue.resolvedAt ?? null,
     };

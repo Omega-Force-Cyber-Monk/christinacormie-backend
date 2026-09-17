@@ -29,36 +29,36 @@ enum TruckType {
 }
 
 model FoodTruck {
-  id                      String                    @id @default(uuid()) @db.Uuid
-  vendorId                String                    @map("vendor_id") @db.Uuid
-  marketId                String?                   @map("market_id") @db.Uuid
-  name                    String                    @db.VarChar(255)
-  truckCallName           String?                   @map("truck_call_name") @db.VarChar(255)
-  truckType               TruckType?                @map("truck_type")
-  primaryCity             String?                   @map("primary_city") @db.VarChar(150)
-  slug                    String                    @unique @db.VarChar(255)
+  id                      String                       @id @default(uuid()) @db.Uuid
+  vendorId                String                       @map("vendor_id") @db.Uuid
+  marketId                String?                      @map("market_id") @db.Uuid
+  name                    String                       @db.VarChar(255)
+  truckCallName           String?                      @map("truck_call_name") @db.VarChar(255)
+  truckType               TruckType?                   @map("truck_type")
+  primaryCity             String?                      @map("primary_city") @db.VarChar(150)
+  slug                    String                       @unique @db.VarChar(255)
   description             String?
-  profileImageUrl         String?                   @map("profile_image_url")
-  coverImageUrl           String?                   @map("cover_image_url")
-  status                  TruckStatus               @default(DRAFT)
-  operatingStatus         OperatingStatus           @default(CLOSED) @map("operating_status")
-  minimumBookingAmount    Decimal?                  @map("minimum_booking_amount") @db.Decimal(12, 2)
-  maximumGuestCapacity    Int?                      @map("maximum_guest_capacity")
-  currentAddress          String?                   @map("current_address")
-  currentLocation         Unsupported("geography")? @map("current_location")
-  locationUpdatedAt       DateTime?                 @map("location_updated_at") @db.Timestamptz(6)
-  locationValidUntil      DateTime?                 @map("location_valid_until") @db.Timestamptz(6)
-  averageRating           Decimal                   @default(0) @map("average_rating") @db.Decimal(3, 2)
-  totalReviews            Int                       @default(0) @map("total_reviews")
-  totalBookings           Int                       @default(0) @map("total_bookings")
-  totalCheckIns           Int                       @default(0) @map("total_check_ins")
-  followerCount           Int                       @default(0) @map("follower_count")
-  isFeatured              Boolean                   @default(false) @map("is_featured")
-  createdAt               DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime                  @default(now()) @map("updated_at") @db.Timestamptz(6)
-  deletedAt               DateTime?                 @map("deleted_at") @db.Timestamptz(6)
-  vendor                  Vendor                    @relation(fields: [vendorId], references: [id])
-  market                  Market?                   @relation(fields: [marketId], references: [id])
+  profileImageUrl         String?                      @map("profile_image_url")
+  coverImageUrl           String?                      @map("cover_image_url")
+  status                  TruckStatus                  @default(DRAFT)
+  operatingStatus         OperatingStatus              @default(CLOSED) @map("operating_status")
+  minimumBookingAmount    Decimal?                     @map("minimum_booking_amount") @db.Decimal(12, 2)
+  maximumGuestCapacity    Int?                         @map("maximum_guest_capacity")
+  currentAddress          String?                      @map("current_address")
+  currentLocation         Unsupported("geography")?    @map("current_location")
+  locationUpdatedAt       DateTime?                    @map("location_updated_at") @db.Timestamptz(6)
+  locationValidUntil      DateTime?                    @map("location_valid_until") @db.Timestamptz(6)
+  averageRating           Decimal                      @default(0) @map("average_rating") @db.Decimal(3, 2)
+  totalReviews            Int                          @default(0) @map("total_reviews")
+  totalBookings           Int                          @default(0) @map("total_bookings")
+  totalCheckIns           Int                          @default(0) @map("total_check_ins")
+  followerCount           Int                          @default(0) @map("follower_count")
+  isFeatured              Boolean                      @default(false) @map("is_featured")
+  createdAt               DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  deletedAt               DateTime?                    @map("deleted_at") @db.Timestamptz(6)
+  vendor                  Vendor                       @relation(fields: [vendorId], references: [id])
+  market                  Market?                      @relation(fields: [marketId], references: [id])
   images                  FoodTruckImage[]
   cuisines                FoodTruckCuisine[]
   serviceAreas            ServiceArea[]
@@ -100,13 +100,13 @@ model FoodTruckImage {
 }
 
 model Cuisine {
-  id         String            @id @default(uuid()) @db.Uuid
-  name       String            @unique @db.VarChar(100)
-  slug       String            @unique @db.VarChar(100)
-  iconUrl    String?           @map("icon_url")
-  pinColor   String?           @map("pin_color") @db.VarChar(20)
-  isActive   Boolean           @default(true) @map("is_active")
-  foodTrucks FoodTruckCuisine[]
+  id            String                @id @default(uuid()) @db.Uuid
+  name          String                @unique @db.VarChar(100)
+  slug          String                @unique @db.VarChar(100)
+  iconUrl       String?               @map("icon_url")
+  pinColor      String?               @map("pin_color") @db.VarChar(20)
+  isActive      Boolean               @default(true) @map("is_active")
+  foodTrucks    FoodTruckCuisine[]
   userInterests UserCuisineInterest[]
 
   @@map("cuisines")

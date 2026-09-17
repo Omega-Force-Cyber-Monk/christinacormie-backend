@@ -6,6 +6,7 @@ import { ReviewsModule } from '../reviews/reviews.module';
 import { UsersModule } from '../users/users.module';
 import { VendorsModule } from '../vendors/vendors.module';
 import { BookingsModule } from '../bookings/bookings.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { AdminController } from './admin.controller';
 import { AdminRepository } from './admin.repository';
 import { AdminService } from './admin.service';
@@ -17,6 +18,7 @@ import { AdminService } from './admin.service';
     ReviewsModule,
     VendorsModule,
     BookingsModule,
+    PaymentsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService, AdminRepository, JwtAuthGuard, RolesGuard],

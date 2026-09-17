@@ -35,16 +35,16 @@ model LeaderboardRule {
 }
 
 model Leaderboard {
-  id           String           @id @default(uuid()) @db.Uuid
-  marketId     String?          @map("market_id") @db.Uuid
-  ruleId       String           @map("rule_id") @db.Uuid
-  title        String           @db.VarChar(255)
-  startsAt     DateTime         @map("starts_at") @db.Timestamptz(6)
-  endsAt       DateTime         @map("ends_at") @db.Timestamptz(6)
-  calculatedAt DateTime?        @map("calculated_at") @db.Timestamptz(6)
-  isActive     Boolean          @default(true) @map("is_active")
-  market       Market?          @relation(fields: [marketId], references: [id])
-  rule         LeaderboardRule  @relation(fields: [ruleId], references: [id])
+  id           String             @id @default(uuid()) @db.Uuid
+  marketId     String?            @map("market_id") @db.Uuid
+  ruleId       String             @map("rule_id") @db.Uuid
+  title        String             @db.VarChar(255)
+  startsAt     DateTime           @map("starts_at") @db.Timestamptz(6)
+  endsAt       DateTime           @map("ends_at") @db.Timestamptz(6)
+  calculatedAt DateTime?          @map("calculated_at") @db.Timestamptz(6)
+  isActive     Boolean            @default(true) @map("is_active")
+  market       Market?            @relation(fields: [marketId], references: [id])
+  rule         LeaderboardRule    @relation(fields: [ruleId], references: [id])
   entries      LeaderboardEntry[]
 
   @@map("leaderboards")

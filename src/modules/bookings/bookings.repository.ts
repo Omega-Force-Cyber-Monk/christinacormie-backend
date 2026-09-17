@@ -552,16 +552,125 @@ export class BookingsRepository {
     });
   }
 
-  resolveIssue(issueId: string) {
+  resolveIssue(
+    issueId: string,
+    adminUserId: string,
+    decision: 'RELEASE_PAYOUT' | 'FULL_REFUND',
+    resolutionNote?: string,
+  ) {
     return this.prisma.bookingIssue.update({
       where: { id: issueId },
       data: {
         status: 'RESOLVED' as any,
+        resolutionDecision: decision as any,
+        resolutionNote,
+        resolvedById: adminUserId,
         resolvedAt: new Date(),
       },
       include: {
         messages: { orderBy: { createdAt: 'asc' as const } },
       },
+    });
+  }
+
+  async completeBookingAfterIssueResolution(
+    bookingId: string,
+    adminUserId: string,
+    paymentReleasedAt: Date,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`;
+      const booking = await tx.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+          issues: { where: { status: 'OPEN' as any }, take: 1 },
+        },
+      });
+
+      if (!booking) {
+        throw new ConflictException('Booking is no longer available');
+      }
+
+      if (booking.status === 'COMPLETED' || booking.completedAt) {
+        throw new ConflictException('Booking is already completed');
+      }
+
+      if (booking.issues.length) {
+        throw new ConflictException(
+          'This booking still has an open issue and cannot be completed',
+        );
+      }
+
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'COMPLETED' as any,
+          completionApprovedAt: new Date(),
+          completionApprovedById: adminUserId,
+          paymentReleasedAt,
+          completedAt: new Date(),
+        },
+      });
+
+      await tx.bookingStatusHistory.create({
+        data: {
+          bookingId,
+          previousStatus: booking.status as any,
+          newStatus: 'COMPLETED' as any,
+          changedById: adminUserId,
+          reason: 'Admin resolved issue in vendor favor and released payout',
+        },
+      });
+
+      return tx.booking.findUnique({
+        where: { id: bookingId },
+        include: this.bookingInclude(),
+      });
+    });
+  }
+
+  async cancelBookingAfterIssueRefund(
+    bookingId: string,
+    adminUserId: string,
+    reason: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`;
+      const booking = await tx.booking.findUnique({ where: { id: bookingId } });
+
+      if (!booking) {
+        throw new ConflictException('Booking is no longer available');
+      }
+
+      if (booking.status === 'COMPLETED' || booking.completedAt) {
+        throw new ConflictException(
+          'Completed bookings cannot be cancelled after issue resolution',
+        );
+      }
+
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'CANCELLED' as any,
+          cancelledAt: new Date(),
+          cancellationReason: reason,
+        },
+      });
+
+      await tx.bookingStatusHistory.create({
+        data: {
+          bookingId,
+          previousStatus: booking.status as any,
+          newStatus: 'CANCELLED' as any,
+          changedById: adminUserId,
+          reason,
+        },
+      });
+
+      return tx.booking.findUnique({
+        where: { id: bookingId },
+        include: this.bookingInclude(),
+      });
     });
   }
 
