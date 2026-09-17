@@ -9,9 +9,15 @@ import { CommunityService } from './community.service';
 import { CloudinaryModule } from '../../infrastructure/cloudinary/cloudinary.module';
 import { CommunityPostsController } from './community-posts.controller';
 import { CommunityPostsService } from './community-posts.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [JwtModule.register({}), RewardsModule, CloudinaryModule],
+  imports: [
+    JwtModule.register({}),
+    RewardsModule,
+    CloudinaryModule,
+    NotificationsModule,
+  ],
   controllers: [CommunityPostsController, CommunityController],
   providers: [
     CommunityService,

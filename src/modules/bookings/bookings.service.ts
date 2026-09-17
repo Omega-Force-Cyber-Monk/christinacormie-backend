@@ -255,6 +255,26 @@ export class BookingsService {
       actionUrl: `/api/v1/bookings/${bookingId}/issues/${issue.id}/messages`,
     });
 
+    await this.notificationsService.notifyAdmins({
+      actorUserId: userId,
+      title: 'Booking issue reported',
+      message: `Customer reported an issue for booking ${booking.bookingNumber}.`,
+      bookingId,
+      foodTruckId: booking.foodTruckId,
+      actionUrl: `/api/v1/admin/bookings/${bookingId}`,
+      priority: 'HIGH',
+      metadata: {
+        eventType: NotificationEventType.BOOKING_ISSUE_REPORTED,
+        bookingId,
+        issueId: issue.id,
+      },
+      pushData: {
+        eventType: NotificationEventType.BOOKING_ISSUE_REPORTED,
+        bookingId,
+        issueId: issue.id,
+      },
+    });
+
     return {
       message: 'Issue submitted successfully',
       issue: this.presentIssue(issue),
@@ -302,6 +322,31 @@ export class BookingsService {
       senderRole,
       dto.message,
     );
+
+    if (senderRole !== 'ADMIN') {
+      await this.notificationsService.notifyAdmins({
+        actorUserId: user.sub,
+        title: 'New booking issue message',
+        message: `New ${senderRole.toLowerCase()} message on booking ${issue.booking.bookingNumber}.`,
+        bookingId,
+        foodTruckId: issue.booking.foodTruckId,
+        actionUrl: `/api/v1/admin/bookings/${bookingId}`,
+        priority: 'MEDIUM',
+        metadata: {
+          eventType: NotificationEventType.BOOKING_ISSUE_MESSAGE_CREATED,
+          bookingId,
+          issueId,
+          messageId: message.id,
+          senderRole,
+        },
+        pushData: {
+          eventType: NotificationEventType.BOOKING_ISSUE_MESSAGE_CREATED,
+          bookingId,
+          issueId,
+          messageId: message.id,
+        },
+      });
+    }
 
     return {
       message: 'Message sent successfully',

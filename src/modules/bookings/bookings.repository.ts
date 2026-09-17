@@ -490,8 +490,10 @@ export class BookingsRepository {
         booking: {
           select: {
             id: true,
+            bookingNumber: true,
             customerId: true,
             vendorId: true,
+            foodTruckId: true,
             status: true,
           },
         },

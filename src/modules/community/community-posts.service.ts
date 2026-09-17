@@ -10,6 +10,8 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CloudinaryService } from '../../infrastructure/cloudinary/cloudinary.service';
+import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CommunityService } from './community.service';
 import { CommunityRepository } from './community.repository';
 import { CreateCommunityRequestDto } from './dto/create-community-request.dto';
@@ -27,6 +29,7 @@ export class CommunityPostsService {
     private readonly community: CommunityService,
     private readonly repository: CommunityRepository,
     private readonly cloudinary: CloudinaryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateCommunityRequestDto) {
@@ -438,6 +441,28 @@ export class CommunityPostsService {
         postId,
         reportedById: userId,
         reason: dto.reason,
+      },
+    });
+
+    await this.notificationsService.notifyAdmins({
+      actorUserId: userId,
+      title: 'Community post report submitted',
+      message: 'A community post was reported and needs moderation.',
+      postId,
+      actionUrl: `/api/v1/admin/community/posts`,
+      priority: 'MEDIUM',
+      metadata: {
+        eventType: NotificationEventType.CONTENT_REPORT_SUBMITTED,
+        reportType: 'COMMUNITY_POST',
+        reportId: report.id,
+        postId,
+        reason: report.reason,
+      },
+      pushData: {
+        eventType: NotificationEventType.CONTENT_REPORT_SUBMITTED,
+        reportType: 'COMMUNITY_POST',
+        reportId: report.id,
+        postId,
       },
     });
 

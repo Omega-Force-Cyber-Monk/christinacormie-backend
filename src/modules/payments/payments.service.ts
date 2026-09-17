@@ -534,6 +534,27 @@ export class PaymentsService {
       `Payment for booking ${updatedPayment.booking.bookingNumber} is ${status}.`,
       NotificationEventType.PAYMENT_FAILED,
     );
+
+    if (status === 'FAILED') {
+      await this.notificationsService.notifyAdmins({
+        title: 'Payment attention required',
+        message: `Payment failed for booking ${updatedPayment.booking.bookingNumber}.`,
+        bookingId: updatedPayment.bookingId,
+        actionUrl: `/api/v1/admin/bookings/${updatedPayment.bookingId}`,
+        priority: 'HIGH',
+        metadata: {
+          eventType: NotificationEventType.PAYMENT_ATTENTION_REQUIRED,
+          paymentId: updatedPayment.id,
+          bookingId: updatedPayment.bookingId,
+          status,
+        },
+        pushData: {
+          eventType: NotificationEventType.PAYMENT_ATTENTION_REQUIRED,
+          paymentId: updatedPayment.id,
+          bookingId: updatedPayment.bookingId,
+        },
+      });
+    }
   }
 
   private async handleRefundUpdated(refund: any) {
@@ -547,7 +568,30 @@ export class PaymentsService {
     }
 
     if (refund.status === 'failed') {
-      await this.paymentsRepository.markRefundFailed(refund.id);
+      const failedRefund = await this.paymentsRepository.markRefundFailed(
+        refund.id,
+      );
+
+      await this.notificationsService.notifyAdmins({
+        title: 'Refund attention required',
+        message: `Refund failed for booking ${failedRefund.payment.booking.bookingNumber}.`,
+        bookingId: failedRefund.payment.bookingId,
+        actionUrl: `/api/v1/admin/bookings/${failedRefund.payment.bookingId}`,
+        priority: 'HIGH',
+        metadata: {
+          eventType: NotificationEventType.PAYMENT_ATTENTION_REQUIRED,
+          refundId: failedRefund.id,
+          paymentId: failedRefund.paymentId,
+          bookingId: failedRefund.payment.bookingId,
+          status: failedRefund.status,
+        },
+        pushData: {
+          eventType: NotificationEventType.PAYMENT_ATTENTION_REQUIRED,
+          refundId: failedRefund.id,
+          paymentId: failedRefund.paymentId,
+          bookingId: failedRefund.payment.bookingId,
+        },
+      });
     }
   }
 

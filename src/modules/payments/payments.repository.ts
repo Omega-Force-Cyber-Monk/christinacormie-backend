@@ -423,6 +423,19 @@ export class PaymentsRepository {
     return this.prisma.refund.update({
       where: { stripeRefundId },
       data: { status: 'FAILED' as any },
+      include: {
+        payment: {
+          include: {
+            booking: {
+              select: {
+                id: true,
+                bookingNumber: true,
+                foodTruckId: true,
+              },
+            },
+          },
+        },
+      },
     });
   }
 

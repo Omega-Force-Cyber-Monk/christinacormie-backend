@@ -127,6 +127,19 @@ export class NotificationsRepository {
     });
   }
 
+  findAdminUserIds() {
+    return this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE',
+        userRoles: {
+          some: { role: 'ADMIN' },
+        },
+      },
+      select: { id: true },
+    });
+  }
+
   create(data: NotificationInput) {
     return this.prisma.notification.create({
       data: {

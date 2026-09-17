@@ -19,6 +19,10 @@ type NotifyInput = NotificationInput & {
   pushData?: Record<string, string>;
 };
 
+type AdminNotifyInput = Omit<NotifyInput, 'userId' | 'type'> & {
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+};
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -104,6 +108,29 @@ export class NotificationsService {
     }
 
     return notification;
+  }
+
+  async notifyAdmins(data: AdminNotifyInput) {
+    const admins = await this.notificationsRepository.findAdminUserIds();
+
+    let sentCount = 0;
+    for (const admin of admins) {
+      const notification = await this.notify({
+        ...data,
+        userId: admin.id,
+        type: 'ADMIN',
+        metadata: {
+          priority: data.priority ?? 'MEDIUM',
+          ...(data.metadata ?? {}),
+        },
+      });
+
+      if (notification) {
+        sentCount += 1;
+      }
+    }
+
+    return { sentCount };
   }
 
   async notifyFoodTruckUpdate(data: {
