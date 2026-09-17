@@ -8,6 +8,7 @@ import { CreateAvailabilityExceptionDto } from './dto/create-availability-except
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { NearbyDropsQueryDto, TodaysDropsQueryDto } from './dto/drop-query.dto';
+import { PublicReviewsQueryDto } from './dto/public-reviews-query.dto';
 import { SetOperatingHoursDto } from './dto/set-operating-hours.dto';
 import { SetupBasicMenuDto } from './dto/setup-basic-menu.dto';
 import { SetupServiceAreaDto } from './dto/setup-service-area.dto';
@@ -55,6 +56,55 @@ export class FoodTrucksRepository {
         },
       },
       include: this.publicFoodTruckInclude(),
+    });
+  }
+
+  findPublicReviewSummaryBySlug(slug: string) {
+    return this.prisma.foodTruck.findFirst({
+      where: this.publicFoodTruckWhere(slug),
+      select: {
+        id: true,
+        averageRating: true,
+        totalReviews: true,
+      },
+    });
+  }
+
+  findPublicReviewsBySlug(slug: string, query: PublicReviewsQueryDto) {
+    const take = (query.limit ?? 20) + 1;
+
+    return this.prisma.review.findMany({
+      where: {
+        status: 'PUBLISHED',
+        ratingVisible: true,
+        foodTruck: this.publicFoodTruckWhere(slug),
+      },
+      select: {
+        id: true,
+        rating: true,
+        title: true,
+        content: true,
+        isVerified: true,
+        vendorResponse: true,
+        vendorRespondedAt: true,
+        createdAt: true,
+        customer: {
+          select: {
+            id: true,
+            profile: {
+              select: {
+                displayName: true,
+                firstName: true,
+                lastName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
     });
   }
 
@@ -797,6 +847,19 @@ export class FoodTrucksRepository {
       },
       availabilityExceptions: {
         orderBy: { exceptionDate: 'asc' as const },
+      },
+    };
+  }
+
+  private publicFoodTruckWhere(slug: string) {
+    return {
+      slug,
+      status: 'ACTIVE' as const,
+      deletedAt: null,
+      vendor: {
+        status: 'APPROVED' as const,
+        isVerified: true,
+        deletedAt: null,
       },
     };
   }
