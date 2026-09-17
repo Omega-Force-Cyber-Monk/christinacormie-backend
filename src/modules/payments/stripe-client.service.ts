@@ -35,8 +35,8 @@ export class StripeClientService {
     params: {
       amount: number;
       currency: string;
-      connectedAccountId: string;
-      applicationFeeAmount: number;
+      connectedAccountId?: string;
+      applicationFeeAmount?: number;
       paymentId: string;
       bookingId: string;
     },
@@ -48,8 +48,29 @@ export class StripeClientService {
         amount: String(params.amount),
         currency: params.currency.toLowerCase(),
         automatic_payment_methods: { enabled: 'true' },
-        application_fee_amount: String(params.applicationFeeAmount),
-        'transfer_data[destination]': params.connectedAccountId,
+        'metadata[paymentId]': params.paymentId,
+        'metadata[bookingId]': params.bookingId,
+      },
+      options,
+    );
+  }
+
+  async createTransfer(
+    params: {
+      amount: number;
+      currency: string;
+      connectedAccountId: string;
+      paymentId: string;
+      bookingId: string;
+    },
+    options?: StripeRequestOptions,
+  ) {
+    return this.post(
+      '/transfers',
+      {
+        amount: String(params.amount),
+        currency: params.currency.toLowerCase(),
+        destination: params.connectedAccountId,
         'metadata[paymentId]': params.paymentId,
         'metadata[bookingId]': params.bookingId,
       },
@@ -148,6 +169,14 @@ export class StripeClientService {
           id: `re_mock_${Date.now()}`,
           status: 'succeeded',
           amount: params.amount,
+        };
+      }
+      if (path === '/transfers') {
+        return {
+          id: `tr_mock_${Date.now()}`,
+          destination: params.destination,
+          amount: params.amount,
+          currency: params.currency,
         };
       }
     }

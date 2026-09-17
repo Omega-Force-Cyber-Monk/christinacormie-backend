@@ -605,6 +605,30 @@ export class AdminRepository {
         completedAt: true,
         cancelledAt: true,
         cancellationReason: true,
+        quotes: true,
+        payments: true,
+        payouts: true,
+        issues: {
+          orderBy: { createdAt: 'desc' as const },
+          include: {
+            reportedBy: {
+              select: { id: true, email: true, profile: true, vendor: true },
+            },
+            messages: {
+              orderBy: { createdAt: 'asc' as const },
+              include: {
+                sender: {
+                  select: {
+                    id: true,
+                    email: true,
+                    profile: true,
+                    vendor: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         statusHistory: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -1416,7 +1440,8 @@ export class AdminRepository {
       },
       paymentSummary,
       tabs: {
-        leaderboard: activeLeaderboard?.entries.length ?? fallbackVendors.length,
+        leaderboard:
+          activeLeaderboard?.entries.length ?? fallbackVendors.length,
         redeemTransactions: redemptions.length,
         topUsers: topUsers.length,
       },
@@ -2616,7 +2641,8 @@ export class AdminRepository {
           rank: entry.rank,
           vendorId: entry.vendorId,
           foodTruckId: entry.foodTruckId,
-          truckName: entry.foodTruck?.name ?? entry.vendor?.businessName ?? null,
+          truckName:
+            entry.foodTruck?.name ?? entry.vendor?.businessName ?? null,
           ownerName: this.userDisplayName(entry.vendor?.user),
           location: entry.foodTruck?.primaryCity ?? null,
           pointsGiven: Math.round(Number(entry.score ?? 0)),
@@ -2661,7 +2687,9 @@ export class AdminRepository {
           checkIns,
           followers,
           revenue,
-          pointsGiven: Math.round(bookings * 100 + checkIns * 10 + reviews * 25),
+          pointsGiven: Math.round(
+            bookings * 100 + checkIns * 10 + reviews * 25,
+          ),
         };
       })
       .sort(
@@ -3224,6 +3252,11 @@ export class AdminRepository {
         },
       },
       foodTruck: { select: { id: true, name: true, slug: true } },
+      _count: {
+        select: {
+          issues: { where: { status: 'OPEN' as const } },
+        },
+      },
     };
   }
 

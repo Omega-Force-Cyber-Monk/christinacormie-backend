@@ -161,10 +161,6 @@ export class PaymentsService {
         {
           amount: this.toMinorUnit(financials.chargeAmount),
           currency,
-          connectedAccountId: booking.vendor.paymentAccount.stripeAccountId,
-          applicationFeeAmount: this.toMinorUnit(
-            financials.applicationFeeAmount,
-          ),
           paymentId: payment.id,
           bookingId,
         },
@@ -224,6 +220,72 @@ export class PaymentsService {
     }
 
     return payment;
+  }
+
+  async releaseBookingPayout(bookingId: string) {
+    const payment =
+      await this.paymentsRepository.findSucceededPaymentForBooking(bookingId);
+
+    if (!payment) {
+      throw new BadRequestException('Booking deposit payment is not completed');
+    }
+
+    if (!payment.vendor.paymentAccount?.stripeAccountId) {
+      throw new BadRequestException('Vendor payment account is not ready');
+    }
+
+    let payout = payment.payout;
+
+    if (!payout) {
+      if (!payment.commission) {
+        throw new BadRequestException('Booking payout is not ready');
+      }
+
+      payout = await this.paymentsRepository.createPendingPayoutForPayment({
+        paymentId: payment.id,
+        bookingId: payment.bookingId,
+        vendorId: payment.vendorId,
+        amount: Number(payment.commission.vendorNetAmount),
+        currency: payment.currency,
+      });
+    }
+
+    if (payout.status === 'PAID') {
+      return payout;
+    }
+
+    if (!['PENDING', 'FAILED'].includes(payout.status)) {
+      throw new BadRequestException('Booking payout is already processing');
+    }
+
+    if (Number(payout.amount) <= 0) {
+      throw new BadRequestException(
+        'Booking payout amount must be greater than zero',
+      );
+    }
+
+    await this.paymentsRepository.markPayoutProcessing(payout.id);
+
+    try {
+      const transfer = await this.stripeClient.createTransfer(
+        {
+          amount: this.toMinorUnit(Number(payout.amount)),
+          currency: payout.currency,
+          connectedAccountId: payment.vendor.paymentAccount.stripeAccountId,
+          paymentId: payment.id,
+          bookingId: payment.bookingId,
+        },
+        { idempotencyKey: `booking-payout-${bookingId}` },
+      );
+
+      return this.paymentsRepository.markPayoutPaid(payout.id, transfer.id);
+    } catch (error: any) {
+      await this.paymentsRepository.markPayoutFailed(
+        payout.id,
+        error?.message ?? 'Stripe transfer failed',
+      );
+      throw error;
+    }
   }
 
   async createRefund(userId: string, paymentId: string, dto: CreateRefundDto) {
@@ -445,8 +507,8 @@ export class PaymentsService {
 
     await this.notificationsService.notifyVendorPaymentUpdate(
       updatedPayment,
-      'Payment received',
-      `Payment for booking ${updatedPayment.booking.bookingNumber} succeeded.`,
+      'Deposit received',
+      `Deposit for booking ${updatedPayment.booking.bookingNumber} succeeded. Payout will be released after completion approval.`,
       NotificationEventType.PAYMENT_SUCCEEDED,
     );
   }

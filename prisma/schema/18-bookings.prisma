@@ -37,6 +37,18 @@ enum BookingStatus {
   EXPIRED
 }
 
+enum BookingIssueStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum BookingIssueMessageSenderRole {
+  CUSTOMER
+  VENDOR
+  ADMIN
+}
+
 model Booking {
   id                          String                @id @default(uuid()) @db.Uuid
   bookingNumber               String                @unique @map("booking_number") @db.VarChar(50)
@@ -75,10 +87,17 @@ model Booking {
   cancellationReason          String?               @map("cancellation_reason")
   acceptedAt                  DateTime?             @map("accepted_at") @db.Timestamptz(6)
   confirmedAt                 DateTime?             @map("confirmed_at") @db.Timestamptz(6)
+  completionRequestedAt       DateTime?             @map("completion_requested_at") @db.Timestamptz(6)
+  completionRequestedById     String?               @map("completion_requested_by") @db.Uuid
+  completionApprovedAt        DateTime?             @map("completion_approved_at") @db.Timestamptz(6)
+  completionApprovedById      String?               @map("completion_approved_by") @db.Uuid
+  paymentReleasedAt           DateTime?             @map("payment_released_at") @db.Timestamptz(6)
   completedAt                 DateTime?             @map("completed_at") @db.Timestamptz(6)
   cancelledAt                 DateTime?             @map("cancelled_at") @db.Timestamptz(6)
   createdAt                   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   customer                    User                  @relation("BookingCustomer", fields: [customerId], references: [id])
+  completionRequestedBy       User?                 @relation("BookingCompletionRequestedBy", fields: [completionRequestedById], references: [id])
+  completionApprovedBy        User?                 @relation("BookingCompletionApprovedBy", fields: [completionApprovedById], references: [id])
   vendor                      Vendor                @relation(fields: [vendorId], references: [id])
   foodTruck                   FoodTruck             @relation(fields: [foodTruckId], references: [id])
   communityRequest            CommunityRequest?     @relation(fields: [communityRequestId], references: [id])
@@ -87,12 +106,47 @@ model Booking {
   statusHistory               BookingStatusHistory[]
   payments                    Payment[]
   commissions                 Commission[]
+  payouts                     Payout[]
+  issues                      BookingIssue[]
   review                      Review?
   promotions                  PromotionRedemption[]
   conversations               Conversation[]
   notifications               Notification[]
 
   @@map("bookings")
+}
+
+model BookingIssue {
+  id           String             @id @default(uuid()) @db.Uuid
+  bookingId    String             @map("booking_id") @db.Uuid
+  reportedById String             @map("reported_by") @db.Uuid
+  message      String
+  status       BookingIssueStatus @default(OPEN)
+  resolvedAt   DateTime?          @map("resolved_at") @db.Timestamptz(6)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  booking      Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  reportedBy   User               @relation("BookingIssueReportedBy", fields: [reportedById], references: [id])
+  messages     BookingIssueMessage[]
+
+  @@index([bookingId, status])
+  @@index([reportedById])
+  @@map("booking_issues")
+}
+
+model BookingIssueMessage {
+  id         String                        @id @default(uuid()) @db.Uuid
+  issueId    String                        @map("issue_id") @db.Uuid
+  senderId   String                        @map("sender_id") @db.Uuid
+  senderRole BookingIssueMessageSenderRole @map("sender_role")
+  message    String
+  readAt     DateTime?                     @map("read_at") @db.Timestamptz(6)
+  createdAt  DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  issue      BookingIssue                  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  sender     User                          @relation("BookingIssueMessageSender", fields: [senderId], references: [id])
+
+  @@index([issueId, createdAt])
+  @@index([senderId])
+  @@map("booking_issue_messages")
 }
 
 model BookingQuote {

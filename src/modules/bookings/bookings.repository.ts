@@ -86,6 +86,58 @@ export class BookingsRepository {
     });
   }
 
+  findBookingForTracking(bookingId: string) {
+    return this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            profile: {
+              select: { displayName: true, firstName: true, lastName: true },
+            },
+          },
+        },
+        vendor: {
+          select: {
+            id: true,
+            userId: true,
+            businessName: true,
+            businessEmail: true,
+            businessPhone: true,
+          },
+        },
+        foodTruck: {
+          select: { id: true, name: true, slug: true, profileImageUrl: true },
+        },
+        quotes: {
+          where: { status: 'ACCEPTED' as any },
+          orderBy: { createdAt: 'desc' as const },
+          take: 1,
+        },
+        vendorOffer: true,
+        payments: {
+          where: { status: { in: ['PROCESSING', 'SUCCEEDED'] as any } },
+          orderBy: { createdAt: 'desc' as const },
+          include: { commission: true, payout: true },
+        },
+        payouts: {
+          orderBy: { createdAt: 'desc' as const },
+        },
+        issues: {
+          where: { status: 'OPEN' as any },
+          orderBy: { createdAt: 'desc' as const },
+          take: 1,
+        },
+        statusHistory: {
+          orderBy: { createdAt: 'asc' as const },
+        },
+      },
+    });
+  }
+
   listCustomerBookings(customerId: string) {
     return this.prisma.booking.findMany({
       where: { customerId },
@@ -299,6 +351,215 @@ export class BookingsRepository {
       });
 
       return booking;
+    });
+  }
+
+  async requestCompletion(bookingId: string, userId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`;
+      const booking = await tx.booking.findUnique({ where: { id: bookingId } });
+
+      if (!booking) {
+        throw new ConflictException('Booking is no longer available');
+      }
+
+      if (booking.completionRequestedAt) {
+        throw new ConflictException('Completion request already sent');
+      }
+
+      const nextStatus =
+        booking.status === 'CONFIRMED' ? 'IN_PROGRESS' : booking.status;
+
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: nextStatus as any,
+          completionRequestedAt: new Date(),
+          completionRequestedById: userId,
+        },
+      });
+
+      await tx.bookingStatusHistory.create({
+        data: {
+          bookingId,
+          previousStatus: booking.status as any,
+          newStatus: nextStatus as any,
+          changedById: userId,
+          reason: 'Completion requested',
+        },
+      });
+
+      return tx.booking.findUnique({
+        where: { id: bookingId },
+        include: this.bookingInclude(),
+      });
+    });
+  }
+
+  async approveCompletion(
+    bookingId: string,
+    userId: string,
+    paymentReleasedAt: Date,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`;
+      const booking = await tx.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+          issues: { where: { status: 'OPEN' as any }, take: 1 },
+        },
+      });
+
+      if (!booking) {
+        throw new ConflictException('Booking is no longer available');
+      }
+
+      if (booking.issues.length) {
+        throw new ConflictException(
+          'This booking has an open issue and cannot be completed yet',
+        );
+      }
+
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'COMPLETED' as any,
+          completionApprovedAt: new Date(),
+          completionApprovedById: userId,
+          paymentReleasedAt,
+          completedAt: new Date(),
+        },
+      });
+
+      await tx.bookingStatusHistory.create({
+        data: {
+          bookingId,
+          previousStatus: booking.status as any,
+          newStatus: 'COMPLETED' as any,
+          changedById: userId,
+          reason: 'Customer approved completion',
+        },
+      });
+
+      return tx.booking.findUnique({
+        where: { id: bookingId },
+        include: this.bookingInclude(),
+      });
+    });
+  }
+
+  async createIssue(bookingId: string, userId: string, message: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${bookingId}::uuid FOR UPDATE`;
+      const existingOpenIssue = await tx.bookingIssue.findFirst({
+        where: { bookingId, status: 'OPEN' as any },
+      });
+
+      if (existingOpenIssue) {
+        throw new ConflictException(
+          'An open issue already exists for this booking',
+        );
+      }
+
+      const issue = await tx.bookingIssue.create({
+        data: {
+          bookingId,
+          reportedById: userId,
+          message,
+          messages: {
+            create: {
+              senderId: userId,
+              senderRole: 'CUSTOMER' as any,
+              message,
+            },
+          },
+        },
+        include: {
+          messages: { orderBy: { createdAt: 'asc' as const } },
+        },
+      });
+
+      return issue;
+    });
+  }
+
+  findIssueForBooking(bookingId: string, issueId: string) {
+    return this.prisma.bookingIssue.findFirst({
+      where: { id: issueId, bookingId },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            customerId: true,
+            vendorId: true,
+            status: true,
+          },
+        },
+        messages: {
+          orderBy: { createdAt: 'asc' as const },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                email: true,
+                profile: {
+                  select: {
+                    displayName: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+                vendor: {
+                  select: { businessName: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  addIssueMessage(
+    issueId: string,
+    userId: string,
+    senderRole: 'CUSTOMER' | 'VENDOR' | 'ADMIN',
+    message: string,
+  ) {
+    return this.prisma.bookingIssueMessage.create({
+      data: {
+        issueId,
+        senderId: userId,
+        senderRole: senderRole as any,
+        message,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: { displayName: true, firstName: true, lastName: true },
+            },
+            vendor: {
+              select: { businessName: true },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  resolveIssue(issueId: string) {
+    return this.prisma.bookingIssue.update({
+      where: { id: issueId },
+      data: {
+        status: 'RESOLVED' as any,
+        resolvedAt: new Date(),
+      },
+      include: {
+        messages: { orderBy: { createdAt: 'asc' as const } },
+      },
     });
   }
 

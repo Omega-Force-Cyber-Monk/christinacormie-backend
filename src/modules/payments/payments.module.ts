@@ -19,5 +19,6 @@ import { StripeWebhookController } from './stripe-webhook.controller';
     JwtAuthGuard,
     RolesGuard,
   ],
+  exports: [PaymentsService, PaymentsRepository, StripeClientService],
 })
 export class PaymentsModule {}

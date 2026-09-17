@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UsersService } from '../users/users.service';
 import { ReviewsService } from '../reviews/reviews.service';
+import { BookingsService } from '../bookings/bookings.service';
 import { UpdateAccountStatusDto } from '../users/dto/update-account-status.dto';
 import {
   ModerateReviewDto,
@@ -24,6 +25,7 @@ export class AdminService {
     private readonly adminRepository: AdminRepository,
     private readonly usersService: UsersService,
     private readonly reviewsService: ReviewsService,
+    private readonly bookingsService: BookingsService,
   ) {}
 
   listUsers(query: AdminListQueryDto) {
@@ -280,6 +282,10 @@ export class AdminService {
     }
 
     return booking;
+  }
+
+  resolveBookingIssue(adminUserId: string, bookingId: string, issueId: string) {
+    return this.bookingsService.resolveIssue(adminUserId, bookingId, issueId);
   }
 
   listPayments(query: AdminListQueryDto) {

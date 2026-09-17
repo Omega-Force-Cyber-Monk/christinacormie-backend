@@ -233,6 +233,16 @@ export class AdminController {
     return this.adminService.getBooking(bookingId);
   }
 
+  @ApiOperation({ summary: 'Resolve a booking issue' })
+  @Patch('bookings/:bookingId/issues/:issueId/resolve')
+  resolveBookingIssue(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Param('issueId', ParseUUIDPipe) issueId: string,
+  ) {
+    return this.adminService.resolveBookingIssue(user.sub, bookingId, issueId);
+  }
+
   @ApiOperation({ summary: 'List all payments' })
   @Get('payments')
   listPayments(@Query() query: AdminListQueryDto) {
