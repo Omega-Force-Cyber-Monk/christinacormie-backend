@@ -11,6 +11,7 @@ import { CreateDraftFoodTruckDto } from './dto/create-draft-food-truck.dto';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { NearbyDropsQueryDto, TodaysDropsQueryDto } from './dto/drop-query.dto';
+import { PublicReviewsQueryDto } from './dto/public-reviews-query.dto';
 import { SetCuisinesDto } from './dto/set-cuisines.dto';
 import { SetOperatingHoursDto } from './dto/set-operating-hours.dto';
 import { SetupBasicMenuDto } from './dto/setup-basic-menu.dto';
@@ -40,6 +41,46 @@ export class FoodTrucksService {
     }
 
     return foodTruck;
+  }
+
+  async getPublicReviews(slug: string, query: PublicReviewsQueryDto) {
+    const [summary, reviews] = await Promise.all([
+      this.foodTrucksRepository.findPublicReviewSummaryBySlug(slug),
+      this.foodTrucksRepository.findPublicReviewsBySlug(slug, query),
+    ]);
+
+    if (!summary) {
+      throw new NotFoundException('Food truck not found');
+    }
+
+    const limit = query.limit ?? 20;
+    const hasNextPage = reviews.length > limit;
+    const items = (hasNextPage ? reviews.slice(0, limit) : reviews).map(
+      (review) => ({
+        id: review.id,
+        rating: review.rating,
+        title: review.title,
+        content: review.content,
+        isVerified: review.isVerified,
+        vendorResponse: review.vendorResponse,
+        vendorRespondedAt: review.vendorRespondedAt,
+        createdAt: review.createdAt,
+        customer: {
+          id: review.customer.id,
+          name: this.customerDisplayName(review.customer.profile),
+          avatarUrl: review.customer.profile?.avatarUrl ?? null,
+        },
+      }),
+    );
+
+    return {
+      items,
+      nextCursor: hasNextPage ? items[items.length - 1]?.id : null,
+      summary: {
+        averageRating: Number(summary.averageRating),
+        totalReviews: summary.totalReviews,
+      },
+    };
   }
 
   listCuisineCategories() {
@@ -359,6 +400,25 @@ export class FoodTrucksService {
     }
 
     return foodTruck;
+  }
+
+  private customerDisplayName(
+    profile?: {
+      displayName?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+    } | null,
+  ) {
+    const displayName = profile?.displayName?.trim();
+
+    if (displayName) return displayName;
+
+    const fullName = [profile?.firstName, profile?.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return fullName || 'BiteDrop Customer';
   }
 
   private async ensureOwnMenu(
