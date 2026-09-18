@@ -29,6 +29,7 @@ import { CreateDraftFoodTruckDto } from './dto/create-draft-food-truck.dto';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { NearbyDropsQueryDto, TodaysDropsQueryDto } from './dto/drop-query.dto';
+import { PublicReviewsQueryDto } from './dto/public-reviews-query.dto';
 import { SetCuisinesDto } from './dto/set-cuisines.dto';
 import { SetOperatingHoursDto } from './dto/set-operating-hours.dto';
 import { SetupBasicMenuDto } from './dto/setup-basic-menu.dto';
@@ -276,6 +277,63 @@ export class FoodTrucksController {
   @Get('drops/today')
   getTodaysDrops(@Query() query: TodaysDropsQueryDto) {
     return this.foodTrucksService.getTodaysDrops(query);
+  }
+
+  @ApiOperation({ summary: 'List public reviews for a food truck profile' })
+  @ApiResponse({
+    status: 200,
+    description: 'Published reviews returned for an active public food truck.',
+    schema: {
+      example: {
+        items: [
+          {
+            id: 'review-id',
+            rating: 5,
+            title: 'Amazing tacos',
+            content:
+              'Best tacos in SF. Fresh fish taco is absolutely incredible.',
+            isVerified: true,
+            vendorResponse: 'Thank you for visiting us!',
+            vendorRespondedAt: '2026-09-17T09:00:00.000Z',
+            createdAt: '2026-09-17T08:30:00.000Z',
+            customer: {
+              id: 'customer-id',
+              name: 'Sarah Johnson',
+              avatarUrl: 'https://cdn.bitedrop.com/users/sarah.jpg',
+            },
+          },
+        ],
+        nextCursor: null,
+        summary: {
+          averageRating: 4.8,
+          totalReviews: 102,
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Query validation failed.',
+    schema: {
+      example: errorExample(
+        400,
+        ['limit must not be greater than 50'],
+        'Bad Request',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Food truck was not found, inactive, deleted, or vendor is not approved.',
+    schema: { example: errorExample(404, 'Food truck not found', 'Not Found') },
+  })
+  @Get('profile/:slug/reviews')
+  getPublicReviews(
+    @Param('slug') slug: string,
+    @Query() query: PublicReviewsQueryDto,
+  ) {
+    return this.foodTrucksService.getPublicReviews(slug, query);
   }
 
   @ApiOperation({ summary: 'Get public food truck profile by slug' })
