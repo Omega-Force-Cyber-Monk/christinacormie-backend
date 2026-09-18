@@ -708,6 +708,29 @@ export class SocialRepository {
     });
   }
 
+  findVendorPosts(vendorId: string, userId: string, dto: FeedQueryDto) {
+    const limit = dto.limit ?? 20;
+    const take = limit + 1;
+
+    return this.prisma.post.findMany({
+      where: {
+        vendorId,
+        deletedAt: null,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take,
+      ...(dto.cursor
+        ? {
+            cursor: { id: dto.cursor },
+            skip: 1,
+          }
+        : {}),
+      include: this.postInclude(userId),
+    });
+  }
+
   private postInclude(userId?: string): any {
     const include: any = {
       media: {
