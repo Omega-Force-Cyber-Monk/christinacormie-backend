@@ -31,23 +31,23 @@ model FavoriteTruck {
 }
 
 model Post {
-  id             String       @id @default(uuid()) @db.Uuid
-  vendorId       String       @map("vendor_id") @db.Uuid
-  foodTruckId    String       @map("food_truck_id") @db.Uuid
+  id             String         @id @default(uuid()) @db.Uuid
+  vendorId       String         @map("vendor_id") @db.Uuid
+  foodTruckId    String         @map("food_truck_id") @db.Uuid
   content        String
-  status         PostStatus   @default(PUBLISHED)
-  isPromotion    Boolean      @default(false) @map("is_promotion")
-  isFollowerOnly Boolean      @default(false) @map("is_follower_only")
-  likeCount      Int          @default(0) @map("like_count")
-  commentCount   Int          @default(0) @map("comment_count")
-  saveCount      Int          @default(0) @map("save_count")
-  shareCount     Int          @default(0) @map("share_count")
-  viewCount      Int          @default(0) @map("view_count")
-  publishedAt    DateTime?    @map("published_at") @db.Timestamptz(6)
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz(6)
-  vendor         Vendor       @relation(fields: [vendorId], references: [id])
-  foodTruck      FoodTruck    @relation(fields: [foodTruckId], references: [id])
+  status         PostStatus     @default(PUBLISHED)
+  isPromotion    Boolean        @default(false) @map("is_promotion")
+  isFollowerOnly Boolean        @default(false) @map("is_follower_only")
+  likeCount      Int            @default(0) @map("like_count")
+  commentCount   Int            @default(0) @map("comment_count")
+  saveCount      Int            @default(0) @map("save_count")
+  shareCount     Int            @default(0) @map("share_count")
+  viewCount      Int            @default(0) @map("view_count")
+  publishedAt    DateTime?      @map("published_at") @db.Timestamptz(6)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz(6)
+  vendor         Vendor         @relation(fields: [vendorId], references: [id])
+  foodTruck      FoodTruck      @relation(fields: [foodTruckId], references: [id])
   media          PostMedia[]
   likes          PostLike[]
   comments       PostComment[]
@@ -58,12 +58,12 @@ model Post {
 }
 
 model PostMedia {
-  id        String   @id @default(uuid()) @db.Uuid
-  postId    String   @map("post_id") @db.Uuid
-  mediaType String   @map("media_type") @db.VarChar(20)
-  mediaUrl  String   @map("media_url")
-  sortOrder Int      @default(0) @map("sort_order")
-  post      Post     @relation(fields: [postId], references: [id])
+  id        String @id @default(uuid()) @db.Uuid
+  postId    String @map("post_id") @db.Uuid
+  mediaType String @map("media_type") @db.VarChar(20)
+  mediaUrl  String @map("media_url")
+  sortOrder Int    @default(0) @map("sort_order")
+  post      Post   @relation(fields: [postId], references: [id])
 
   @@map("post_media")
 }

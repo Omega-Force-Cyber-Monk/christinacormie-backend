@@ -24,6 +24,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { UpdateAccountStatusDto } from '../users/dto/update-account-status.dto';
 import { ModerateReviewDto } from '../reviews/dto/moderate-review.dto';
+import { ResolveBookingIssueDto } from '../bookings/dto/resolve-booking-issue.dto';
 import { VendorsService } from '../vendors/vendors.service';
 import { AdminService } from './admin.service';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
@@ -233,14 +234,23 @@ export class AdminController {
     return this.adminService.getBooking(bookingId);
   }
 
-  @ApiOperation({ summary: 'Resolve a booking issue' })
+  @ApiOperation({
+    summary:
+      'Resolve a booking issue with payout release or full refund decision',
+  })
   @Patch('bookings/:bookingId/issues/:issueId/resolve')
   resolveBookingIssue(
     @CurrentUser() user: AuthenticatedUser,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Param('issueId', ParseUUIDPipe) issueId: string,
+    @Body() dto: ResolveBookingIssueDto,
   ) {
-    return this.adminService.resolveBookingIssue(user.sub, bookingId, issueId);
+    return this.adminService.resolveBookingIssue(
+      user.sub,
+      bookingId,
+      issueId,
+      dto,
+    );
   }
 
   @ApiOperation({ summary: 'List all payments' })
@@ -255,7 +265,9 @@ export class AdminController {
     return this.adminService.getPaymentsManagement(query);
   }
 
-  @ApiOperation({ summary: 'Approve a vendor payout' })
+  @ApiOperation({
+    summary: 'Retry a failed vendor payout through Stripe transfer',
+  })
   @Patch('payouts/:payoutId/approve')
   approvePayout(
     @CurrentUser() user: AuthenticatedUser,
@@ -264,7 +276,19 @@ export class AdminController {
     return this.adminService.approvePayout(user.sub, payoutId);
   }
 
-  @ApiOperation({ summary: 'Reject a vendor payout' })
+  @ApiOperation({ summary: 'Retry a failed vendor payout' })
+  @Post('payouts/:payoutId/retry')
+  retryPayout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('payoutId', ParseUUIDPipe) payoutId: string,
+  ) {
+    return this.adminService.retryPayout(user.sub, payoutId);
+  }
+
+  @ApiOperation({
+    summary:
+      'Deprecated: payout cancellation is handled by booking issue FULL_REFUND',
+  })
   @Patch('payouts/:payoutId/reject')
   rejectPayout(
     @CurrentUser() user: AuthenticatedUser,
@@ -274,7 +298,10 @@ export class AdminController {
     return this.adminService.rejectPayout(user.sub, payoutId, reason);
   }
 
-  @ApiOperation({ summary: 'Place a vendor payout on hold' })
+  @ApiOperation({
+    summary:
+      'Deprecated: payouts are held automatically while a booking issue is open',
+  })
   @Patch('payouts/:payoutId/hold')
   holdPayout(
     @CurrentUser() user: AuthenticatedUser,

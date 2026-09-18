@@ -79,16 +79,16 @@ sequenceDiagram
 flowchart TD
     StartScan(["Customer Arrives at Food Truck"]) --> ScanQR["Scan Vendor's BiteDrop QR Code"]
     ScanQR --> APIReq["POST /api/v1/qr/:code/check-ins<br/>Body: { latitude, longitude }"]
-    
+
     APIReq --> GeofenceCheck{"Within Truck Proximity<br/>& Location Valid?"}
     GeofenceCheck -- No --> Reject["Status: REJECTED<br/>Fraud Prevention Triggered"]
-    
+
     GeofenceCheck -- Yes --> DupCheck{"Checked In Within<br/>Last 12 Hours?"}
     DupCheck -- Yes --> DupState["experienceState: ALREADY_CHECKED_IN_TODAY<br/>Points Earned: 0"]
-    
+
     DupCheck -- No --> CalcPoints["Award +10 Loyalty Points<br/>Update Tier Progress"]
     CalcPoints --> CheckBalance{"Total Points >= 500<br/>($5+ Credit Available)?"}
-    
+
     CheckBalance -- Yes --> CreditState["experienceState: HAS_CREDIT_AVAILABLE<br/>availableCreditAmount: $5.00+<br/>Prompt Credit Usage"]
     CheckBalance -- No --> PointsState["experienceState: HAS_POINTS_NO_CREDIT<br/>Show Points Balance & Tier Bar"]
 
@@ -149,11 +149,11 @@ flowchart TD
         TopComment["Add Top-Level Comment<br/>POST /api/v1/social/posts/:id/comments<br/>{ content: 'Looks delicious!' }"]
         ReplyComment["Reply to a Comment<br/>POST /api/v1/social/posts/:id/comments<br/>{ content: '...', parentCommentId: 'parent_id' }"]
         FlattenCheck{"Is Target Comment<br/>Already a Reply?"}
-        
+
         ReplyComment --> FlattenCheck
         FlattenCheck -- Yes --> Flatten["Automatically Flatten to Top-Level Parent ID<br/>(Strictly Enforces 1-Level Depth)"]
         FlattenCheck -- No --> DirectAttach["Attach as direct reply to parent comment"]
-        
+
         LikeComment["Like a Comment<br/>POST /api/v1/social/comments/:id/like<br/>(Updates likeCount)"]
     end
 
@@ -170,13 +170,16 @@ flowchart TD
 For the dedicated, end-to-end multi-diagram document covering all 3 booking types, state machines, and the 20% minimum deposit rule, see [ALL_BOOKING_FLOWS_FLOWCHART.md](file:///Users/softvence/arif/project/christinacormie-backend/docs/ALL_BOOKING_FLOWS_FLOWCHART.md).
 
 ### Flow 1: Public Community Request (Open Bidding)
+
 ```text
-Customer Posts Event in Feed -> Multiple Food Trucks Submit Quotes (Deposit >= 20%) 
--> Customer Accepts Best Quote -> Pays Deposit/Full via Stripe 
--> 20% Platform Fee to BiteDrop, Net to Vendor -> CONFIRMED
+Customer Posts Event in Feed -> Multiple Food Trucks Submit Quotes (Deposit >= 20%)
+-> Customer Accepts Best Quote -> Pays Deposit/Full via Stripe
+-> Platform Stripe account holds payment -> CONFIRMED
+-> Event completed & customer approves -> Platform keeps commission, vendor net transfers to vendor Stripe connected account
 ```
 
 ### Flow 2: Direct Food Truck Profile Booking
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -198,11 +201,42 @@ sequenceDiagram
     BookAPI-->>Cust: Return { status: "PAYMENT_PENDING", holdExpiresAt }
 
     Cust->>PayAPI: POST /api/v1/payments/bookings/:id/payment-intent
-    PayAPI->>PayAPI: Creates Stripe Destination Charge (Deposit / Full Amount + 20% Platform Fee)
+    PayAPI->>PayAPI: Verify Vendor Stripe Connect is Ready<br/>(onboardingCompleted + chargesEnabled + payoutsEnabled)
+    PayAPI->>PayAPI: Creates Stripe PaymentIntent on Platform Account<br/>(No direct vendor transfer yet)
     Cust->>PayAPI: Completes Payment via Card / Apple Pay
     PayAPI->>BookAPI: Set Booking Status: CONFIRMED
     BookAPI->>Cust: Push Notification: "Booking Confirmed!"
     BookAPI->>Vend: Push Notification: "Payment Received & Booking Confirmed!"
+
+    Vend->>BookAPI: PATCH /api/v1/bookings/:id/request-completion
+    BookAPI-->>Cust: Completion requested
+
+    alt Customer approves completion
+        Cust->>BookAPI: PATCH /api/v1/bookings/:id/approve-completion
+        BookAPI->>PayAPI: Release payout after completion approval
+        PayAPI->>StripeAPI: Transfer vendor net amount to vendor connected account
+        BookAPI->>BookAPI: Set Booking Status: COMPLETED
+    else Customer reports issue
+        Cust->>BookAPI: POST /api/v1/bookings/:id/issues
+        BookAPI-->>AdminDashboard: Admin notification: booking issue reported
+        AdminDashboard->>BookAPI: PATCH /api/v1/admin/bookings/:bookingId/issues/:issueId/resolve
+        alt Admin decision RELEASE_PAYOUT
+            BookAPI->>PayAPI: Release vendor payout
+            BookAPI->>BookAPI: Set Booking Status: COMPLETED
+        else Admin decision FULL_REFUND
+            BookAPI->>PayAPI: Full refund original PaymentIntent
+            BookAPI->>BookAPI: Cancel payout and booking
+        end
+    end
+```
+
+Payment rule:
+
+```text
+Customer does not need Stripe Connect. Customer pays by card.
+Vendor must complete Stripe Connect onboarding before customer payment can be accepted.
+Platform receives payment first, keeps commission, and transfers vendor net after completion approval.
+Stripe handles vendor connected account -> vendor bank payout schedule.
 ```
 
 ---
@@ -212,16 +246,16 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     EventTrigger["System Event Triggered<br/>(Nearby Drop, Post Published,<br/>Booking Confirmed, Points Earned)"] --> NotifService["NotificationsService.notify()"]
-    
+
     NotifService --> DBWrite["1. Write to PostgreSQL DB<br/>(Persistent Notification Record)"]
     NotifService --> PrefCheck{"2. Check User Preference<br/>(e.g. nearbyDropAlerts, promotionAlerts)"}
-    
+
     PrefCheck -- Disabled --> Done[Skip Push Delivery]
     PrefCheck -- Enabled --> FetchTokens["3. Fetch User Active Device FCM Tokens"]
-    
+
     FetchTokens --> FirebaseFCM["4. Firebase Admin SDK<br/>(sendEachForMulticast)"]
     FirebaseFCM --> Device["5. Delivered to Phone Lock Screen / Status Bar"]
-    
+
     DBWrite --> InAppAPI["In-App Notification Center<br/>• GET /unread-count<br/>• GET /api/v1/notifications<br/>• PATCH /read-all"]
 ```
 
@@ -229,34 +263,34 @@ flowchart LR
 
 ## 8. Summary of Implemented API Endpoints
 
-| Category | Method | Endpoint | Description |
-| :--- | :--- | :--- | :--- |
-| **Auth** | `POST` | `/api/v1/auth/register/customer` | Customer registration + 6-digit email OTP |
-| **Auth** | `POST` | `/api/v1/auth/register/vendor` | Vendor registration + food truck draft creation |
-| **Auth** | `POST` | `/api/v1/auth/verify-email` | Verifies 6-digit email code & activates account |
-| **Auth** | `POST` | `/api/v1/auth/login` | Returns ultra-minimal auth payload & tokens |
-| **Auth** | `POST` | `/api/v1/auth/logout` | Revokes refresh token |
-| **Food Trucks** | `GET` | `/api/v1/food-trucks/drops/nearby` | Proximity live food truck drops |
-| **Food Trucks** | `GET` | `/api/v1/food-trucks/profile/:slug` | Public food truck profile & active menu |
-| **QR & Check-In** | `GET` | `/api/v1/vendors/me/qr-code` | Vendor food truck QR payload & sharing link |
-| **QR & Check-In** | `POST` | `/api/v1/qr/:code/check-ins` | Smart check-in returning experience state & credit |
-| **Rewards** | `POST` | `/api/v1/rewards/me/redemption-codes` | Generates 15-min token & 6-digit backup code |
-| **Rewards** | `POST` | `/api/v1/vendors/me/redemptions/confirm` | Vendor confirms redemption via QR or 6-digit code |
-| **Social** | `GET` | `/api/v1/social/feed/following` | Personalized feed from followed trucks |
-| **Social** | `GET` | `/api/v1/social/feed/explore` | Explore feed across all trucks (newest/trending) |
-| **Social** | `POST` | `/api/v1/social/posts` | Vendor creates post with media images |
-| **Social** | `POST` | `/api/v1/social/posts/:id/like` | Toggle like on post |
-| **Social** | `POST` | `/api/v1/social/posts/:id/share` | Share post & increment shareCount |
-| **Social** | `GET` | `/api/v1/social/posts/:id/comments` | Fetch comments tree with 1-level nested replies |
-| **Social** | `POST` | `/api/v1/social/posts/:id/comments` | Add comment or 1-level reply (auto-flattened) |
-| **Social** | `POST` | `/api/v1/social/comments/:id/like` | Toggle like on a comment |
-| **Bookings** | `POST` | `/api/v1/bookings` | Customer 5-step event booking request |
-| **Bookings** | `POST` | `/api/v1/bookings/:id/quotes` | Vendor submits event quote |
-| **Bookings** | `PATCH` | `/api/v1/bookings/:id/accept` | Accept booking request |
-| **Payments** | `POST` | `/api/v1/payments/bookings/:id/payment-intent` | Stripe payment intent for booking |
-| **Notifications**| `GET` | `/api/v1/notifications` | User notification list (All / Unread filter) |
-| **Notifications**| `GET` | `/api/v1/notifications/unread-count` | Real-time unread badge counter |
-| **Notifications**| `PATCH` | `/api/v1/notifications/read-all` | "Mark all read" button |
-| **Notifications**| `POST` | `/api/v1/users/me/device-tokens` | Register FCM push token from device |
-| **Leaderboards** | `GET` | `/api/v1/leaderboards/top-rated` | Top rated food trucks |
-| **Leaderboards** | `GET` | `/api/v1/leaderboards/trending` | Trending food trucks in city |
+| Category          | Method  | Endpoint                                       | Description                                        |
+| :---------------- | :------ | :--------------------------------------------- | :------------------------------------------------- |
+| **Auth**          | `POST`  | `/api/v1/auth/register/customer`               | Customer registration + 6-digit email OTP          |
+| **Auth**          | `POST`  | `/api/v1/auth/register/vendor`                 | Vendor registration + food truck draft creation    |
+| **Auth**          | `POST`  | `/api/v1/auth/verify-email`                    | Verifies 6-digit email code & activates account    |
+| **Auth**          | `POST`  | `/api/v1/auth/login`                           | Returns ultra-minimal auth payload & tokens        |
+| **Auth**          | `POST`  | `/api/v1/auth/logout`                          | Revokes refresh token                              |
+| **Food Trucks**   | `GET`   | `/api/v1/food-trucks/drops/nearby`             | Proximity live food truck drops                    |
+| **Food Trucks**   | `GET`   | `/api/v1/food-trucks/profile/:slug`            | Public food truck profile & active menu            |
+| **QR & Check-In** | `GET`   | `/api/v1/vendors/me/qr-code`                   | Vendor food truck QR payload & sharing link        |
+| **QR & Check-In** | `POST`  | `/api/v1/qr/:code/check-ins`                   | Smart check-in returning experience state & credit |
+| **Rewards**       | `POST`  | `/api/v1/rewards/me/redemption-codes`          | Generates 15-min token & 6-digit backup code       |
+| **Rewards**       | `POST`  | `/api/v1/vendors/me/redemptions/confirm`       | Vendor confirms redemption via QR or 6-digit code  |
+| **Social**        | `GET`   | `/api/v1/social/feed/following`                | Personalized feed from followed trucks             |
+| **Social**        | `GET`   | `/api/v1/social/feed/explore`                  | Explore feed across all trucks (newest/trending)   |
+| **Social**        | `POST`  | `/api/v1/social/posts`                         | Vendor creates post with media images              |
+| **Social**        | `POST`  | `/api/v1/social/posts/:id/like`                | Toggle like on post                                |
+| **Social**        | `POST`  | `/api/v1/social/posts/:id/share`               | Share post & increment shareCount                  |
+| **Social**        | `GET`   | `/api/v1/social/posts/:id/comments`            | Fetch comments tree with 1-level nested replies    |
+| **Social**        | `POST`  | `/api/v1/social/posts/:id/comments`            | Add comment or 1-level reply (auto-flattened)      |
+| **Social**        | `POST`  | `/api/v1/social/comments/:id/like`             | Toggle like on a comment                           |
+| **Bookings**      | `POST`  | `/api/v1/bookings`                             | Customer 5-step event booking request              |
+| **Bookings**      | `POST`  | `/api/v1/bookings/:id/quotes`                  | Vendor submits event quote                         |
+| **Bookings**      | `PATCH` | `/api/v1/bookings/:id/accept`                  | Accept booking request                             |
+| **Payments**      | `POST`  | `/api/v1/payments/bookings/:id/payment-intent` | Stripe payment intent for booking                  |
+| **Notifications** | `GET`   | `/api/v1/notifications`                        | User notification list (All / Unread filter)       |
+| **Notifications** | `GET`   | `/api/v1/notifications/unread-count`           | Real-time unread badge counter                     |
+| **Notifications** | `PATCH` | `/api/v1/notifications/read-all`               | "Mark all read" button                             |
+| **Notifications** | `POST`  | `/api/v1/users/me/device-tokens`               | Register FCM push token from device                |
+| **Leaderboards**  | `GET`   | `/api/v1/leaderboards/top-rated`               | Top rated food trucks                              |
+| **Leaderboards**  | `GET`   | `/api/v1/leaderboards/trending`                | Trending food trucks in city                       |

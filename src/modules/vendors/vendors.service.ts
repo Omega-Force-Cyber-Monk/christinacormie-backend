@@ -7,7 +7,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from 'crypto';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { CloudinaryService } from '../../infrastructure/cloudinary/cloudinary.service';
@@ -15,6 +20,8 @@ import { MailService } from '../../infrastructure/mail/mail.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CheckInsService } from '../check-ins/check-ins.service';
 import { AdminListQueryDto } from '../admin/dto/admin-list-query.dto';
+import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CompleteVendorOnboardingDto } from './dto/complete-vendor-onboarding.dto';
 import { CreateVendorStaffDto } from './dto/create-vendor-staff.dto';
 import { ResetVendorStaffPinDto } from './dto/reset-vendor-staff-pin.dto';
@@ -44,6 +51,7 @@ export class VendorsService {
     private readonly checkInsService: CheckInsService,
     private readonly mailService: MailService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async getMyVendorProfile(userId: string) {
@@ -113,7 +121,9 @@ export class VendorsService {
     });
 
     if (existingForVendor && !existingForVendor.deletedAt) {
-      throw new ConflictException('Staff member already exists for this vendor');
+      throw new ConflictException(
+        'Staff member already exists for this vendor',
+      );
     }
 
     let staffUser = await this.prisma.user.findFirst({
@@ -405,6 +415,24 @@ export class VendorsService {
       dto.notes,
     );
 
+    await this.notificationsService.notifyAdmins({
+      actorUserId: userId,
+      title: 'Vendor verification submitted',
+      message: `${vendor.businessName} submitted documents for admin review.`,
+      actionUrl: `/api/v1/admin/vendors/${vendor.id}`,
+      priority: 'HIGH',
+      metadata: {
+        eventType: NotificationEventType.VENDOR_VERIFICATION_SUBMITTED,
+        vendorId: vendor.id,
+        verificationRequestId: result.verificationRequest.id,
+      },
+      pushData: {
+        eventType: NotificationEventType.VENDOR_VERIFICATION_SUBMITTED,
+        vendorId: vendor.id,
+        verificationRequestId: result.verificationRequest.id,
+      },
+    });
+
     try {
       await this.mailService.send({
         to:
@@ -659,7 +687,9 @@ export class VendorsService {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown email delivery error';
-      this.logger.error(`Failed to deliver staff PIN email to ${email}: ${message}`);
+      this.logger.error(
+        `Failed to deliver staff PIN email to ${email}: ${message}`,
+      );
     }
   }
 

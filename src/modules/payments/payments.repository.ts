@@ -25,6 +25,19 @@ export class PaymentsRepository {
     });
   }
 
+  findPayoutById(payoutId: string) {
+    return this.prisma.payout.findUnique({
+      where: { id: payoutId },
+      include: {
+        vendor: {
+          include: { paymentAccount: true },
+        },
+        payment: true,
+        booking: true,
+      },
+    });
+  }
+
   findVendorPaymentAccountByStripeId(stripeAccountId: string) {
     return this.prisma.vendorPaymentAccount.findUnique({
       where: { stripeAccountId },
@@ -166,6 +179,7 @@ export class PaymentsRepository {
         },
         commission: true,
         payout: true,
+        refunds: true,
       },
       orderBy: { paidAt: 'desc' },
     });
@@ -364,6 +378,16 @@ export class PaymentsRepository {
     });
   }
 
+  markPayoutCancelled(payoutId: string, reason: string) {
+    return this.prisma.payout.update({
+      where: { id: payoutId },
+      data: {
+        status: 'CANCELLED' as any,
+        failureReason: reason,
+      },
+    });
+  }
+
   createRefundRecord(data: {
     paymentId: string;
     stripeRefundId?: string;
@@ -423,6 +447,19 @@ export class PaymentsRepository {
     return this.prisma.refund.update({
       where: { stripeRefundId },
       data: { status: 'FAILED' as any },
+      include: {
+        payment: {
+          include: {
+            booking: {
+              select: {
+                id: true,
+                bookingNumber: true,
+                foodTruckId: true,
+              },
+            },
+          },
+        },
+      },
     });
   }
 

@@ -15,6 +15,8 @@ Goal: Integrate Firebase push notifications for both Flutter app and web app aga
 - Keep implementation practical and production-sensible
 - Do not overengineer
 - Web and Flutter should both use the same backend token registration flow
+- For role-wise backend notification coverage and trigger list, see
+  `docs/NOTIFICATION_COVERAGE.md`.
 
 ## Backend APIs Expected
 

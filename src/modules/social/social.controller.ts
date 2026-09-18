@@ -459,6 +459,33 @@ export class SocialController {
     return this.socialService.createPost(user.sub, dto);
   }
 
+  @ApiOperation({ summary: 'Get all social posts for the authenticated vendor' })
+  @ApiResponse({
+    status: 200,
+    description: 'Authenticated vendor posts returned successfully.',
+    schema: { example: feedExample },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: { example: unauthorizedExample },
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'User is not a vendor or vendor profile is missing/not approved.',
+    schema: { example: forbiddenRoleExample },
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Get('posts/mine')
+  getMyPosts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: FeedQueryDto,
+  ) {
+    return this.socialService.getMyPosts(user.sub, query);
+  }
+
   @ApiOperation({ summary: 'Update a social post (Vendor)' })
   @ApiResponse({
     status: 200,

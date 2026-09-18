@@ -234,6 +234,38 @@ export class SocialService {
     };
   }
 
+  async getMyPosts(userId: string, dto: FeedQueryDto) {
+    const vendor = await this.socialRepository.findVendorByUserId(userId);
+
+    if (!vendor) {
+      throw new ForbiddenException('Vendor profile is required');
+    }
+
+    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+      throw new ForbiddenException(this.vendorApprovalMessage);
+    }
+
+    const limit = dto.limit ?? 20;
+    const posts = await this.socialRepository.findVendorPosts(
+      vendor.id,
+      userId,
+      dto,
+    );
+    const hasMore = posts.length > limit;
+    const items = hasMore ? posts.slice(0, limit) : posts;
+
+    return {
+      items: items.map((post: any) => ({
+        ...post,
+        isLiked: Boolean(post.likes?.length),
+        isSaved: Boolean(post.savedBy?.length),
+        likes: undefined,
+        savedBy: undefined,
+      })),
+      nextCursor: hasMore ? items[items.length - 1]?.id : null,
+    };
+  }
+
   private async ensureFoodTruckExists(foodTruckId: string) {
     const foodTruck =
       await this.socialRepository.findFoodTruckById(foodTruckId);

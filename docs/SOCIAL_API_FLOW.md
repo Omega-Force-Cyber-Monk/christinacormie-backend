@@ -153,6 +153,21 @@ Query params:
 
 Use these APIs in the vendor app when a vendor posts updates for their own food truck.
 
+### Get My Posts (Vendor Timeline)
+
+```http
+GET /api/v1/social/posts/mine?limit=20
+```
+
+Purpose: returns all social posts created by the authenticated vendor (latest first), similar to a Facebook profile feed. Includes likes count, comments count, share count, and bookmark status.
+
+Query params:
+
+| Name | Required | Values | Notes |
+|---|---:|---|---|
+| `limit` | No | `1` to `100` | Defaults to `20` |
+| `cursor` | No | UUID post id | Use response `nextCursor` for pagination |
+
 ### Create Post
 
 ```http

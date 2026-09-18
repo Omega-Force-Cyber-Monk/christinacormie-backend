@@ -20,12 +20,12 @@ enum CheckInStatus {
 }
 
 model TruckQrCode {
-  id          String      @id @default(uuid()) @db.Uuid
-  foodTruckId String      @map("food_truck_id") @db.Uuid
-  code        String      @unique @db.VarChar(255)
-  status      QrStatus    @default(ACTIVE)
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  foodTruck   FoodTruck   @relation(fields: [foodTruckId], references: [id])
+  id          String    @id @default(uuid()) @db.Uuid
+  foodTruckId String    @map("food_truck_id") @db.Uuid
+  code        String    @unique @db.VarChar(255)
+  status      QrStatus  @default(ACTIVE)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  foodTruck   FoodTruck @relation(fields: [foodTruckId], references: [id])
   qrScans     QrScan[]
 
   @@map("truck_qr_codes")

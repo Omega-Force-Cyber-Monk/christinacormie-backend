@@ -10,6 +10,8 @@ import { ModerateReviewDto } from './dto/moderate-review.dto';
 import { ReportReviewDto } from './dto/report-review.dto';
 import { ResolveReviewReportDto } from './dto/resolve-review-report.dto';
 import { VendorResponseDto } from './dto/vendor-response.dto';
+import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
+import { NotificationsService } from '../notifications/notifications.service';
 import { RewardsService } from '../rewards/rewards.service';
 import { ReviewsRepository } from './reviews.repository';
 
@@ -21,6 +23,7 @@ export class ReviewsService {
   constructor(
     private readonly reviewsRepository: ReviewsRepository,
     private readonly rewardsService: RewardsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async createReview(userId: string, dto: CreateReviewDto) {
@@ -84,7 +87,34 @@ export class ReviewsService {
 
   async reportReview(userId: string, reviewId: string, dto: ReportReviewDto) {
     await this.ensureReviewExists(reviewId);
-    return this.reviewsRepository.createReport(reviewId, userId, dto);
+    const report = await this.reviewsRepository.createReport(
+      reviewId,
+      userId,
+      dto,
+    );
+
+    await this.notificationsService.notifyAdmins({
+      actorUserId: userId,
+      title: 'Review report submitted',
+      message: 'A review was reported and needs moderation.',
+      actionUrl: `/api/v1/admin/reviews`,
+      priority: 'MEDIUM',
+      metadata: {
+        eventType: NotificationEventType.CONTENT_REPORT_SUBMITTED,
+        reportType: 'REVIEW',
+        reportId: report.id,
+        reviewId,
+        reason: report.reason,
+      },
+      pushData: {
+        eventType: NotificationEventType.CONTENT_REPORT_SUBMITTED,
+        reportType: 'REVIEW',
+        reportId: report.id,
+        reviewId,
+      },
+    });
+
+    return report;
   }
 
   async moderateReview(

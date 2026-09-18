@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -10,10 +11,15 @@ import { CreateConnectAccountDto } from './dto/create-connect-account.dto';
 import { CreateRefundDto } from './dto/create-refund.dto';
 import { PaymentsService } from './payments.service';
 
+@ApiTags('Payments')
+@ApiBearerAuth()
 @Controller('api/v1/payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
+  @ApiOperation({
+    summary: 'Create or continue vendor Stripe Connect onboarding',
+  })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post('connect/accounts')
@@ -24,6 +30,7 @@ export class PaymentsController {
     return this.paymentsService.createConnectAccount(user.sub, dto);
   }
 
+  @ApiOperation({ summary: 'Get vendor Stripe payment account details' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Get('connect/account')
@@ -31,6 +38,7 @@ export class PaymentsController {
     return this.paymentsService.getVendorPaymentAccount(user.sub);
   }
 
+  @ApiOperation({ summary: 'List payouts for the authenticated vendor' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Get('payouts/mine')
@@ -38,6 +46,9 @@ export class PaymentsController {
     return this.paymentsService.getVendorPayouts(user.sub);
   }
 
+  @ApiOperation({
+    summary: 'Create a Stripe payment intent for booking payment',
+  })
   @UseGuards(JwtAuthGuard)
   @Post('bookings/:bookingId/payment-intent')
   createBookingPaymentIntent(
@@ -52,6 +63,7 @@ export class PaymentsController {
     );
   }
 
+  @ApiOperation({ summary: 'Get booking payment details' })
   @UseGuards(JwtAuthGuard)
   @Get(':paymentId')
   getPayment(
@@ -61,6 +73,7 @@ export class PaymentsController {
     return this.paymentsService.getPayment(user.sub, paymentId);
   }
 
+  @ApiOperation({ summary: 'Create a refund for a payment (Vendor)' })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR)
   @Post(':paymentId/refunds')

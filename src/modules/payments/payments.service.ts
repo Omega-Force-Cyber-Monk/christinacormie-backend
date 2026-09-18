@@ -119,9 +119,7 @@ export class PaymentsService {
       );
     }
 
-    if (!booking.vendor.paymentAccount?.stripeAccountId) {
-      throw new BadRequestException('Vendor payment account is not ready');
-    }
+    this.ensureVendorPaymentAccountReady(booking.vendor.paymentAccount);
 
     const financials = this.resolveBookingFinancials(booking);
 
@@ -230,9 +228,8 @@ export class PaymentsService {
       throw new BadRequestException('Booking deposit payment is not completed');
     }
 
-    if (!payment.vendor.paymentAccount?.stripeAccountId) {
-      throw new BadRequestException('Vendor payment account is not ready');
-    }
+    this.ensureVendorPaymentAccountReady(payment.vendor.paymentAccount);
+    const paymentAccount = payment.vendor.paymentAccount;
 
     let payout = payment.payout;
 
@@ -254,6 +251,12 @@ export class PaymentsService {
       return payout;
     }
 
+    if (payout.status === 'CANCELLED') {
+      throw new BadRequestException(
+        'Booking payout has been cancelled and cannot be released',
+      );
+    }
+
     if (!['PENDING', 'FAILED'].includes(payout.status)) {
       throw new BadRequestException('Booking payout is already processing');
     }
@@ -271,7 +274,7 @@ export class PaymentsService {
         {
           amount: this.toMinorUnit(Number(payout.amount)),
           currency: payout.currency,
-          connectedAccountId: payment.vendor.paymentAccount.stripeAccountId,
+          connectedAccountId: paymentAccount.stripeAccountId,
           paymentId: payment.id,
           bookingId: payment.bookingId,
         },
@@ -286,6 +289,129 @@ export class PaymentsService {
       );
       throw error;
     }
+  }
+
+  async retryFailedPayout(payoutId: string) {
+    const payout = await this.paymentsRepository.findPayoutById(payoutId);
+
+    if (!payout) {
+      throw new NotFoundException('Payout not found');
+    }
+
+    if (payout.status !== 'FAILED') {
+      throw new BadRequestException('Only failed payouts can be retried');
+    }
+
+    if (!payout.paymentId || !payout.bookingId || !payout.payment) {
+      throw new BadRequestException(
+        'This payout is not linked to a booking payment and cannot be retried',
+      );
+    }
+
+    this.ensureVendorPaymentAccountReady(payout.vendor.paymentAccount);
+
+    if (Number(payout.amount) <= 0) {
+      throw new BadRequestException(
+        'Payout amount must be greater than zero before retrying',
+      );
+    }
+
+    await this.paymentsRepository.markPayoutProcessing(payout.id);
+
+    try {
+      const transfer = await this.stripeClient.createTransfer(
+        {
+          amount: this.toMinorUnit(Number(payout.amount)),
+          currency: payout.currency,
+          connectedAccountId: payout.vendor.paymentAccount!.stripeAccountId,
+          paymentId: payout.paymentId,
+          bookingId: payout.bookingId,
+        },
+        { idempotencyKey: `booking-payout-${payout.bookingId}` },
+      );
+
+      return this.paymentsRepository.markPayoutPaid(payout.id, transfer.id);
+    } catch (error: any) {
+      await this.paymentsRepository.markPayoutFailed(
+        payout.id,
+        error?.message ?? 'Stripe transfer retry failed',
+      );
+      throw error;
+    }
+  }
+
+  async refundBookingPaymentForIssue(bookingId: string, reason?: string) {
+    const payment =
+      await this.paymentsRepository.findSucceededPaymentForBooking(bookingId);
+
+    if (!payment) {
+      throw new BadRequestException('Booking deposit payment is not completed');
+    }
+
+    if (!payment.stripePaymentIntentId) {
+      throw new BadRequestException('Payment has no Stripe payment intent');
+    }
+
+    if (payment.payout?.status === 'PAID') {
+      throw new BadRequestException(
+        'Vendor payout has already been released, so this booking cannot be fully refunded through issue resolution',
+      );
+    }
+
+    if (payment.payout?.status === 'PROCESSING') {
+      throw new BadRequestException(
+        'Vendor payout is currently processing. Wait for the payout result before refunding',
+      );
+    }
+
+    if (
+      payment.refunds.some((refund) =>
+        ['PENDING', 'PROCESSING', 'REFUNDED'].includes(refund.status),
+      )
+    ) {
+      throw new BadRequestException(
+        'A refund already exists for this booking payment',
+      );
+    }
+
+    const amount = Number(payment.amount);
+    const stripeRefund = await this.stripeClient.createRefund(
+      {
+        paymentIntentId: payment.stripePaymentIntentId,
+        amount: this.toMinorUnit(amount),
+        reason: 'requested_by_customer',
+        paymentId: payment.id,
+      },
+      { idempotencyKey: `issue-full-refund-${payment.id}` },
+    );
+
+    const refund = await this.paymentsRepository.createRefundRecord({
+      paymentId: payment.id,
+      stripeRefundId: stripeRefund.id,
+      amount,
+      reason: reason ?? 'Full refund after admin issue resolution',
+      status: this.mapStripeRefundStatus(stripeRefund.status),
+    });
+
+    let cancelledPayout: any = null;
+    if (payment.payout && payment.payout.status !== 'CANCELLED') {
+      cancelledPayout = await this.paymentsRepository.markPayoutCancelled(
+        payment.payout.id,
+        'Cancelled because admin approved full refund for booking issue',
+      );
+    }
+
+    await this.notificationsService.notifyPaymentUpdate(
+      payment,
+      'Refund started',
+      `Full refund for booking ${payment.booking.bookingNumber} has started.`,
+    );
+
+    return {
+      payment,
+      refund,
+      payout: cancelledPayout ?? payment.payout,
+    };
   }
 
   async createRefund(userId: string, paymentId: string, dto: CreateRefundDto) {
@@ -534,6 +660,27 @@ export class PaymentsService {
       `Payment for booking ${updatedPayment.booking.bookingNumber} is ${status}.`,
       NotificationEventType.PAYMENT_FAILED,
     );
+
+    if (status === 'FAILED') {
+      await this.notificationsService.notifyAdmins({
+        title: 'Payment attention required',
+        message: `Payment failed for booking ${updatedPayment.booking.bookingNumber}.`,
+        bookingId: updatedPayment.bookingId,
+        actionUrl: `/api/v1/admin/bookings/${updatedPayment.bookingId}`,
+        priority: 'HIGH',
+        metadata: {
+          eventType: NotificationEventType.PAYMENT_ATTENTION_REQUIRED,
+          paymentId: updatedPayment.id,
+          bookingId: updatedPayment.bookingId,
+          status,
+        },
+        pushData: {
+          eventType: NotificationEventType.PAYMENT_ATTENTION_REQUIRED,
+          paymentId: updatedPayment.id,
+          bookingId: updatedPayment.bookingId,
+        },
+      });
+    }
   }
 
   private async handleRefundUpdated(refund: any) {
@@ -547,7 +694,30 @@ export class PaymentsService {
     }
 
     if (refund.status === 'failed') {
-      await this.paymentsRepository.markRefundFailed(refund.id);
+      const failedRefund = await this.paymentsRepository.markRefundFailed(
+        refund.id,
+      );
+
+      await this.notificationsService.notifyAdmins({
+        title: 'Refund attention required',
+        message: `Refund failed for booking ${failedRefund.payment.booking.bookingNumber}.`,
+        bookingId: failedRefund.payment.bookingId,
+        actionUrl: `/api/v1/admin/bookings/${failedRefund.payment.bookingId}`,
+        priority: 'HIGH',
+        metadata: {
+          eventType: NotificationEventType.PAYMENT_ATTENTION_REQUIRED,
+          refundId: failedRefund.id,
+          paymentId: failedRefund.paymentId,
+          bookingId: failedRefund.payment.bookingId,
+          status: failedRefund.status,
+        },
+        pushData: {
+          eventType: NotificationEventType.PAYMENT_ATTENTION_REQUIRED,
+          refundId: failedRefund.id,
+          paymentId: failedRefund.paymentId,
+          bookingId: failedRefund.payment.bookingId,
+        },
+      });
     }
   }
 
@@ -563,6 +733,36 @@ export class PaymentsService {
     }
 
     return vendor;
+  }
+
+  private ensureVendorPaymentAccountReady(
+    paymentAccount?: {
+      stripeAccountId?: string | null;
+      onboardingCompleted?: boolean | null;
+      chargesEnabled?: boolean | null;
+      payoutsEnabled?: boolean | null;
+    } | null,
+  ): asserts paymentAccount is {
+    stripeAccountId: string;
+    onboardingCompleted: true;
+    chargesEnabled: true;
+    payoutsEnabled: true;
+  } {
+    if (!paymentAccount?.stripeAccountId) {
+      throw new BadRequestException(
+        'Vendor payout setup is incomplete. The vendor must connect Stripe before customer payment can be accepted.',
+      );
+    }
+
+    if (
+      !paymentAccount.onboardingCompleted ||
+      !paymentAccount.chargesEnabled ||
+      !paymentAccount.payoutsEnabled
+    ) {
+      throw new BadRequestException(
+        'Vendor payout setup is not ready. The vendor must complete Stripe onboarding and enable payouts before customer payment can be accepted.',
+      );
+    }
   }
 
   private calculateCommission(amount: number) {

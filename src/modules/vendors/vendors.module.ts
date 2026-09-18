@@ -4,12 +4,18 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CloudinaryModule } from '../../infrastructure/cloudinary/cloudinary.module';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CheckInsModule } from '../check-ins/check-ins.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { VendorsController } from './vendors.controller';
 import { VendorsRepository } from './vendors.repository';
 import { VendorsService } from './vendors.service';
 
 @Module({
-  imports: [JwtModule.register({}), CheckInsModule, CloudinaryModule],
+  imports: [
+    JwtModule.register({}),
+    CheckInsModule,
+    CloudinaryModule,
+    NotificationsModule,
+  ],
   controllers: [VendorsController],
   providers: [VendorsService, VendorsRepository, JwtAuthGuard, RolesGuard],
   exports: [VendorsService],
