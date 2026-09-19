@@ -26,9 +26,11 @@ import { CompleteVendorOnboardingDto } from './dto/complete-vendor-onboarding.dt
 import { CreateVendorStaffDto } from './dto/create-vendor-staff.dto';
 import { ResetVendorStaffPinDto } from './dto/reset-vendor-staff-pin.dto';
 import { SubmitVerificationRequestDto } from './dto/submit-verification-request.dto';
+import { UpdateCreditSettingsDto } from './dto/update-credit-settings.dto';
 import { UpdatePhotoShootRequestDto } from './dto/update-photo-shoot-request.dto';
 import { VendorVerificationDocumentType } from './enums/vendor-verification-document-type.enum';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
+import { VendorCreditAnalyticsQueryDto } from './dto/vendor-credit-analytics-query.dto';
 import {
   NON_TEXAS_VENDOR_DOCUMENT_REQUIREMENTS,
   TEXAS_STATES,
@@ -511,6 +513,131 @@ export class VendorsService {
     return this.vendorsRepository.getVendorAnalytics(vendor.id);
   }
 
+  async getMyCreditAnalytics(
+    userId: string,
+    query: VendorCreditAnalyticsQueryDto,
+  ) {
+    const vendor = await this.getMyVendorProfile(userId);
+    this.ensureVendorApproved(vendor);
+
+    const range = query.range ?? 'week';
+    const { start, end, previousStart, previousEnd, days } =
+      this.creditAnalyticsRange(range);
+
+    const foodTrucks = await this.vendorsRepository.findActiveFoodTruckIds(
+      vendor.id,
+      query.foodTruckId,
+    );
+
+    if (query.foodTruckId && !foodTrucks.length) {
+      throw new ForbiddenException('Food truck does not belong to this vendor');
+    }
+
+    const foodTruckIds = foodTrucks.map((truck) => truck.id);
+    const monthStart = new Date(
+      Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1),
+    );
+
+    const [
+      qrRows,
+      totalFollowers,
+      followersThisMonth,
+      followerRows,
+      topLocationRows,
+      redemptionSummary,
+      recentRedemptions,
+    ] = await Promise.all([
+      this.vendorsRepository.getQrScanDailyChart(foodTruckIds, start, end),
+      this.vendorsRepository.countFollowers(foodTruckIds),
+      this.vendorsRepository.countFollowersSince(foodTruckIds, monthStart),
+      this.vendorsRepository.getFollowerWeeklyChart(foodTruckIds, start, end),
+      this.vendorsRepository.getTopScanLocations(foodTruckIds, start, end),
+      this.vendorsRepository.getCreditRedemptionSummary(
+        vendor.id,
+        start,
+        end,
+        previousStart,
+        previousEnd,
+      ),
+      this.vendorsRepository.findRecentCreditRedemptions(vendor.id, 5),
+    ]);
+
+    const qrChart = this.buildDailyChart(qrRows, start, days);
+    const followerChart = this.buildFollowerChart(
+      followerRows,
+      totalFollowers,
+      followersThisMonth,
+      range,
+    );
+    const changeVsLastWeekPercent = this.percentChange(
+      redemptionSummary.currentCount,
+      redemptionSummary.previousCount,
+    );
+
+    return {
+      creditAcceptance: this.presentCreditAcceptance(vendor),
+      qrScans: {
+        totalThisWeek: qrChart.reduce((sum, item) => sum + item.count, 0),
+        chart: qrChart,
+      },
+      followers: {
+        total: totalFollowers,
+        changeThisMonth: followersThisMonth,
+        chart: followerChart,
+      },
+      topDropLocations: topLocationRows.map((row) => {
+        const latitude =
+          row.latitude === null ? null : Number(row.latitude);
+        const longitude =
+          row.longitude === null ? null : Number(row.longitude);
+
+        return {
+          label:
+            latitude === null || longitude === null
+              ? 'Unknown location'
+              : `Lat ${latitude.toFixed(2)}, Lng ${longitude.toFixed(2)}`,
+          scanCount: Number(row.scanCount),
+          latitude,
+          longitude,
+        };
+      }),
+      creditRedemptions: {
+        totalRedeemedCount: redemptionSummary.currentCount,
+        totalCreditApplied: redemptionSummary.currentCredit,
+        averagePerDay:
+          days === 0
+            ? 0
+            : Number((redemptionSummary.currentCount / days).toFixed(1)),
+        changeVsLastWeekPercent,
+        recent: recentRedemptions.map((redemption) => ({
+          id: redemption.id,
+          customerName: this.userDisplayName(redemption.user),
+          method: redemption.redemptionMethod ?? 'UNKNOWN',
+          amount: Number(redemption.rewardValue ?? 0),
+          createdAt: redemption.usedAt ?? redemption.redeemedAt,
+        })),
+      },
+    };
+  }
+
+  async updateMyCreditSettings(
+    userId: string,
+    dto: UpdateCreditSettingsDto,
+  ) {
+    const vendor = await this.getVendorOwnerProfile(userId);
+    this.ensureVendorApproved(vendor);
+
+    const updated = await this.vendorsRepository.updateCreditSettings(
+      vendor.id,
+      dto.creditAcceptanceEnabled,
+    );
+
+    return {
+      message: 'Credit acceptance updated successfully',
+      creditAcceptance: this.presentCreditAcceptance(updated),
+    };
+  }
+
   async uploadOnboardingAsset(userId: string, file: Express.Multer.File) {
     await this.getMyVendorProfile(userId);
     this.ensureCloudinaryReady();
@@ -742,6 +869,102 @@ export class VendorsService {
     if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
+  }
+
+  private presentCreditAcceptance(vendor: {
+    creditAcceptanceEnabled?: boolean | null;
+    creditAcceptanceUpdatedAt?: Date | null;
+  }) {
+    const enabled = vendor.creditAcceptanceEnabled !== false;
+
+    return {
+      enabled,
+      statusLabel: enabled ? 'Currently Accepting' : 'Not Accepting',
+      updatedAt: vendor.creditAcceptanceUpdatedAt ?? null,
+    };
+  }
+
+  private creditAnalyticsRange(range: 'week' | 'month') {
+    const now = new Date();
+    const end = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate() + 1,
+      ),
+    );
+    const days = range === 'month' ? 28 : 7;
+    const start = new Date(end);
+    start.setUTCDate(end.getUTCDate() - days);
+    const previousEnd = new Date(start);
+    const previousStart = new Date(previousEnd);
+    previousStart.setUTCDate(previousEnd.getUTCDate() - days);
+
+    return { start, end, previousStart, previousEnd, days };
+  }
+
+  private buildDailyChart(
+    rows: Array<{ dayIndex: number; count: bigint }>,
+    start: Date,
+    days: number,
+  ) {
+    const counts = new Map(
+      rows.map((row) => [Number(row.dayIndex), Number(row.count)]),
+    );
+    const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    return Array.from({ length: days }, (_, index) => {
+      const date = new Date(start);
+      date.setUTCDate(start.getUTCDate() + index);
+
+      return {
+        label:
+          days === 7
+            ? weekdayLabels[date.getUTCDay()]
+            : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`,
+        count: counts.get(index) ?? 0,
+      };
+    });
+  }
+
+  private buildFollowerChart(
+    rows: Array<{ weekIndex: number; count: bigint }>,
+    totalFollowers: number,
+    followersThisMonth: number,
+    range: 'week' | 'month',
+  ) {
+    const buckets = range === 'month' ? 4 : 1;
+    const newFollowerCounts = new Map(
+      rows.map((row) => [Number(row.weekIndex), Number(row.count)]),
+    );
+    let runningTotal = Math.max(totalFollowers - followersThisMonth, 0);
+
+    return Array.from({ length: buckets }, (_, index) => {
+      runningTotal += newFollowerCounts.get(index) ?? 0;
+
+      return {
+        label: `W${index + 1}`,
+        count: runningTotal,
+      };
+    });
+  }
+
+  private percentChange(current: number, previous: number) {
+    if (previous === 0) {
+      return current > 0 ? 100 : 0;
+    }
+
+    return Number((((current - previous) / previous) * 100).toFixed(1));
+  }
+
+  private userDisplayName(user: any) {
+    const profile = user?.profile;
+    const fullName = [profile?.firstName, profile?.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return profile?.displayName || fullName || user?.email || 'Customer';
   }
 
   private ensureCloudinaryReady() {

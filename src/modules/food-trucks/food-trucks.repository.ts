@@ -18,6 +18,7 @@ import { UpdateGuestCapacityDto } from './dto/update-guest-capacity.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 import { UpdateOperatingStatusDto } from './dto/update-operating-status.dto';
+import { UpdateFoodTruckProfileSettingsDto } from './dto/update-profile-settings.dto';
 import { UpdateTruckLocationDto } from './dto/update-truck-location.dto';
 import { UpdateTruckImageDto } from './dto/update-truck-image.dto';
 
@@ -40,6 +41,16 @@ export class FoodTrucksRepository {
     return this.prisma.foodTruck.findUnique({
       where: { id },
       include: this.foodTruckInclude(),
+    });
+  }
+
+  findByHandle(handle: string, excludeFoodTruckId?: string) {
+    return this.prisma.foodTruck.findFirst({
+      where: {
+        handle,
+        ...(excludeFoodTruckId ? { id: { not: excludeFoodTruckId } } : {}),
+      },
+      select: { id: true },
     });
   }
 
@@ -160,6 +171,138 @@ export class FoodTrucksRepository {
       where: { id: foodTruckId },
       data,
       include: this.foodTruckInclude(),
+    });
+  }
+
+  async updateProfileSettings(
+    foodTruckId: string,
+    dto: UpdateFoodTruckProfileSettingsDto & { handle?: string },
+  ) {
+    const data: any = {
+      updatedAt: new Date(),
+    };
+
+    if (dto.name !== undefined) {
+      data.name = dto.name;
+      data.slug = await this.createUniqueSlug(dto.name, foodTruckId);
+    }
+
+    if (dto.handle !== undefined) {
+      data.handle = dto.handle;
+    }
+
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.profileImageUrl !== undefined)
+      data.profileImageUrl = dto.profileImageUrl;
+    if (dto.coverImageUrl !== undefined) data.coverImageUrl = dto.coverImageUrl;
+    if (dto.maximumGuestCapacity !== undefined)
+      data.maximumGuestCapacity = dto.maximumGuestCapacity;
+    if (dto.minimumBookingAmount !== undefined)
+      data.minimumBookingAmount = dto.minimumBookingAmount;
+
+    return this.prisma.$transaction(async (tx) => {
+      if (Object.keys(data).length > 1) {
+        await tx.foodTruck.update({
+          where: { id: foodTruckId },
+          data,
+        });
+      }
+
+      if (dto.cuisines) {
+        await tx.foodTruckCuisine.deleteMany({
+          where: { foodTruckId },
+        });
+
+        for (const cuisineInput of dto.cuisines) {
+          const cuisineId =
+            cuisineInput.cuisineId ??
+            (
+              await tx.cuisine.upsert({
+                where: { slug: slugify(cuisineInput.name ?? '') },
+                create: {
+                  name: cuisineInput.name!,
+                  slug: slugify(cuisineInput.name!),
+                  pinColor: cuisineInput.pinColor,
+                },
+                update: {
+                  pinColor: cuisineInput.pinColor,
+                },
+              })
+            ).id;
+
+          await tx.foodTruckCuisine.create({
+            data: {
+              foodTruckId,
+              cuisineId,
+              isPrimary: cuisineInput.isPrimary ?? false,
+            },
+          });
+        }
+      }
+
+      if (dto.operatingHours) {
+        await tx.truckOperatingHour.deleteMany({
+          where: { foodTruckId },
+        });
+
+        if (dto.operatingHours.length) {
+          await tx.truckOperatingHour.createMany({
+            data: dto.operatingHours.map((hour) => ({
+              foodTruckId,
+              dayOfWeek: hour.dayOfWeek,
+              openingTime: hour.openingTime
+                ? this.toTimeDate(hour.openingTime)
+                : null,
+              closingTime: hour.closingTime
+                ? this.toTimeDate(hour.closingTime)
+                : null,
+              isClosed: hour.isClosed,
+            })),
+          });
+        }
+      }
+
+      if (dto.serviceArea) {
+        await tx.serviceArea.updateMany({
+          where: {
+            foodTruckId,
+            isActive: true,
+          },
+          data: {
+            isActive: false,
+          },
+        });
+
+        await tx.$queryRaw`
+          INSERT INTO service_areas (
+            id,
+            food_truck_id,
+            name,
+            center_address,
+            center_location,
+            radius_km,
+            outside_radius_allowed,
+            outside_radius_fee,
+            is_active
+          )
+          VALUES (
+            gen_random_uuid(),
+            ${foodTruckId}::uuid,
+            ${dto.serviceArea.name ?? null},
+            ${dto.serviceArea.centerAddress ?? null},
+            ST_SetSRID(ST_MakePoint(${dto.serviceArea.longitude}, ${dto.serviceArea.latitude}), 4326)::geography,
+            ${dto.serviceArea.radiusKm},
+            ${dto.serviceArea.outsideRadiusAllowed ?? false},
+            ${dto.serviceArea.outsideRadiusFee ?? 0},
+            true
+          )
+        `;
+      }
+
+      return tx.foodTruck.findUnique({
+        where: { id: foodTruckId },
+        include: this.foodTruckInclude(),
+      });
     });
   }
 
