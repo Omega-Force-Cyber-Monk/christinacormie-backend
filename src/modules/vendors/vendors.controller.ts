@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -31,8 +32,10 @@ import { CreateVendorStaffDto } from './dto/create-vendor-staff.dto';
 import { RejectVendorDto } from './dto/reject-vendor.dto';
 import { ResetVendorStaffPinDto } from './dto/reset-vendor-staff-pin.dto';
 import { SubmitVerificationRequestDto } from './dto/submit-verification-request.dto';
+import { UpdateCreditSettingsDto } from './dto/update-credit-settings.dto';
 import { UpdatePhotoShootRequestDto } from './dto/update-photo-shoot-request.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
+import { VendorCreditAnalyticsQueryDto } from './dto/vendor-credit-analytics-query.dto';
 import { VendorsService } from './vendors.service';
 
 const errorExample = (
@@ -148,6 +151,68 @@ const vendorAnalyticsExample = {
       followerCount: 12500,
     },
   ],
+};
+
+const vendorCreditAnalyticsExample = {
+  creditAcceptance: {
+    enabled: true,
+    statusLabel: 'Currently Accepting',
+    updatedAt: '2026-09-19T10:00:00.000Z',
+  },
+  qrScans: {
+    totalThisWeek: 585,
+    chart: [
+      { label: 'Mon', count: 45 },
+      { label: 'Tue', count: 60 },
+      { label: 'Wed', count: 55 },
+      { label: 'Thu', count: 90 },
+      { label: 'Fri', count: 75 },
+      { label: 'Sat', count: 120 },
+      { label: 'Sun', count: 140 },
+    ],
+  },
+  followers: {
+    total: 1240,
+    changeThisMonth: 260,
+    chart: [
+      { label: 'W1', count: 980 },
+      { label: 'W2', count: 1060 },
+      { label: 'W3', count: 1120 },
+      { label: 'W4', count: 1240 },
+    ],
+  },
+  topDropLocations: [
+    {
+      label: 'Lat 37.78, Lng -122.41',
+      scanCount: 156,
+      latitude: 37.78,
+      longitude: -122.41,
+    },
+  ],
+  creditRedemptions: {
+    totalRedeemedCount: 125,
+    totalCreditApplied: 625,
+    averagePerDay: 17.9,
+    changeVsLastWeekPercent: 18,
+    recent: [
+      {
+        id: 'redemption-uuid',
+        customerName: 'Maria Chen',
+        method: 'QR_SCAN',
+        amount: 5,
+        createdAt: '2026-09-19T14:14:00.000Z',
+      },
+    ],
+  },
+};
+
+const vendorCreditSettingsExample = {
+  message: 'Credit acceptance updated successfully',
+  creditAcceptance: {
+    enabled: false,
+    statusLabel: 'Not Accepting',
+    updatedAt: '2026-09-19T10:00:00.000Z',
+  },
 };
 
 const uploadResponseExample = {
@@ -466,6 +531,85 @@ export class VendorsController {
   @Get('api/v1/vendors/me/analytics')
   getMyVendorAnalytics(@CurrentUser() user: AuthenticatedUser) {
     return this.vendorsService.getMyVendorAnalytics(user.sub);
+  }
+
+  @ApiOperation({
+    summary: 'Get vendor BiteDrop Credits analytics and acceptance status',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'BiteDrop Credits analytics returned successfully.',
+    schema: { example: vendorCreditAnalyticsExample },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: { example: unauthorizedExample },
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Vendor is not approved, or requested food truck does not belong to vendor.',
+    schema: {
+      examples: {
+        vendorNotApproved: {
+          summary: 'Vendor not approved',
+          value: vendorApprovalErrorExample,
+        },
+        wrongFoodTruck: {
+          summary: 'Food truck belongs to another vendor',
+          value: errorExample(
+            403,
+            'Food truck does not belong to this vendor',
+            'Forbidden',
+          ),
+        },
+      },
+    },
+  })
+  @Roles(UserRole.VENDOR)
+  @Get('api/v1/vendors/me/credits/analytics')
+  getMyCreditAnalytics(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: VendorCreditAnalyticsQueryDto,
+  ) {
+    return this.vendorsService.getMyCreditAnalytics(user.sub, query);
+  }
+
+  @ApiOperation({ summary: 'Turn vendor BiteDrop Credits acceptance on or off' })
+  @ApiResponse({
+    status: 200,
+    description: 'Credit acceptance updated successfully.',
+    schema: { example: vendorCreditSettingsExample },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Request body validation failed.',
+    schema: {
+      example: errorExample(
+        400,
+        ['creditAcceptanceEnabled must be a boolean value'],
+        'Bad Request',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: { example: unauthorizedExample },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Vendor is not approved or authenticated user is not owner.',
+    schema: { example: vendorApprovalErrorExample },
+  })
+  @Roles(UserRole.VENDOR)
+  @Patch('api/v1/vendors/me/credits/settings')
+  updateMyCreditSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateCreditSettingsDto,
+  ) {
+    return this.vendorsService.updateMyCreditSettings(user.sub, dto);
   }
 
   @ApiOperation({ summary: 'Update my vendor business profile' })

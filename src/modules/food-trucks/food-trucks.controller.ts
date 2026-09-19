@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBody,
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
@@ -40,6 +41,7 @@ import { UpdateGuestCapacityDto } from './dto/update-guest-capacity.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 import { UpdateOperatingStatusDto } from './dto/update-operating-status.dto';
+import { UpdateFoodTruckProfileSettingsDto } from './dto/update-profile-settings.dto';
 import { UpdateTruckLocationDto } from './dto/update-truck-location.dto';
 import { UpdateTruckImageDto } from './dto/update-truck-image.dto';
 import { FoodTrucksService } from './food-trucks.service';
@@ -83,6 +85,7 @@ const foodTruckExample = {
   truckType: 'FOOD_TRUCK',
   primaryCity: 'Austin',
   slug: 'taco-paradise',
+  handle: 'tacoparadise',
   description: 'Authentic gourmet street tacos & fresh salsas',
   profileImageUrl: 'https://cdn.bitedrop.com/trucks/taco-paradise.jpg',
   coverImageUrl: 'https://cdn.bitedrop.com/trucks/taco-paradise-cover.jpg',
@@ -105,6 +108,45 @@ const foodTruckExample = {
   cuisines: [{ cuisine: cuisineExample, isPrimary: true }],
   serviceAreas: [],
   menus: [],
+};
+
+const profileSettingsBodyExample = {
+  name: 'Fuego Tacos 🔥',
+  handle: 'fuegotacos',
+  description: 'Mexican street food',
+  profileImageUrl: 'https://cdn.bitedrop.com/trucks/fuego-profile.jpg',
+  maximumGuestCapacity: 100,
+  serviceArea: {
+    name: 'San Francisco',
+    centerAddress: 'San Francisco, CA',
+    latitude: 37.7749,
+    longitude: -122.4194,
+    radiusKm: 25,
+    outsideRadiusAllowed: false,
+    outsideRadiusFee: 0,
+  },
+  operatingHours: [
+    {
+      dayOfWeek: 1,
+      isClosed: false,
+      openingTime: '11:00',
+      closingTime: '21:00',
+    },
+    {
+      dayOfWeek: 0,
+      isClosed: true,
+    },
+  ],
+  cuisines: [
+    {
+      cuisineId: 'cuisine-id',
+      isPrimary: true,
+    },
+    {
+      name: 'BBQ & Grills',
+      isPrimary: false,
+    },
+  ],
 };
 
 const publicProfileExample = {
@@ -468,6 +510,95 @@ export class FoodTrucksController {
     @Body() dto: UpdateDraftFoodTruckDto,
   ) {
     return this.foodTrucksService.updateDraft(user.sub, foodTruckId, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Update edit-profile screen settings in one request (Vendor)',
+    description:
+      'Screen-specific save endpoint for profile picture URL, truck name, @handle, moto/description, service area, operating hours, guest capacity, and cuisines. Existing smaller endpoints remain available.',
+  })
+  @ApiBearerAuth()
+  @ApiBody({
+    type: UpdateFoodTruckProfileSettingsDto,
+    examples: {
+      fullScreenSave: {
+        summary: 'Save all edit profile sections',
+        value: profileSettingsBodyExample,
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Food truck profile settings updated successfully.',
+    schema: {
+      example: {
+        ...foodTruckExample,
+        name: 'Fuego Tacos 🔥',
+        handle: 'fuegotacos',
+        description: 'Mexican street food',
+        maximumGuestCapacity: 100,
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Handle is already taken, cuisines/hours are invalid, or body validation failed.',
+    schema: {
+      examples: {
+        handleTaken: {
+          summary: 'Handle already taken',
+          value: errorExample(
+            400,
+            'This food truck handle is already taken',
+            'Bad Request',
+          ),
+        },
+        duplicateHours: {
+          summary: 'Duplicate operating day',
+          value: errorExample(
+            400,
+            'Operating hours contain duplicate days',
+            'Bad Request',
+          ),
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: { example: unauthorizedExample },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Food truck belongs to another vendor.',
+    schema: {
+      example: errorExample(
+        403,
+        'Food truck does not belong to this vendor',
+        'Forbidden',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Food truck was not found.',
+    schema: { example: errorExample(404, 'Food truck not found', 'Not Found') },
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Patch(':id/profile-settings')
+  updateProfileSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') foodTruckId: string,
+    @Body() dto: UpdateFoodTruckProfileSettingsDto,
+  ) {
+    return this.foodTrucksService.updateProfileSettings(
+      user.sub,
+      foodTruckId,
+      dto,
+    );
   }
 
   @ApiOperation({ summary: 'Set cuisines for a food truck (Vendor)' })
