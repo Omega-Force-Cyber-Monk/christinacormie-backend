@@ -26,6 +26,15 @@ export class ReviewsRepository {
     });
   }
 
+  findRedemptionForReview(redemptionId: string) {
+    return this.prisma.rewardRedemption.findUnique({
+      where: { id: redemptionId },
+      include: {
+        review: true,
+      },
+    });
+  }
+
   findReviewById(reviewId: string) {
     return this.prisma.review.findUnique({
       where: { id: reviewId },
@@ -33,7 +42,11 @@ export class ReviewsRepository {
     });
   }
 
-  async createReview(customerId: string, booking: any, dto: CreateReviewDto) {
+  async createReviewForBooking(
+    customerId: string,
+    booking: any,
+    dto: CreateReviewDto,
+  ) {
     const review = await this.prisma.review.create({
       data: {
         bookingId: booking.id,
@@ -49,6 +62,30 @@ export class ReviewsRepository {
     });
 
     await this.refreshTrustScores(booking.foodTruckId, booking.vendorId);
+
+    return review;
+  }
+
+  async createReviewForRedemption(
+    customerId: string,
+    redemption: any,
+    dto: CreateReviewDto,
+  ) {
+    const review = await this.prisma.review.create({
+      data: {
+        redemptionId: redemption.id,
+        customerId,
+        vendorId: redemption.vendorId,
+        foodTruckId: redemption.foodTruckId,
+        rating: dto.rating,
+        title: dto.title,
+        content: dto.content,
+        isVerified: true,
+      },
+      include: this.reviewInclude(),
+    });
+
+    await this.refreshTrustScores(redemption.foodTruckId, redemption.vendorId);
 
     return review;
   }
@@ -200,6 +237,15 @@ export class ReviewsRepository {
           bookingNumber: true,
           status: true,
           completedAt: true,
+        },
+      },
+      redemption: {
+        select: {
+          id: true,
+          status: true,
+          rewardValue: true,
+          usedAt: true,
+          redemptionMethod: true,
         },
       },
       customer: {

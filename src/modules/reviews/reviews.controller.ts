@@ -134,12 +134,13 @@ export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
 
   @ApiOperation({
-    summary: 'Create a review for a completed booking (Customer)',
+    summary:
+      'Create a review for a completed booking or confirmed redemption (Customer)',
   })
   @ApiResponse({
     status: 201,
     description:
-      'Review created successfully for a completed booking. Customer receives review points.',
+      'Review created successfully for a completed booking or confirmed vendor redemption. Customer receives review points.',
     schema: { example: reviewExample },
   })
   @ApiResponse({

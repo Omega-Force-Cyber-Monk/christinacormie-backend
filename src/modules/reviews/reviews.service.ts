@@ -27,8 +27,28 @@ export class ReviewsService {
   ) {}
 
   async createReview(userId: string, dto: CreateReviewDto) {
+    if (dto.bookingId && dto.redemptionId) {
+      throw new BadRequestException(
+        'Provide either bookingId or redemptionId, not both',
+      );
+    }
+
+    if (!dto.bookingId && !dto.redemptionId) {
+      throw new BadRequestException(
+        'Either bookingId or redemptionId must be provided',
+      );
+    }
+
+    if (dto.redemptionId) {
+      return this.createRedemptionReview(userId, dto);
+    }
+
+    return this.createBookingReview(userId, dto);
+  }
+
+  private async createBookingReview(userId: string, dto: CreateReviewDto) {
     const booking = await this.reviewsRepository.findBookingForReview(
-      dto.bookingId,
+      dto.bookingId!,
     );
 
     if (!booking) {
@@ -48,7 +68,7 @@ export class ReviewsService {
     }
 
     try {
-      const review = await this.reviewsRepository.createReview(
+      const review = await this.reviewsRepository.createReviewForBooking(
         userId,
         booking,
         dto,
@@ -60,6 +80,56 @@ export class ReviewsService {
     } catch (error: any) {
       if (error?.code === 'P2002') {
         throw new ConflictException('Booking already has a review');
+      }
+
+      throw error;
+    }
+  }
+
+  private async createRedemptionReview(userId: string, dto: CreateReviewDto) {
+    const redemption = await this.reviewsRepository.findRedemptionForReview(
+      dto.redemptionId!,
+    );
+
+    if (!redemption) {
+      throw new NotFoundException('Redemption not found');
+    }
+
+    if (redemption.userId !== userId) {
+      throw new ForbiddenException(
+        'Redemption does not belong to this customer',
+      );
+    }
+
+    if (redemption.status !== 'COMPLETED' || !redemption.usedAt) {
+      throw new BadRequestException(
+        'Only confirmed redemptions can be reviewed',
+      );
+    }
+
+    if (!redemption.vendorId || !redemption.foodTruckId) {
+      throw new BadRequestException(
+        'Redemption is missing vendor or food truck information',
+      );
+    }
+
+    if (redemption.review) {
+      throw new ConflictException('Redemption already has a review');
+    }
+
+    try {
+      const review = await this.reviewsRepository.createReviewForRedemption(
+        userId,
+        redemption,
+        dto,
+      );
+
+      await this.rewardsService.awardPoints(userId, 'REVIEW', review.id);
+
+      return review;
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        throw new ConflictException('Redemption already has a review');
       }
 
       throw error;

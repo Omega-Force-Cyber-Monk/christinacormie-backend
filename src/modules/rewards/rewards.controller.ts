@@ -169,6 +169,20 @@ const rewardRuleExample = {
   isActive: true,
 };
 
+const confirmedRedemptionsForReviewExample = [
+  {
+    id: '32fbf1d1-e474-4f91-b690-2da2f182c5a3',
+    foodTruckId: '2a9ad60b-2ac1-44c9-b3f4-f9d7d10c3901',
+    foodTruckName: 'Taco Paradise',
+    vendorId: '12441f40-2dc9-456d-948a-c33135359c70',
+    amountApplied: 5,
+    confirmedAt: '2026-09-19T10:30:00.000Z',
+    redemptionMethod: 'MANUAL_CODE',
+    alreadyReviewed: false,
+    reviewId: null,
+  },
+];
+
 const rewardRedemptionExample = {
   id: 'reward-redemption-id',
   rewardRuleId: 'reward-rule-id',
@@ -279,6 +293,29 @@ export class RewardsController {
   @Get('api/v1/rewards/me/profile-summary')
   getMyProfileSummary(@CurrentUser() user: AuthenticatedUser) {
     return this.rewardsService.getMyProfileSummary(user.sub);
+  }
+
+  @ApiOperation({
+    summary:
+      'List my confirmed BiteDrop credit redemptions that can be reviewed',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Confirmed vendor-verified redemptions for the authenticated customer, including whether a review already exists.',
+    schema: { example: confirmedRedemptionsForReviewExample },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: { example: unauthorizedExample },
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get('api/v1/rewards/me/redemptions')
+  listMyConfirmedRedemptionsForReview(
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.rewardsService.listMyConfirmedRedemptionsForReview(user.sub);
   }
 
   @ApiOperation({ summary: 'List available reward rules' })
