@@ -80,7 +80,7 @@ const vendorSubscriptionExample = {
   vendor: {
     id: '3f4c4f1e-09d0-4f3c-9b8d-3a4dc3a3f7b2',
     selectedPlan: 'STARTER',
-    subscriptionStatus: 'TRIALING',
+    subscriptionStatus: 'INCOMPLETE',
     stripeCustomerId: 'cus_1QYpK2BiteDropDemo',
     stripeSubscriptionId: 'sub_1QYpK2BiteDropDemo',
     trialStartedAt: '2026-09-19T10:00:00.000Z',

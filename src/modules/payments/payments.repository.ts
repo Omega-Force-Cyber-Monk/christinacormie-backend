@@ -18,6 +18,12 @@ export class PaymentsRepository {
     });
   }
 
+  findVendorByStripeCustomerId(stripeCustomerId: string) {
+    return this.prisma.vendor.findUnique({
+      where: { stripeCustomerId },
+    });
+  }
+
   updateVendorStripeCustomer(vendorId: string, stripeCustomerId: string) {
     return this.prisma.vendor.update({
       where: { id: vendorId },

@@ -113,7 +113,6 @@ export class PaymentsService {
       );
     }
 
-    const priceId = this.resolveVendorStripePriceId(dto.plan);
     const customerId =
       vendor.stripeCustomerId ??
       (
@@ -134,6 +133,33 @@ export class PaymentsService {
       );
     }
 
+    if (
+      vendor.stripeSubscriptionId &&
+      vendor.selectedPlan === dto.plan &&
+      ['INCOMPLETE', 'PAST_DUE', 'UNPAID'].includes(
+        vendor.subscriptionStatus,
+      )
+    ) {
+      const [ephemeralKey, subscription] = await Promise.all([
+        this.stripeClient.createEphemeralKey(customerId),
+        this.stripeClient.retrieveSubscription(vendor.stripeSubscriptionId),
+      ]);
+
+      const updatedVendor = await this.syncVendorSubscriptionFromStripe(
+        vendor.id,
+        subscription,
+        dto.plan,
+      );
+
+      return this.buildVendorSubscriptionIntentResponse(
+        updatedVendor,
+        customerId,
+        ephemeralKey.secret,
+        subscription,
+      );
+    }
+
+    const priceId = this.resolveVendorStripePriceId(dto.plan);
     const [ephemeralKey, subscription] = await Promise.all([
       this.stripeClient.createEphemeralKey(customerId),
       this.stripeClient.createSubscription(
@@ -148,9 +174,8 @@ export class PaymentsService {
       ),
     ]);
 
-    const subscriptionStatus = this.mapStripeSubscriptionStatus(
-      subscription.status,
-    );
+    const subscriptionStatus =
+      this.resolveVendorSubscriptionStatus(subscription);
     const trialStartedAt = this.fromStripeTimestamp(subscription.trial_start);
     const trialEndsAt = this.fromStripeTimestamp(subscription.trial_end);
     const currentPeriodEnd = this.fromStripeTimestamp(
@@ -168,32 +193,12 @@ export class PaymentsService {
         subscriptionCurrentPeriodEnd: currentPeriodEnd,
       });
 
-    const clientSecret = this.resolveSubscriptionClientSecret(subscription);
-
-    return {
-      vendor: {
-        id: updatedVendor.id,
-        selectedPlan: updatedVendor.selectedPlan,
-        subscriptionStatus: updatedVendor.subscriptionStatus,
-        stripeCustomerId: updatedVendor.stripeCustomerId,
-        stripeSubscriptionId: updatedVendor.stripeSubscriptionId,
-        trialStartedAt: updatedVendor.trialStartedAt,
-        trialEndsAt: updatedVendor.trialEndsAt,
-        subscriptionCurrentPeriodEnd:
-          updatedVendor.subscriptionCurrentPeriodEnd,
-        isFoundingMember: updatedVendor.isFoundingMember,
-        foundingDiscountEndsAt: updatedVendor.foundingDiscountEndsAt,
-        lockedCommissionRate: updatedVendor.lockedCommissionRate,
-      },
-      stripe: {
-        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null,
-        customerId,
-        customerEphemeralKeySecret: ephemeralKey.secret,
-        subscriptionId: subscription.id,
-        clientSecret,
-        clientSecretType: this.resolveSubscriptionClientSecretType(subscription),
-      },
-    };
+    return this.buildVendorSubscriptionIntentResponse(
+      updatedVendor,
+      customerId,
+      ephemeralKey.secret,
+      subscription,
+    );
   }
 
   async createBookingPaymentIntent(
@@ -699,6 +704,13 @@ export class PaymentsService {
       case 'customer.subscription.deleted':
         await this.handleVendorSubscriptionUpdated(object);
         return;
+      case 'setup_intent.succeeded':
+        await this.handleSubscriptionSetupIntentSucceeded(object);
+        return;
+      case 'setup_intent.setup_failed':
+      case 'setup_intent.canceled':
+        await this.handleSubscriptionSetupIntentFailed(object);
+        return;
       case 'invoice.payment_succeeded':
         await this.handleSubscriptionInvoiceUpdated(object, 'ACTIVE');
         return;
@@ -716,9 +728,8 @@ export class PaymentsService {
       ? await this.paymentsRepository.updateVendorSubscription(vendorId, {
           selectedPlan: subscription.metadata?.plan,
           stripeSubscriptionId: subscription.id,
-          subscriptionStatus: this.mapStripeSubscriptionStatus(
-            subscription.status,
-          ),
+          subscriptionStatus:
+            this.resolveVendorSubscriptionStatus(subscription),
           trialStartedAt: this.fromStripeTimestamp(subscription.trial_start),
           trialEndsAt: this.fromStripeTimestamp(subscription.trial_end),
           subscriptionCurrentPeriodEnd: this.fromStripeTimestamp(
@@ -744,7 +755,7 @@ export class PaymentsService {
 
     return this.paymentsRepository.updateVendorSubscription(vendor.id, {
       selectedPlan: subscription.metadata?.plan,
-      subscriptionStatus: this.mapStripeSubscriptionStatus(subscription.status),
+      subscriptionStatus: this.resolveVendorSubscriptionStatus(subscription),
       trialStartedAt: this.fromStripeTimestamp(subscription.trial_start),
       trialEndsAt: this.fromStripeTimestamp(subscription.trial_end),
       subscriptionCurrentPeriodEnd: this.fromStripeTimestamp(
@@ -780,6 +791,56 @@ export class PaymentsService {
       subscriptionCurrentPeriodEnd: this.fromStripeTimestamp(
         invoice.lines?.data?.[0]?.period?.end,
       ),
+    });
+  }
+
+  private async handleSubscriptionSetupIntentSucceeded(setupIntent: any) {
+    const customerId =
+      typeof setupIntent.customer === 'string'
+        ? setupIntent.customer
+        : setupIntent.customer?.id;
+
+    if (!customerId) {
+      return;
+    }
+
+    const vendor =
+      await this.paymentsRepository.findVendorByStripeCustomerId(customerId);
+
+    if (!vendor?.stripeSubscriptionId) {
+      return;
+    }
+
+    const subscription = await this.stripeClient.retrieveSubscription(
+      vendor.stripeSubscriptionId,
+    );
+
+    await this.syncVendorSubscriptionFromStripe(
+      vendor.id,
+      subscription,
+      vendor.selectedPlan,
+    );
+  }
+
+  private async handleSubscriptionSetupIntentFailed(setupIntent: any) {
+    const customerId =
+      typeof setupIntent.customer === 'string'
+        ? setupIntent.customer
+        : setupIntent.customer?.id;
+
+    if (!customerId) {
+      return;
+    }
+
+    const vendor =
+      await this.paymentsRepository.findVendorByStripeCustomerId(customerId);
+
+    if (!vendor?.stripeSubscriptionId) {
+      return;
+    }
+
+    await this.paymentsRepository.updateVendorSubscription(vendor.id, {
+      subscriptionStatus: 'INCOMPLETE',
     });
   }
 
@@ -1032,6 +1093,64 @@ export class PaymentsService {
     return 'PENDING';
   }
 
+  private async syncVendorSubscriptionFromStripe(
+    vendorId: string,
+    subscription: any,
+    selectedPlan?: string | null,
+  ) {
+    return this.paymentsRepository.updateVendorSubscription(vendorId, {
+      selectedPlan: selectedPlan ?? subscription.metadata?.plan,
+      stripeSubscriptionId: subscription.id,
+      subscriptionStatus: this.resolveVendorSubscriptionStatus(subscription),
+      trialStartedAt: this.fromStripeTimestamp(subscription.trial_start),
+      trialEndsAt: this.fromStripeTimestamp(subscription.trial_end),
+      subscriptionCurrentPeriodEnd: this.fromStripeTimestamp(
+        subscription.current_period_end,
+      ),
+    });
+  }
+
+  private buildVendorSubscriptionIntentResponse(
+    vendor: any,
+    customerId: string,
+    customerEphemeralKeySecret: string,
+    subscription: any,
+  ) {
+    const clientSecret = this.resolveSubscriptionClientSecret(subscription);
+    const clientSecretType =
+      this.resolveSubscriptionClientSecretType(subscription);
+
+    if (!clientSecret && vendor.subscriptionStatus === 'INCOMPLETE') {
+      throw new BadRequestException(
+        'Subscription payment cannot be resumed. Please contact support or try again later.',
+      );
+    }
+
+    return {
+      vendor: {
+        id: vendor.id,
+        selectedPlan: vendor.selectedPlan,
+        subscriptionStatus: vendor.subscriptionStatus,
+        stripeCustomerId: vendor.stripeCustomerId,
+        stripeSubscriptionId: vendor.stripeSubscriptionId,
+        trialStartedAt: vendor.trialStartedAt,
+        trialEndsAt: vendor.trialEndsAt,
+        subscriptionCurrentPeriodEnd: vendor.subscriptionCurrentPeriodEnd,
+        isFoundingMember: vendor.isFoundingMember,
+        foundingDiscountEndsAt: vendor.foundingDiscountEndsAt,
+        lockedCommissionRate: vendor.lockedCommissionRate,
+      },
+      stripe: {
+        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null,
+        customerId,
+        customerEphemeralKeySecret,
+        subscriptionId: subscription.id,
+        clientSecret,
+        clientSecretType,
+      },
+    };
+  }
+
   private resolveVendorStripePriceId(plan: VendorPlan) {
     const keyByPlan: Record<VendorPlan, string | null> = {
       [VendorPlan.FREE]: null,
@@ -1073,6 +1192,42 @@ export class PaymentsService {
       default:
         return 'INCOMPLETE';
     }
+  }
+
+  private resolveVendorSubscriptionStatus(subscription: any) {
+    if (this.subscriptionRequiresClientAction(subscription)) {
+      return 'INCOMPLETE';
+    }
+
+    return this.mapStripeSubscriptionStatus(subscription?.status);
+  }
+
+  private subscriptionRequiresClientAction(subscription: any) {
+    const setupIntent = subscription?.pending_setup_intent;
+    if (typeof setupIntent === 'string') {
+      return true;
+    }
+
+    if (
+      setupIntent?.client_secret &&
+      setupIntent.status !== 'succeeded'
+    ) {
+      return true;
+    }
+
+    const paymentIntent = subscription?.latest_invoice?.payment_intent;
+    if (typeof paymentIntent === 'string') {
+      return true;
+    }
+
+    return (
+      Boolean(paymentIntent?.client_secret) &&
+      [
+        'requires_payment_method',
+        'requires_confirmation',
+        'requires_action',
+      ].includes(paymentIntent.status)
+    );
   }
 
   private fromStripeTimestamp(value?: number | string | null) {

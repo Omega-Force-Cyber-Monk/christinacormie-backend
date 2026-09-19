@@ -884,6 +884,8 @@ assertVendorPlanFeature(vendor, 'EVENT_BOOKINGS')
   - `subscriptionCurrentPeriodEnd`.
 - Paid plan feature unlock rule:
   - paid plan selected but subscription not `TRIALING`/`ACTIVE` = blocked;
+  - native subscription intent starts as `INCOMPLETE` while card setup/payment is still pending;
+  - if vendor leaves payment screen and comes back, call the same API again to resume the incomplete subscription and receive a fresh PaymentSheet client secret;
   - after Stripe confirms trial/payment through webhook = paid features unlock.
 - Required Stripe env:
   - `STRIPE_VENDOR_STARTER_PRICE_ID`;
@@ -951,6 +953,17 @@ assertVendorPlanFeature(vendor, 'EVENT_BOOKINGS')
 - Expected:
   - 403;
   - message says subscription payment must be completed.
+
+### Incomplete subscription retry
+
+- Vendor calls `POST /api/v1/payments/vendors/me/subscription-intent`;
+- App opens native Stripe payment sheet;
+- Vendor closes/back button before completing card setup;
+- Vendor clicks subscribe again;
+- Expected:
+  - same API returns retryable Stripe client secret;
+  - no duplicate active subscription is created;
+  - vendor stays `subscriptionStatus = INCOMPLETE` until Stripe confirms setup/payment.
 
 ### Paid subscription completed
 

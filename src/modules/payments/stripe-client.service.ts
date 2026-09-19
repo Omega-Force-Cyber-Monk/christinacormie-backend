@@ -128,6 +128,12 @@ export class StripeClientService {
     );
   }
 
+  async retrieveSubscription(subscriptionId: string) {
+    return this.get('/subscriptions', subscriptionId, {
+      expand: ['latest_invoice.payment_intent', 'pending_setup_intent'],
+    });
+  }
+
   async createTransfer(
     params: {
       amount: number;
@@ -299,6 +305,63 @@ export class StripeClientService {
       },
       body,
     });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new BadRequestException(
+        data?.error?.message ?? 'Stripe request failed',
+      );
+    }
+
+    return data;
+  }
+
+  private async get(
+    path: string,
+    id: string,
+    params: Record<string, unknown> = {},
+    options?: StripeRequestOptions,
+  ) {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+
+    if (!secretKey) {
+      throw new Error('STRIPE_SECRET_KEY is not set');
+    }
+
+    if (secretKey.includes('change_me')) {
+      if (path === '/subscriptions') {
+        return {
+          id,
+          status: 'trialing',
+          trial_start: Math.floor(Date.now() / 1000),
+          trial_end: Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60,
+          current_period_end:
+            Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60,
+          pending_setup_intent: {
+            id: `seti_mock_${Date.now()}`,
+            client_secret: `seti_mock_secret_${Date.now()}`,
+          },
+          latest_invoice: null,
+        };
+      }
+    }
+
+    const query = new URLSearchParams();
+    this.appendParams(query, params);
+    const queryString = query.toString();
+    const response = await fetch(
+      `${this.apiBaseUrl}${path}/${id}${queryString ? `?${queryString}` : ''}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          ...(options?.stripeVersion
+            ? { 'Stripe-Version': options.stripeVersion }
+            : {}),
+        },
+      },
+    );
 
     const data = await response.json();
 
