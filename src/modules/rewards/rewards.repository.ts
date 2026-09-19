@@ -24,6 +24,7 @@ export class RewardsRepository {
         userId: true,
         status: true,
         isVerified: true,
+        creditAcceptanceEnabled: true,
         deletedAt: true,
       },
     });
@@ -37,6 +38,7 @@ export class RewardsRepository {
         userId: true,
         status: true,
         isVerified: true,
+        creditAcceptanceEnabled: true,
         deletedAt: true,
       },
     });
@@ -62,6 +64,7 @@ export class RewardsRepository {
             userId: true,
             status: true,
             isVerified: true,
+            creditAcceptanceEnabled: true,
             deletedAt: true,
           },
         },
@@ -559,7 +562,11 @@ export class RewardsRepository {
     });
   }
 
-  async completeVendorRedemption(redemptionId: string, vendorId: string) {
+  async completeVendorRedemption(
+    redemptionId: string,
+    vendorId: string,
+    redemptionMethod: 'QR_SCAN' | 'MANUAL_CODE',
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const completed = await tx.rewardRedemption.updateMany({
         where: {
@@ -570,6 +577,7 @@ export class RewardsRepository {
           status: 'COMPLETED',
           usedAt: new Date(),
           vendorId,
+          redemptionMethod,
         },
       });
 
