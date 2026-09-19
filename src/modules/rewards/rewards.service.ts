@@ -407,6 +407,15 @@ export class RewardsService {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
+    if (vendor.creditAcceptanceEnabled === false) {
+      throw new ForbiddenException(
+        'This vendor is not accepting BiteDrop Credits right now',
+      );
+    }
+
+    const redemptionMethod = dto.redemptionToken?.trim()
+      ? ('QR_SCAN' as const)
+      : ('MANUAL_CODE' as const);
     const tokenOrCode = dto.redemptionToken?.trim() ?? dto.manualCode?.trim();
 
     if (!tokenOrCode) {
@@ -443,6 +452,7 @@ export class RewardsService {
     const completed = await this.rewardsRepository.completeVendorRedemption(
       redemption.id,
       vendor.id,
+      redemptionMethod,
     );
 
     if (!completed) {
