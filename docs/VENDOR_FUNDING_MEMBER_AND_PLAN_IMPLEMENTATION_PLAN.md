@@ -4,9 +4,9 @@
 
 - client-এর updated requirement অনুযায়ী **Founding Member** offer থাকতে হবে;
 - vendor onboarding flow-তে vendor subscription/plan choose করবে;
-- Founding signup/subscription window হবে **August 5, 2026 থেকে September 4, 2026** পর্যন্ত;
-- **September 5, 2026 official launch date** থেকে founding pricing বন্ধ হবে;
-- September 5 onward নতুন vendor শুধু standard pricing পাবে;
+- Founding signup/subscription window হবে **August 5, 2026 থেকে October 4, 2026** পর্যন্ত;
+- **October 5, 2026** হলো official launch date; founding pricing October 4 পর্যন্ত;
+- October 5 onward নতুন vendor শুধু standard pricing পাবে;
 - admin থেকে offer window/editing configurable থাকতে হবে;
 - Founding Member হলেও vendor plan select করবে: `FREE`, `STARTER`, `PRO`, `ELITE`;
 - Founding Member benefit plan-এর উপর depend করবে, আলাদা plan হিসেবে না।
@@ -48,39 +48,39 @@ foundingDiscountEndsAt = trialEndsAt + 9 months
 
 ---
 
-## 2. Founding window and launch date
+## 2. Founding window and deadline
 
 Client-এর latest requirement অনুযায়ী window:
 
 ```txt
-August 5, 2026 – September 4, 2026:
+August 5, 2026 – October 4, 2026:
 Founding rate available
 
-September 5, 2026 onward:
+October 5, 2026 onward:
 Standard pricing only
 ```
 
 Important:
 
-- September 5, 2026 official launch date.
-- September 5 থেকে no more 50% off for new signups.
-- September 5 থেকে no locked founding commission rate for new signups.
+- October 5, 2026 official launch date; this date is not included in the offer window.
+- October 5 থেকে no more 50% off for new signups.
+- October 5 থেকে no locked founding commission rate for new signups.
 - 3 months free trial still applies for all vendors.
-- Founding perk only applies to vendors who sign up/subscribe during pre-launch window.
+- Founding perk only applies to vendors who sign up/subscribe during the founding window.
 
 Default setting:
 
 ```txt
 foundingOfferStartAt = 2026-08-05T00:00:00Z
-foundingOfferEndAt = 2026-09-04T23:59:59Z
-officialLaunchAt = 2026-09-05T00:00:00Z
+foundingOfferEndAt = 2026-10-04T23:59:59Z
+officialLaunchAt = 2026-10-05T00:00:00Z
 ```
 
 Frontend copy তে দেখাবে:
 
 ```txt
 Founding vendor offer
-Available August 5 – September 4, 2026
+Available August 5 – October 4, 2026
 ```
 
 Terminology:
@@ -89,21 +89,21 @@ Terminology:
 - Backend field naming should use `founding`, not `funding`.
 - Existing doc filename has `FUNDING` to avoid breaking references, but implementation should use `founding`.
 
-### 2.1 Source of truth and UI-doc conflict resolution
+### 2.1 Source of truth
 
-Pasted UI pricing document-এ “Founding Membership Period: August 5 – September 5, 2026” লেখা আছে। কিন্তু client-এর latest written requirement explicitly বলেছে:
+Final confirmed requirement:
 
 ```txt
-August 5 – September 4 → Founding rate available
-September 5 onward → Standard pricing only
+August 5 – October 4 → Founding rate available
+October 5 onward → Standard pricing only
 ```
 
 তাই implementation source of truth হবে:
 
-- **August 5, 2026 00:00:00 → September 4, 2026 23:59:59**: founding available;
-- **September 5, 2026 00:00:00 onward**: founding unavailable, standard pricing only.
+- **August 5, 2026 00:00:00 → October 4, 2026 23:59:59**: founding available;
+- **October 5, 2026 00:00:00 onward**: founding unavailable, standard pricing only.
 
-এই rule backend-এ strictly enforce হবে, যাতে launch day থেকে নতুন signup founding benefit না পায়।
+এই rule backend-এ strictly enforce হবে, যাতে October 5 থেকে নতুন signup founding benefit না পায়।
 
 ---
 
@@ -152,7 +152,7 @@ lockedCommissionRate   Decimal?  @map("locked_commission_rate") @db.Decimal(6, 3
 
 Why:
 
-- `isFoundingMember`: vendor got the pre-launch offer or not;
+- `isFoundingMember`: vendor got the founding offer or not;
 - `foundingJoinedAt`: audit/debug;
 - `trialStartedAt`, `trialEndsAt`: 3 months free trial tracking;
 - `foundingDiscountEndsAt`: 50% subscription discount expires after month 12;
@@ -180,8 +180,8 @@ Store:
   "value": {
     "enabled": true,
     "startAt": "2026-08-05T00:00:00.000Z",
-    "endAt": "2026-09-04T23:59:59.999Z",
-    "officialLaunchAt": "2026-09-05T00:00:00.000Z",
+    "endAt": "2026-10-04T23:59:59.999Z",
+    "officialLaunchAt": "2026-10-05T00:00:00.000Z",
     "subscriptionDiscountPercent": 50,
     "subscriptionDiscountMonths": 9,
     "freeTrialMonths": 3
@@ -320,9 +320,9 @@ Response example:
     "enabled": true,
     "isActiveNow": true,
     "startAt": "2026-08-05T00:00:00.000Z",
-    "endAt": "2026-09-04T23:59:59.999Z",
-    "officialLaunchAt": "2026-09-05T00:00:00.000Z",
-    "displayText": "Founding vendor offer available August 5 – September 4, 2026"
+    "endAt": "2026-10-04T23:59:59.999Z",
+    "officialLaunchAt": "2026-10-05T00:00:00.000Z",
+    "displayText": "Founding vendor offer available August 5 – October 4, 2026"
   },
   "trial": {
     "freeTrialMonths": 3,
@@ -439,8 +439,8 @@ Patch body:
 {
   "enabled": true,
   "startAt": "2026-08-05T00:00:00.000Z",
-  "endAt": "2026-09-04T23:59:59.999Z",
-  "officialLaunchAt": "2026-09-05T00:00:00.000Z"
+  "endAt": "2026-10-04T23:59:59.999Z",
+  "officialLaunchAt": "2026-10-05T00:00:00.000Z"
 }
 ```
 
@@ -468,7 +468,7 @@ Body:
 
 Purpose:
 
-- If vendor joined during August 5–September 4 but frontend failed to claim;
+- If vendor joined during August 5–October 4 but frontend failed to claim;
 - manual correction;
 - admin override.
 
@@ -489,7 +489,7 @@ GET /api/v1/vendors/plans
 Backend returns:
 
 - founding offer active/inactive;
-- correct September 4, 2026 deadline and September 5, 2026 launch date;
+- correct October 4, 2026 deadline and October 5, 2026 launch date;
 - plan cards;
 - included/not included features;
 - founding commission rates.
@@ -558,13 +558,13 @@ No commission applies
 
 If a Free founding vendor upgrades later:
 
-- if they claimed founding during August 5–September 4, keep `isFoundingMember = true`;
+- if they claimed founding during August 5–October 4, keep `isFoundingMember = true`;
 - apply founding locked commission rate for the newly selected paid plan;
 - apply 50% subscription discount only if product/client confirms upgrade timing eligibility.
 
 Recommended initial rule:
 
-- founding identity is locked during the pre-launch window;
+- founding identity is locked during the founding window;
 - subscription 50% discount applies when they first subscribe to paid plan, but only within a reasonable product-defined conversion flow;
 - this edge case should be confirmed before final billing implementation.
 
@@ -808,7 +808,7 @@ Founding offer expired:
 ```json
 {
   "statusCode": 400,
-  "message": "Founding member offer ended on September 4, 2026. Standard pricing applies from September 5, 2026.",
+  "message": "Founding member offer ended on October 4, 2026. Standard pricing applies from October 5, 2026.",
   "error": "Bad Request"
 }
 ```
@@ -888,7 +888,7 @@ assertVendorPlanFeature(vendor, 'EVENT_BOOKINGS')
 
 ### Founding active
 
-- Set founding offer active until September 4, 2026;
+- Set founding offer active until October 4, 2026;
 - Vendor selects Starter + `claimFoundingMember = true`;
 - Expected:
   - `isFoundingMember = true`;
@@ -898,7 +898,7 @@ assertVendorPlanFeature(vendor, 'EVENT_BOOKINGS')
 
 ### Founding expired
 
-- Set founding offer end date before today or test on/after September 5, 2026;
+- Set founding offer end date before today or test on/after October 5, 2026;
 - Vendor sends `claimFoundingMember = true`;
 - Expected:
   - 400;
@@ -940,7 +940,7 @@ Implement this as:
 
 ```txt
 Plan = subscription tier
-Founding Member = pre-launch subscription discount + locked commission benefit
+Founding Member = founding-window subscription discount + locked commission benefit
 ```
 
 This is better than making `FOUNDING` a separate plan because:

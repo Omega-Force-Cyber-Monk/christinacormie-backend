@@ -517,9 +517,11 @@ export class RewardsRepository {
     });
   }
 
-  findFoodTrucksByIds(ids: string[]) {
+  findFoodTrucksByIds(
+    ids: string[],
+  ): Promise<Array<{ id: string; name: string; currentAddress: string | null }>> {
     if (!ids.length) {
-      return [];
+      return Promise.resolve([]);
     }
 
     return this.prisma.foodTruck.findMany({
@@ -558,6 +560,34 @@ export class RewardsRepository {
         id: true,
         rewardValue: true,
         foodTruckId: true,
+      },
+    });
+  }
+
+  listMyConfirmedRedemptionsForReview(userId: string) {
+    return this.prisma.rewardRedemption.findMany({
+      where: {
+        userId,
+        status: 'COMPLETED',
+        usedAt: { not: null },
+        vendorId: { not: null },
+        foodTruckId: { not: null },
+      },
+      orderBy: { usedAt: 'desc' },
+      select: {
+        id: true,
+        foodTruckId: true,
+        vendorId: true,
+        rewardValue: true,
+        usedAt: true,
+        redemptionMethod: true,
+        review: {
+          select: {
+            id: true,
+            rating: true,
+            createdAt: true,
+          },
+        },
       },
     });
   }

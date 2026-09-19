@@ -96,6 +96,7 @@ model RewardRedemption {
   expiresAt        DateTime?               @map("expires_at") @db.Timestamptz(6)
   rewardRule       RewardRule?             @relation(fields: [rewardRuleId], references: [id])
   user             User                    @relation(fields: [userId], references: [id])
+  review           Review?
 
   @@index([backupCode])
   @@index([vendorId, usedAt])

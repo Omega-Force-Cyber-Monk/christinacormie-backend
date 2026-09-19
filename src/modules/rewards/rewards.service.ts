@@ -497,6 +497,45 @@ export class RewardsService {
     return this.rewardsRepository.listBadges();
   }
 
+  async listMyConfirmedRedemptionsForReview(userId: string) {
+    const redemptions =
+      await this.rewardsRepository.listMyConfirmedRedemptionsForReview(userId);
+    const foodTruckIds = [
+      ...new Set(
+        redemptions
+          .map((redemption) => redemption.foodTruckId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const foodTrucks =
+      await this.rewardsRepository.findFoodTrucksByIds(foodTruckIds);
+    const foodTruckById = new Map<
+      string,
+      { id: string; name: string; currentAddress: string | null }
+    >();
+    foodTrucks.forEach((truck) => {
+      foodTruckById.set(truck.id, truck);
+    });
+
+    return redemptions.map((redemption) => {
+      const foodTruck = redemption.foodTruckId
+        ? foodTruckById.get(redemption.foodTruckId)
+        : null;
+
+      return {
+        id: redemption.id,
+        foodTruckId: redemption.foodTruckId,
+        foodTruckName: foodTruck?.name ?? null,
+        vendorId: redemption.vendorId,
+        amountApplied: Number(redemption.rewardValue ?? 0),
+        confirmedAt: redemption.usedAt,
+        redemptionMethod: redemption.redemptionMethod,
+        alreadyReviewed: Boolean(redemption.review),
+        reviewId: redemption.review?.id ?? null,
+      };
+    });
+  }
+
   getLoyaltyProgressForPoints(
     availablePoints: number,
     lifetimePoints = availablePoints,
