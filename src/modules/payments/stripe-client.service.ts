@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'crypto';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 type StripeRequestOptions = {
   idempotencyKey?: string;
@@ -10,12 +10,34 @@ export class StripeClientService {
   private readonly apiBaseUrl = 'https://api.stripe.com/v1';
 
   async createConnectAccount(country = 'US') {
-    return this.post('/accounts', {
-      type: 'express',
-      country,
-      'capabilities[card_payments][requested]': 'true',
-      'capabilities[transfers][requested]': 'true',
-    });
+    const accountType =
+      process.env.STRIPE_CONNECT_ACCOUNT_TYPE || 'express';
+
+    const buildParams = (type: string) => {
+      const params: Record<string, unknown> = {
+        type,
+        country,
+      };
+      if (type === 'express' || type === 'custom') {
+        params['capabilities[card_payments][requested]'] = 'true';
+        params['capabilities[transfers][requested]'] = 'true';
+      }
+      return params;
+    };
+
+    try {
+      return await this.post('/accounts', buildParams(accountType));
+    } catch (error: any) {
+      if (
+        accountType !== 'standard' &&
+        error.message?.includes(
+          'cannot create accounts where the platform is loss-liable',
+        )
+      ) {
+        return await this.post('/accounts', buildParams('standard'));
+      }
+      throw error;
+    }
   }
 
   async createAccountLink(
@@ -199,7 +221,9 @@ export class StripeClientService {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data?.error?.message ?? 'Stripe request failed');
+      throw new BadRequestException(
+        data?.error?.message ?? 'Stripe request failed',
+      );
     }
 
     return data;
