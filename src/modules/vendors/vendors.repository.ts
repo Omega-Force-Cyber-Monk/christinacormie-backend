@@ -676,6 +676,179 @@ export class VendorsRepository {
     };
   }
 
+  updateCreditSettings(vendorId: string, enabled: boolean) {
+    return this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        creditAcceptanceEnabled: enabled,
+        creditAcceptanceUpdatedAt: new Date(),
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        creditAcceptanceEnabled: true,
+        creditAcceptanceUpdatedAt: true,
+      },
+    });
+  }
+
+  findActiveFoodTruckIds(vendorId: string, foodTruckId?: string) {
+    return this.prisma.foodTruck.findMany({
+      where: {
+        vendorId,
+        deletedAt: null,
+        ...(foodTruckId ? { id: foodTruckId } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  countFollowers(foodTruckIds: string[]) {
+    if (!foodTruckIds.length) return Promise.resolve(0);
+
+    return this.prisma.foodTruckFollow.count({
+      where: { foodTruckId: { in: foodTruckIds } },
+    });
+  }
+
+  countFollowersSince(foodTruckIds: string[], start: Date) {
+    if (!foodTruckIds.length) return Promise.resolve(0);
+
+    return this.prisma.foodTruckFollow.count({
+      where: {
+        foodTruckId: { in: foodTruckIds },
+        createdAt: { gte: start },
+      },
+    });
+  }
+
+  async getFollowerWeeklyChart(foodTruckIds: string[], start: Date, end: Date) {
+    if (!foodTruckIds.length) {
+      return [];
+    }
+
+    return this.prisma.$queryRaw<Array<{ weekIndex: number; count: bigint }>>`
+      SELECT
+        FLOOR(EXTRACT(DAY FROM (created_at - ${start})) / 7)::int AS "weekIndex",
+        COUNT(*)::bigint AS "count"
+      FROM food_truck_follows
+      WHERE food_truck_id IN (${Prisma.join(foodTruckIds)})
+        AND created_at >= ${start}
+        AND created_at < ${end}
+      GROUP BY "weekIndex"
+      ORDER BY "weekIndex" ASC
+    `;
+  }
+
+  async getQrScanDailyChart(foodTruckIds: string[], start: Date, end: Date) {
+    if (!foodTruckIds.length) {
+      return [];
+    }
+
+    return this.prisma.$queryRaw<Array<{ dayIndex: number; count: bigint }>>`
+      SELECT
+        FLOOR(EXTRACT(EPOCH FROM (scanned_at - ${start})) / 86400)::int AS "dayIndex",
+        COUNT(*)::bigint AS "count"
+      FROM qr_scans
+      WHERE food_truck_id IN (${Prisma.join(foodTruckIds)})
+        AND scanned_at >= ${start}
+        AND scanned_at < ${end}
+      GROUP BY "dayIndex"
+      ORDER BY "dayIndex" ASC
+    `;
+  }
+
+  async getTopScanLocations(foodTruckIds: string[], start: Date, end: Date) {
+    if (!foodTruckIds.length) {
+      return [];
+    }
+
+    return this.prisma.$queryRaw<
+      Array<{
+        latitude: number | string | null;
+        longitude: number | string | null;
+        scanCount: bigint;
+      }>
+    >`
+      SELECT
+        ROUND(ST_Y(scan_location::geometry)::numeric, 2) AS "latitude",
+        ROUND(ST_X(scan_location::geometry)::numeric, 2) AS "longitude",
+        COUNT(*)::bigint AS "scanCount"
+      FROM qr_scans
+      WHERE food_truck_id IN (${Prisma.join(foodTruckIds)})
+        AND scan_location IS NOT NULL
+        AND scanned_at >= ${start}
+        AND scanned_at < ${end}
+      GROUP BY "latitude", "longitude"
+      ORDER BY "scanCount" DESC
+      LIMIT 3
+    `;
+  }
+
+  async getCreditRedemptionSummary(
+    vendorId: string,
+    start: Date,
+    end: Date,
+    previousStart: Date,
+    previousEnd: Date,
+  ) {
+    const [current, previous] = await Promise.all([
+      this.prisma.rewardRedemption.aggregate({
+        where: {
+          vendorId,
+          status: 'COMPLETED',
+          usedAt: { gte: start, lt: end },
+        },
+        _count: { id: true },
+        _sum: { rewardValue: true },
+      }),
+      this.prisma.rewardRedemption.count({
+        where: {
+          vendorId,
+          status: 'COMPLETED',
+          usedAt: { gte: previousStart, lt: previousEnd },
+        },
+      }),
+    ]);
+
+    return {
+      currentCount: current._count.id,
+      currentCredit: Number(current._sum.rewardValue ?? 0),
+      previousCount: previous,
+    };
+  }
+
+  findRecentCreditRedemptions(vendorId: string, limit = 5) {
+    return this.prisma.rewardRedemption.findMany({
+      where: {
+        vendorId,
+        status: 'COMPLETED',
+        usedAt: { not: null },
+      },
+      orderBy: { usedAt: 'desc' },
+      take: limit,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            profile: {
+              select: {
+                displayName: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
   vendorInclude() {
     return {
       user: {

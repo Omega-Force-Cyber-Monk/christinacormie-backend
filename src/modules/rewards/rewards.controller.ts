@@ -478,8 +478,24 @@ export class RewardsController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Vendor profile is missing or vendor is not approved.',
-    schema: { example: forbiddenVendorApprovalExample },
+    description:
+      'Vendor profile is missing, vendor is not approved, or vendor is not accepting credits.',
+    schema: {
+      examples: {
+        vendorNotApproved: {
+          summary: 'Vendor not approved',
+          value: forbiddenVendorApprovalExample,
+        },
+        creditAcceptanceDisabled: {
+          summary: 'Vendor credit acceptance disabled',
+          value: errorExample(
+            403,
+            'This vendor is not accepting BiteDrop Credits right now',
+            'Forbidden',
+          ),
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 404,
