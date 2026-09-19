@@ -91,6 +91,14 @@ export class VendorsRepository {
     userId: string,
     vendorId: string,
     dto: CompleteVendorOnboardingDto,
+    foundingData?: {
+      isFoundingMember: boolean;
+      foundingJoinedAt: Date | null;
+      trialStartedAt: Date | null;
+      trialEndsAt: Date | null;
+      foundingDiscountEndsAt: Date | null;
+      lockedCommissionRate: number | null;
+    },
   ) {
     return this.prisma.$transaction(
       async (tx) => {
@@ -157,6 +165,19 @@ export class VendorsRepository {
           where: { id: vendorId },
           data: {
             selectedPlan,
+            ...(selectedPlan === 'FREE'
+              ? { subscriptionStatus: 'ACTIVE' as const }
+              : { subscriptionStatus: 'INCOMPLETE' as const }),
+            ...(foundingData
+              ? {
+                  isFoundingMember: foundingData.isFoundingMember,
+                  foundingJoinedAt: foundingData.foundingJoinedAt,
+                  trialStartedAt: foundingData.trialStartedAt,
+                  trialEndsAt: foundingData.trialEndsAt,
+                  foundingDiscountEndsAt: foundingData.foundingDiscountEndsAt,
+                  lockedCommissionRate: foundingData.lockedCommissionRate,
+                }
+              : {}),
             businessName: dto.truckName,
             ...(contactEmail ? { businessEmail: contactEmail } : {}),
             ...(contactPhone ? { businessPhone: contactPhone } : {}),

@@ -18,6 +18,7 @@ import {
   validateCommunityMedia,
 } from './community-validation';
 import { calculateQuote } from '../bookings/quote-financials';
+import { assertVendorPlanFeature } from '../vendors/vendor-plan-access';
 
 @Injectable()
 export class CommunityService {
@@ -177,6 +178,7 @@ export class CommunityService {
   ) {
     await this.communityRepository.ensurePublisher(userId);
     const vendor = await this.ensureVendor(userId);
+    assertVendorPlanFeature(vendor, 'COMMUNITY_BOOKING_REQUESTS');
     const request = await this.ensureRequestExists(requestId);
     const foodTruck = await this.ensureFoodTruckExists(dto.foodTruckId);
 
@@ -210,7 +212,12 @@ export class CommunityService {
       );
     }
 
-    calculateQuote(dto, request.guestCount);
+    const commissionRate = this.resolveVendorCommissionRate(vendor);
+    calculateQuote(
+      dto,
+      request.guestCount,
+      commissionRate,
+    );
     if (dto.expiresAt && new Date(dto.expiresAt) <= new Date())
       throw new BadRequestException('Quote expiresAt must be in the future');
 
@@ -218,6 +225,7 @@ export class CommunityService {
       vendor.id,
       requestId,
       dto,
+      commissionRate,
     );
   }
 
@@ -287,6 +295,22 @@ export class CommunityService {
     }
 
     return vendor;
+  }
+
+  private resolveVendorCommissionRate(vendor: {
+    lockedCommissionRate?: unknown;
+    selectedPlan?: string | null;
+  }) {
+    if (
+      vendor.lockedCommissionRate !== null &&
+      vendor.lockedCommissionRate !== undefined
+    ) {
+      return Number(vendor.lockedCommissionRate);
+    }
+
+    if (vendor.selectedPlan === 'STARTER') return 0.15;
+    if (vendor.selectedPlan === 'PRO') return 0.12;
+    if (vendor.selectedPlan === 'ELITE') return 0.08;
   }
 
   private async ensureFoodTruckExists(foodTruckId: string) {

@@ -24,6 +24,7 @@ import { NotificationEventType } from '../notifications/enums/notification-event
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsService } from '../payments/payments.service';
 import { RewardsService } from '../rewards/rewards.service';
+import { assertVendorPlanFeature } from '../vendors/vendor-plan-access';
 import { bookingEventWindow } from './booking-event-window';
 import { BookingsRepository } from './bookings.repository';
 
@@ -553,6 +554,7 @@ export class BookingsService {
   ) {
     const booking = await this.ensureVendorBooking(userId, bookingId);
     const vendor = await this.ensureVendor(userId);
+    assertVendorPlanFeature(vendor, 'EVENT_BOOKINGS');
 
     if (!['PENDING', 'ACCEPTED'].includes(booking.status)) {
       throw new BadRequestException('Booking is not ready for a quote');
@@ -576,6 +578,7 @@ export class BookingsService {
       throw new BadRequestException(
         'transportFee and outsideRadiusFee must match',
       );
+    const commissionRate = this.resolveVendorCommissionRate(vendor);
     const calculated = calculateQuote(
       {
         ...dto,
@@ -584,6 +587,7 @@ export class BookingsService {
         quotedAmount: dto.totalAmount,
       },
       booking.guestCount,
+      commissionRate,
     );
     Object.assign(dto, calculated, {
       subtotal: calculated.baseServiceFee,
@@ -1009,6 +1013,20 @@ export class BookingsService {
     }
 
     return vendor;
+  }
+
+  private resolveVendorCommissionRate(vendor: {
+    lockedCommissionRate?: unknown;
+    selectedPlan?: string | null;
+  }) {
+    if (vendor.lockedCommissionRate !== null && vendor.lockedCommissionRate !== undefined) {
+      return Number(vendor.lockedCommissionRate);
+    }
+
+    const plan = vendor.selectedPlan ?? 'FREE';
+    if (plan === 'STARTER') return 0.15;
+    if (plan === 'PRO') return 0.12;
+    if (plan === 'ELITE') return 0.08;
   }
 
   private async ensureFoodTruckExists(foodTruckId: string) {

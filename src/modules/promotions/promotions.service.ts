@@ -9,6 +9,7 @@ import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { PromotionQueryDto } from './dto/promotion-query.dto';
 import { RedeemPromotionDto } from './dto/redeem-promotion.dto';
 import { PromotionsRepository } from './promotions.repository';
+import { assertVendorPlanFeature } from '../vendors/vendor-plan-access';
 
 @Injectable()
 export class PromotionsService {
@@ -175,6 +176,7 @@ export class PromotionsService {
     if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
+    assertVendorPlanFeature(vendor, 'PROMOTIONS');
 
     const foodTruck = await this.ensureFoodTruckExists(foodTruckId);
 

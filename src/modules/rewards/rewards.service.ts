@@ -14,6 +14,7 @@ import { RedeemRewardDto } from './dto/redeem-reward.dto';
 import { UpdateRewardRuleDto } from './dto/update-reward-rule.dto';
 import { VendorConfirmRedemptionDto } from './dto/vendor-confirm-redemption.dto';
 import { RewardsRepository } from './rewards.repository';
+import { assertVendorPlanFeature } from '../vendors/vendor-plan-access';
 
 const POINTS_PER_ACTION = [
   { sourceType: 'CHECK_IN', action: 'QR code check-in', points: 10 },
@@ -406,6 +407,7 @@ export class RewardsService {
     if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
+    assertVendorPlanFeature(vendor, 'REWARDS');
 
     if (vendor.creditAcceptanceEnabled === false) {
       throw new ForbiddenException(

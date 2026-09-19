@@ -3,6 +3,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 
 type StripeRequestOptions = {
   idempotencyKey?: string;
+  stripeVersion?: string;
 };
 
 @Injectable()
@@ -72,6 +73,56 @@ export class StripeClientService {
         automatic_payment_methods: { enabled: 'true' },
         'metadata[paymentId]': params.paymentId,
         'metadata[bookingId]': params.bookingId,
+      },
+      options,
+    );
+  }
+
+  async createCustomer(params: {
+    email?: string | null;
+    name?: string | null;
+    vendorId: string;
+  }) {
+    return this.post('/customers', {
+      ...(params.email ? { email: params.email } : {}),
+      ...(params.name ? { name: params.name } : {}),
+      'metadata[vendorId]': params.vendorId,
+    });
+  }
+
+  async createEphemeralKey(customerId: string) {
+    return this.post(
+      '/ephemeral_keys',
+      { customer: customerId },
+      {
+        stripeVersion:
+          process.env.STRIPE_API_VERSION || '2025-07-30.basil',
+      },
+    );
+  }
+
+  async createSubscription(
+    params: {
+      customerId: string;
+      priceId: string;
+      vendorId: string;
+      plan: string;
+      trialDays: number;
+    },
+    options?: StripeRequestOptions,
+  ) {
+    return this.post(
+      '/subscriptions',
+      {
+        customer: params.customerId,
+        'items[0][price]': params.priceId,
+        payment_behavior: 'default_incomplete',
+        collection_method: 'charge_automatically',
+        trial_period_days: String(params.trialDays),
+        'payment_settings[save_default_payment_method]': 'on_subscription',
+        'metadata[vendorId]': params.vendorId,
+        'metadata[plan]': params.plan,
+        expand: ['latest_invoice.payment_intent', 'pending_setup_intent'],
       },
       options,
     );
@@ -201,6 +252,34 @@ export class StripeClientService {
           currency: params.currency,
         };
       }
+      if (path === '/customers') {
+        return {
+          id: `cus_mock_${Date.now()}`,
+          email: params.email,
+          name: params.name,
+        };
+      }
+      if (path === '/ephemeral_keys') {
+        return {
+          id: `ephkey_mock_${Date.now()}`,
+          secret: `ek_mock_secret_${Date.now()}`,
+        };
+      }
+      if (path === '/subscriptions') {
+        return {
+          id: `sub_mock_${Date.now()}`,
+          status: 'trialing',
+          trial_start: Math.floor(Date.now() / 1000),
+          trial_end: Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60,
+          current_period_end:
+            Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60,
+          pending_setup_intent: {
+            id: `seti_mock_${Date.now()}`,
+            client_secret: `seti_mock_secret_${Date.now()}`,
+          },
+          latest_invoice: null,
+        };
+      }
     }
 
     const body = new URLSearchParams();
@@ -213,6 +292,9 @@ export class StripeClientService {
         'Content-Type': 'application/x-www-form-urlencoded',
         ...(options?.idempotencyKey
           ? { 'Idempotency-Key': options.idempotencyKey }
+          : {}),
+        ...(options?.stripeVersion
+          ? { 'Stripe-Version': options.stripeVersion }
           : {}),
       },
       body,
@@ -235,7 +317,14 @@ export class StripeClientService {
         continue;
       }
 
-      if (typeof value === 'object' && !Array.isArray(value)) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          body.append(`${key}[]`, String(item));
+        }
+        continue;
+      }
+
+      if (typeof value === 'object') {
         for (const [childKey, childValue] of Object.entries(
           value as Record<string, unknown>,
         )) {

@@ -215,6 +215,39 @@ const vendorCreditSettingsExample = {
   },
 };
 
+const vendorPlansExample = {
+  foundingOffer: {
+    enabled: true,
+    isActiveNow: true,
+    startAt: '2026-08-05T00:00:00.000Z',
+    endAt: '2026-10-04T23:59:59.999Z',
+    officialLaunchAt: '2026-10-05T00:00:00.000Z',
+    subscriptionDiscountPercent: 50,
+    subscriptionDiscountMonths: 9,
+    freeTrialMonths: 3,
+    displayText: 'Founding vendor offer available August 5 – October 4, 2026',
+  },
+  trial: {
+    freeTrialMonths: 3,
+    foundingDiscountPercent: 50,
+    foundingDiscountMonths: 9,
+  },
+  plans: [
+    {
+      plan: 'STARTER',
+      name: 'Starter',
+      subtitle: 'Drops & Bookings',
+      monthlyPriceCents: 1000,
+      foundingMonthlyPriceCentsAfterTrial: 500,
+      normalCommissionRate: 0.15,
+      foundingCommissionRate: 0.12,
+      bookingEnabled: true,
+      maxStaffAccounts: 1,
+      analyticsLevel: 'BASIC',
+    },
+  ],
+};
+
 const uploadResponseExample = {
   url: 'https://res.cloudinary.com/demo/image/upload/v1/bitedrop/vendors/onboarding/truck.jpg',
   publicId: 'bitedrop/vendors/onboarding/truck',
@@ -303,6 +336,26 @@ const approveVendorResponseExample = {
     },
   ],
 };
+
+@ApiTags('Vendors')
+@Controller('api/v1/vendors')
+export class VendorPlansController {
+  constructor(private readonly vendorsService: VendorsService) {}
+
+  @ApiOperation({
+    summary: 'List vendor subscription plans and active founding offer',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Vendor plan cards returned with pricing, founding rates, trial, and feature lists.',
+    schema: { example: vendorPlansExample },
+  })
+  @Get('plans')
+  listVendorPlans() {
+    return this.vendorsService.listVendorPlans();
+  }
+}
 
 @ApiTags('Vendors')
 @ApiBearerAuth()

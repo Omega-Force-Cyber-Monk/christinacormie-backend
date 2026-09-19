@@ -36,6 +36,8 @@ import { UpdateMarketDto } from './dto/update-market.dto';
 import { UpdateVerificationDocumentDto } from './dto/update-verification-document.dto';
 import { UpsertLeaderboardRuleDto } from './dto/upsert-leaderboard-rule.dto';
 import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
+import { UpdateVendorFoundingMemberDto } from './dto/update-vendor-founding-member.dto';
+import { UpdateVendorFoundingOfferDto } from './dto/update-vendor-founding-offer.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -441,6 +443,35 @@ export class AdminController {
   @Get('platform-settings')
   listPlatformSettings() {
     return this.adminService.listPlatformSettings();
+  }
+
+  @ApiOperation({ summary: 'Get vendor founding offer settings' })
+  @Get('vendor-founding-offer')
+  getVendorFoundingOffer() {
+    return this.adminService.getVendorFoundingOffer();
+  }
+
+  @ApiOperation({ summary: 'Update vendor founding offer settings' })
+  @Patch('vendor-founding-offer')
+  updateVendorFoundingOffer(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateVendorFoundingOfferDto,
+  ) {
+    return this.adminService.updateVendorFoundingOffer(user.sub, dto);
+  }
+
+  @ApiOperation({ summary: 'Manually update vendor founding member status' })
+  @Patch('vendors/:vendorId/founding-member')
+  updateVendorFoundingMember(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('vendorId', ParseUUIDPipe) vendorId: string,
+    @Body() dto: UpdateVendorFoundingMemberDto,
+  ) {
+    return this.adminService.updateVendorFoundingMember(
+      user.sub,
+      vendorId,
+      dto,
+    );
   }
 
   @ApiOperation({ summary: 'Create or update a platform setting' })

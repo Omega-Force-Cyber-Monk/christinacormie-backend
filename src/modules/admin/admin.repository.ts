@@ -1152,6 +1152,27 @@ export class AdminRepository {
     });
   }
 
+  updateVendorFoundingMember(
+    vendorId: string,
+    data: {
+      isFoundingMember: boolean;
+      lockedCommissionRate?: number | null;
+      foundingJoinedAt?: Date | null;
+      foundingDiscountEndsAt?: Date | null;
+    },
+  ) {
+    return this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        isFoundingMember: data.isFoundingMember,
+        foundingJoinedAt: data.foundingJoinedAt,
+        foundingDiscountEndsAt: data.foundingDiscountEndsAt,
+        lockedCommissionRate: data.lockedCommissionRate,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
   listLeaderboardRules() {
     return this.prisma.leaderboardRule.findMany({
       orderBy: [{ type: 'asc' }, { period: 'asc' }],

@@ -19,7 +19,14 @@ export class BookingsRepository {
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      select: { id: true, status: true, isVerified: true },
+      select: {
+        id: true,
+        status: true,
+        isVerified: true,
+        selectedPlan: true,
+        subscriptionStatus: true,
+        lockedCommissionRate: true,
+      },
     });
   }
 
@@ -38,7 +45,14 @@ export class BookingsRepository {
       },
       select: {
         vendor: {
-          select: { id: true, status: true, isVerified: true },
+          select: {
+            id: true,
+            status: true,
+            isVerified: true,
+            selectedPlan: true,
+            subscriptionStatus: true,
+            lockedCommissionRate: true,
+          },
         },
       },
     });

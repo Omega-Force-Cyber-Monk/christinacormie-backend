@@ -33,7 +33,15 @@ export class FoodTrucksRepository {
         id: true,
         status: true,
         isVerified: true,
+        selectedPlan: true,
+        subscriptionStatus: true,
       },
+    });
+  }
+
+  countVendorFoodTrucks(vendorId: string) {
+    return this.prisma.foodTruck.count({
+      where: { vendorId, deletedAt: null },
     });
   }
 

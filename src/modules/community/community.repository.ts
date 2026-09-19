@@ -49,7 +49,7 @@ export class CommunityRepository {
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      select: { id: true, status: true, isVerified: true },
+      select: { id: true, status: true, isVerified: true, selectedPlan: true, subscriptionStatus: true, lockedCommissionRate: true },
     });
   }
 
@@ -297,6 +297,7 @@ export class CommunityRepository {
     vendorId: string,
     requestId: string,
     dto: CreateVendorOfferDto,
+    commissionRate?: number,
   ) {
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM community_requests WHERE id = ${requestId}::uuid FOR UPDATE`;
@@ -312,7 +313,7 @@ export class CommunityRepository {
         throw new ConflictException(
           'This request is no longer open for quotes',
         );
-      const financials = calculateQuote(dto, request.guestCount);
+      const financials = calculateQuote(dto, request.guestCount, commissionRate);
       if (
         await tx.vendorOffer.findFirst({
           where: {

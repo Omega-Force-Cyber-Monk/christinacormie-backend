@@ -30,7 +30,11 @@ type QuoteInput = {
 };
 const money = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-export function calculateQuote(dto: QuoteInput, guests?: number | null) {
+export function calculateQuote(
+  dto: QuoteInput,
+  guests?: number | null,
+  commissionRate?: number,
+) {
   for (const [key, value] of Object.entries(dto))
     if (value === null) throw new BadRequestException(`${key} cannot be null`);
   const pricingModel = dto.pricingModel ?? 'FLAT_FEE';
@@ -105,7 +109,11 @@ export function calculateQuote(dto: QuoteInput, guests?: number | null) {
     throw new BadRequestException(
       'The vendor must choose DEPOSIT_ONLY or PREPAID_IN_FULL',
     );
-  const rate = platformCommissionRate();
+  const rate = commissionRate ?? platformCommissionRate();
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1)
+    throw new ServiceUnavailableException(
+      'Platform commission configuration is invalid. Please contact support',
+    );
   const commissionAmount = money(total * rate);
   let depositAmount = total;
   let depositPercent = 100;

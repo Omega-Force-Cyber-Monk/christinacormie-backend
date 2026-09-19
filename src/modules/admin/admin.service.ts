@@ -24,6 +24,12 @@ import { UpdateMarketDto } from './dto/update-market.dto';
 import { UpdateVerificationDocumentDto } from './dto/update-verification-document.dto';
 import { UpsertLeaderboardRuleDto } from './dto/upsert-leaderboard-rule.dto';
 import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
+import { UpdateVendorFoundingMemberDto } from './dto/update-vendor-founding-member.dto';
+import { UpdateVendorFoundingOfferDto } from './dto/update-vendor-founding-offer.dto';
+import {
+  DEFAULT_VENDOR_FOUNDING_OFFER,
+  VENDOR_FOUNDING_OFFER_SETTING_KEY,
+} from '../vendors/vendor-plan.config';
 
 @Injectable()
 export class AdminService {
@@ -555,6 +561,44 @@ export class AdminService {
     return this.adminRepository.listPlatformSettings();
   }
 
+  async getVendorFoundingOffer() {
+    const settings = await this.adminRepository.listPlatformSettings();
+    const setting = settings.find(
+      (item) => item.key === VENDOR_FOUNDING_OFFER_SETTING_KEY,
+    );
+
+    return {
+      key: VENDOR_FOUNDING_OFFER_SETTING_KEY,
+      value: {
+        ...DEFAULT_VENDOR_FOUNDING_OFFER,
+        ...((setting?.value as object) ?? {}),
+      },
+      description:
+        setting?.description ??
+        'Vendor founding offer window and subscription discount configuration.',
+      isPublic: setting?.isPublic ?? true,
+    };
+  }
+
+  updateVendorFoundingOffer(
+    adminUserId: string,
+    dto: UpdateVendorFoundingOfferDto,
+  ) {
+    return this.upsertPlatformSetting(
+      VENDOR_FOUNDING_OFFER_SETTING_KEY,
+      adminUserId,
+      {
+        value: {
+          ...DEFAULT_VENDOR_FOUNDING_OFFER,
+          ...dto,
+        },
+        isPublic: true,
+        description:
+          'Vendor founding offer window and subscription discount configuration.',
+      },
+    );
+  }
+
   async upsertPlatformSetting(
     key: string,
     adminUserId: string,
@@ -573,6 +617,42 @@ export class AdminService {
       dto as any,
     );
     return setting;
+  }
+
+  async updateVendorFoundingMember(
+    adminUserId: string,
+    vendorId: string,
+    dto: UpdateVendorFoundingMemberDto,
+  ) {
+    const isFoundingMember = dto.isFoundingMember ?? true;
+    const now = new Date();
+    const vendor = await this.adminRepository.updateVendorFoundingMember(
+      vendorId,
+      {
+        isFoundingMember,
+        foundingJoinedAt: isFoundingMember ? now : null,
+        foundingDiscountEndsAt: isFoundingMember
+          ? new Date(new Date(now).setMonth(now.getMonth() + 12))
+          : null,
+        lockedCommissionRate: isFoundingMember
+          ? (dto.lockedCommissionRate ?? null)
+          : null,
+      },
+    );
+
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'UPDATE_VENDOR_FOUNDING_MEMBER',
+      'Vendor',
+      vendorId,
+      {
+        isFoundingMember,
+        lockedCommissionRate: dto.lockedCommissionRate ?? null,
+        reason: dto.reason ?? null,
+      },
+    );
+
+    return vendor;
   }
 
   listLeaderboardRules() {

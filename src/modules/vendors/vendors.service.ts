@@ -13,6 +13,7 @@ import {
   createHash,
   randomBytes,
 } from 'crypto';
+import { VendorPlan } from '@prisma/client';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { CloudinaryService } from '../../infrastructure/cloudinary/cloudinary.service';
@@ -31,6 +32,13 @@ import { UpdatePhotoShootRequestDto } from './dto/update-photo-shoot-request.dto
 import { VendorVerificationDocumentType } from './enums/vendor-verification-document-type.enum';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { VendorCreditAnalyticsQueryDto } from './dto/vendor-credit-analytics-query.dto';
+import { assertVendorPlanFeature } from './vendor-plan-access';
+import {
+  DEFAULT_VENDOR_FOUNDING_OFFER,
+  VENDOR_FOUNDING_OFFER_SETTING_KEY,
+  VENDOR_PLAN_CONFIG,
+  type VendorFoundingOfferConfig,
+} from './vendor-plan.config';
 import {
   NON_TEXAS_VENDOR_DOCUMENT_REQUIREMENTS,
   TEXAS_STATES,
@@ -66,6 +74,28 @@ export class VendorsService {
     return {
       ...vendor,
       verificationRequirements: this.getVerificationRequirements(vendor),
+    };
+  }
+
+  async listVendorPlans() {
+    const foundingOffer = await this.getFoundingOfferConfig();
+    const now = new Date();
+    const isActiveNow = this.isFoundingOfferActive(foundingOffer, now);
+
+    return {
+      foundingOffer: {
+        ...foundingOffer,
+        isActiveNow,
+        displayText: isActiveNow
+          ? 'Founding vendor offer available August 5 – October 4, 2026'
+          : 'Standard pricing applies',
+      },
+      trial: {
+        freeTrialMonths: foundingOffer.freeTrialMonths,
+        foundingDiscountPercent: foundingOffer.subscriptionDiscountPercent,
+        foundingDiscountMonths: foundingOffer.subscriptionDiscountMonths,
+      },
+      plans: Object.values(VENDOR_PLAN_CONFIG),
     };
   }
 
@@ -109,6 +139,20 @@ export class VendorsService {
   async addStaff(userId: string, dto: CreateVendorStaffDto) {
     const vendor = await this.getVendorOwnerProfile(userId);
     this.ensureVendorApproved(vendor);
+    const planConfig = assertVendorPlanFeature(vendor, 'STAFF_ACCOUNTS');
+    const activeStaffCount = await this.prisma.vendorStaff.count({
+      where: {
+        vendorId: vendor.id,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+    });
+
+    if (activeStaffCount >= planConfig.maxStaffAccounts) {
+      throw new ForbiddenException(
+        `${planConfig.name} plan allows ${planConfig.maxStaffAccounts} staff account${planConfig.maxStaffAccounts === 1 ? '' : 's'}. Upgrade your plan to add more staff.`,
+      );
+    }
 
     const email = dto.email.trim().toLowerCase();
     const pin = dto.pin.trim();
@@ -347,10 +391,16 @@ export class VendorsService {
 
   async completeOnboarding(userId: string, dto: CompleteVendorOnboardingDto) {
     const vendor = await this.getMyVendorProfile(userId);
+    const foundingData = await this.resolveFoundingData(
+      dto.selectedPlan ?? dto.plan ?? VendorPlan.FREE,
+      dto.claimFoundingMember === true,
+      vendor,
+    );
     const result = await this.vendorsRepository.completeOnboarding(
       userId,
       vendor.id,
       dto,
+      foundingData,
     );
 
     if (result.photoShootRequest) {
@@ -389,6 +439,94 @@ export class VendorsService {
         ? 'Thank you. Our team will contact you about professional photos shortly.'
         : null,
     };
+  }
+
+  private async resolveFoundingData(
+    selectedPlan: VendorPlan,
+    claimFoundingMember: boolean,
+    existingVendor: any,
+  ) {
+    const foundingOffer = await this.getFoundingOfferConfig();
+    const now = new Date();
+    const trialStartedAt = existingVendor.trialStartedAt ?? now;
+    const trialEndsAt =
+      existingVendor.trialEndsAt ??
+      this.addMonths(trialStartedAt, foundingOffer.freeTrialMonths);
+    const existingFoundingJoinedAt = existingVendor.foundingJoinedAt ?? now;
+
+    if (existingVendor.isFoundingMember) {
+      return {
+        isFoundingMember: true,
+        foundingJoinedAt: existingFoundingJoinedAt,
+        trialStartedAt,
+        trialEndsAt,
+        foundingDiscountEndsAt:
+          existingVendor.foundingDiscountEndsAt ??
+          this.addMonths(existingFoundingJoinedAt, 12),
+        lockedCommissionRate:
+          VENDOR_PLAN_CONFIG[selectedPlan].foundingCommissionRate,
+      };
+    }
+
+    if (!claimFoundingMember) {
+      return {
+        isFoundingMember: false,
+        foundingJoinedAt: null,
+        trialStartedAt,
+        trialEndsAt,
+        foundingDiscountEndsAt: null,
+        lockedCommissionRate: null,
+      };
+    }
+
+    if (!this.isFoundingOfferActive(foundingOffer, now)) {
+      throw new BadRequestException(
+        'Founding member offer ended on October 4, 2026. Standard pricing applies from October 5, 2026.',
+      );
+    }
+
+    const planConfig = VENDOR_PLAN_CONFIG[selectedPlan];
+
+    return {
+      isFoundingMember: true,
+      foundingJoinedAt: now,
+      trialStartedAt,
+      trialEndsAt,
+      foundingDiscountEndsAt: this.addMonths(now, 12),
+      lockedCommissionRate: planConfig.foundingCommissionRate,
+    };
+  }
+
+  private async getFoundingOfferConfig(): Promise<VendorFoundingOfferConfig> {
+    const setting = await this.prisma.platformSetting.findUnique({
+      where: { key: VENDOR_FOUNDING_OFFER_SETTING_KEY },
+    });
+    const value =
+      setting?.value && typeof setting.value === 'object'
+        ? (setting.value as Partial<VendorFoundingOfferConfig>)
+        : {};
+
+    return {
+      ...DEFAULT_VENDOR_FOUNDING_OFFER,
+      ...value,
+    };
+  }
+
+  private isFoundingOfferActive(
+    config: VendorFoundingOfferConfig,
+    now: Date,
+  ) {
+    if (!config.enabled) {
+      return false;
+    }
+
+    return now >= new Date(config.startAt) && now <= new Date(config.endAt);
+  }
+
+  private addMonths(date: Date, months: number) {
+    const result = new Date(date);
+    result.setMonth(result.getMonth() + months);
+    return result;
   }
 
   async submitVerificationRequest(
@@ -509,6 +647,7 @@ export class VendorsService {
   async getMyVendorAnalytics(userId: string) {
     const vendor = await this.getMyVendorProfile(userId);
     this.ensureVendorApproved(vendor);
+    assertVendorPlanFeature(vendor, 'BASIC_ANALYTICS');
 
     return this.vendorsRepository.getVendorAnalytics(vendor.id);
   }
@@ -519,6 +658,8 @@ export class VendorsService {
   ) {
     const vendor = await this.getMyVendorProfile(userId);
     this.ensureVendorApproved(vendor);
+    assertVendorPlanFeature(vendor, 'BASIC_ANALYTICS');
+    assertVendorPlanFeature(vendor, 'REWARDS');
 
     const range = query.range ?? 'week';
     const { start, end, previousStart, previousEnd, days } =
@@ -626,6 +767,7 @@ export class VendorsService {
   ) {
     const vendor = await this.getVendorOwnerProfile(userId);
     this.ensureVendorApproved(vendor);
+    assertVendorPlanFeature(vendor, 'REWARDS');
 
     const updated = await this.vendorsRepository.updateCreditSettings(
       vendor.id,

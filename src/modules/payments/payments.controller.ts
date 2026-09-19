@@ -14,6 +14,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/authenticated-re
 import { CreateBookingPaymentDto } from './dto/create-booking-payment.dto';
 import { CreateConnectAccountDto } from './dto/create-connect-account.dto';
 import { CreateRefundDto } from './dto/create-refund.dto';
+import { CreateVendorSubscriptionDto } from './dto/create-vendor-subscription.dto';
 import { PaymentsService } from './payments.service';
 
 const errorExample = (
@@ -73,6 +74,30 @@ const refundExample = {
   reason: 'Customer cancelled booking in advance per policy',
   status: 'PROCESSING',
   processedAt: null,
+};
+
+const vendorSubscriptionExample = {
+  vendor: {
+    id: '3f4c4f1e-09d0-4f3c-9b8d-3a4dc3a3f7b2',
+    selectedPlan: 'STARTER',
+    subscriptionStatus: 'TRIALING',
+    stripeCustomerId: 'cus_1QYpK2BiteDropDemo',
+    stripeSubscriptionId: 'sub_1QYpK2BiteDropDemo',
+    trialStartedAt: '2026-09-19T10:00:00.000Z',
+    trialEndsAt: '2026-12-18T10:00:00.000Z',
+    subscriptionCurrentPeriodEnd: '2026-12-18T10:00:00.000Z',
+    isFoundingMember: true,
+    foundingDiscountEndsAt: '2027-09-19T10:00:00.000Z',
+    lockedCommissionRate: '0.120',
+  },
+  stripe: {
+    publishableKey: 'pk_test_...',
+    customerId: 'cus_1QYpK2BiteDropDemo',
+    customerEphemeralKeySecret: 'ek_test_...',
+    subscriptionId: 'sub_1QYpK2BiteDropDemo',
+    clientSecret: 'seti_1QYpK2BiteDropDemo_secret_abc123',
+    clientSecretType: 'setup_intent',
+  },
 };
 
 @ApiTags('Payments')
@@ -156,6 +181,45 @@ export class PaymentsController {
   @Get('payouts/mine')
   getVendorPayouts(@CurrentUser() user: AuthenticatedUser) {
     return this.paymentsService.getVendorPayouts(user.sub);
+  }
+
+  @ApiOperation({
+    summary:
+      'Create native Stripe subscription intent for vendor paid plan',
+    description:
+      'Use this for in-app/native card payment. It creates or reuses a Stripe customer, creates a Stripe subscription with the configured paid-plan price, and returns PaymentSheet-ready secrets. It does not return a hosted Stripe Checkout link.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Vendor subscription intent created successfully.',
+    schema: { example: vendorSubscriptionExample },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Plan is invalid/free or Stripe plan price is missing.',
+    schema: {
+      example: errorExample(
+        400,
+        'Stripe price id is not configured for STARTER plan',
+        'Bad Request',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Vendor profile does not exist.',
+    schema: {
+      example: errorExample(403, 'Vendor profile is required', 'Forbidden'),
+    },
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Post('vendors/me/subscription-intent')
+  createVendorSubscriptionIntent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateVendorSubscriptionDto,
+  ) {
+    return this.paymentsService.createVendorSubscriptionIntent(user.sub, dto);
   }
 
   @ApiOperation({

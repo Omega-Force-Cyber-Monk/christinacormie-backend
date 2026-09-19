@@ -26,6 +26,10 @@ import { UpdateFoodTruckProfileSettingsDto } from './dto/update-profile-settings
 import { UpdateTruckLocationDto } from './dto/update-truck-location.dto';
 import { UpdateTruckImageDto } from './dto/update-truck-image.dto';
 import { FoodTrucksRepository } from './food-trucks.repository';
+import {
+  assertVendorPlanFeature,
+  getVendorPlanConfig,
+} from '../vendors/vendor-plan-access';
 
 @Injectable()
 export class FoodTrucksService {
@@ -123,6 +127,17 @@ export class FoodTrucksService {
 
   async createDraft(userId: string, dto: CreateDraftFoodTruckDto) {
     const vendor = await this.getVendorForUser(userId);
+    const planConfig = getVendorPlanConfig(vendor.selectedPlan);
+    const currentTruckCount =
+      await this.foodTrucksRepository.countVendorFoodTrucks(vendor.id);
+
+    if (currentTruckCount >= planConfig.maxIncludedTrucks) {
+      assertVendorPlanFeature(vendor, 'MULTIPLE_TRUCKS');
+      throw new ForbiddenException(
+        `${planConfig.name} plan includes ${planConfig.maxIncludedTrucks} truck listing${planConfig.maxIncludedTrucks === 1 ? '' : 's'}. Additional truck billing is not active yet.`,
+      );
+    }
+
     return this.foodTrucksRepository.createDraft(vendor.id, dto);
   }
 
@@ -264,7 +279,8 @@ export class FoodTrucksService {
     dto: CreateFoodTruckDropDto,
   ) {
     await this.ensureOwnFoodTruck(userId, foodTruckId);
-    await this.ensureApprovedVendor(userId);
+    const vendor = await this.ensureApprovedVendor(userId);
+    assertVendorPlanFeature(vendor, 'PROMOTIONS');
     return this.foodTrucksRepository.createActiveDrop(foodTruckId, dto);
   }
 

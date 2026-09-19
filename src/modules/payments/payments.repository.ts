@@ -8,7 +8,65 @@ export class PaymentsRepository {
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      include: { paymentAccount: true },
+      include: { paymentAccount: true, user: { include: { profile: true } } },
+    });
+  }
+
+  findVendorByStripeSubscriptionId(stripeSubscriptionId: string) {
+    return this.prisma.vendor.findUnique({
+      where: { stripeSubscriptionId },
+    });
+  }
+
+  updateVendorStripeCustomer(vendorId: string, stripeCustomerId: string) {
+    return this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        stripeCustomerId,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  updateVendorSubscription(
+    vendorId: string,
+    data: {
+      selectedPlan?: string;
+      stripeCustomerId?: string;
+      stripeSubscriptionId?: string | null;
+      subscriptionStatus?: string;
+      trialStartedAt?: Date | null;
+      trialEndsAt?: Date | null;
+      subscriptionCurrentPeriodEnd?: Date | null;
+    },
+  ) {
+    return this.prisma.vendor.update({
+      where: { id: vendorId },
+      data: {
+        ...(data.selectedPlan ? { selectedPlan: data.selectedPlan as any } : {}),
+        ...(data.stripeCustomerId
+          ? { stripeCustomerId: data.stripeCustomerId }
+          : {}),
+        ...(data.stripeSubscriptionId !== undefined
+          ? { stripeSubscriptionId: data.stripeSubscriptionId }
+          : {}),
+        ...(data.subscriptionStatus
+          ? { subscriptionStatus: data.subscriptionStatus as any }
+          : {}),
+        ...(data.trialStartedAt !== undefined
+          ? { trialStartedAt: data.trialStartedAt }
+          : {}),
+        ...(data.trialEndsAt !== undefined
+          ? { trialEndsAt: data.trialEndsAt }
+          : {}),
+        ...(data.subscriptionCurrentPeriodEnd !== undefined
+          ? {
+              subscriptionCurrentPeriodEnd:
+                data.subscriptionCurrentPeriodEnd,
+            }
+          : {}),
+        updatedAt: new Date(),
+      },
     });
   }
 

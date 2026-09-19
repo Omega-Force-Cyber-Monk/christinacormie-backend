@@ -5,7 +5,7 @@ import { CloudinaryModule } from '../../infrastructure/cloudinary/cloudinary.mod
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CheckInsModule } from '../check-ins/check-ins.module';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { VendorsController } from './vendors.controller';
+import { VendorPlansController, VendorsController } from './vendors.controller';
 import { VendorsRepository } from './vendors.repository';
 import { VendorsService } from './vendors.service';
 
@@ -16,7 +16,7 @@ import { VendorsService } from './vendors.service';
     CloudinaryModule,
     NotificationsModule,
   ],
-  controllers: [VendorsController],
+  controllers: [VendorPlansController, VendorsController],
   providers: [VendorsService, VendorsRepository, JwtAuthGuard, RolesGuard],
   exports: [VendorsService],
 })

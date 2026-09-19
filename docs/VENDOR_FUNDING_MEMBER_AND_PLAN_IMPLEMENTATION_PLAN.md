@@ -870,13 +870,35 @@ assertVendorPlanFeature(vendor, 'EVENT_BOOKINGS')
   - rewards/QR redemption;
   - additional food truck creation.
 
-### Phase 4 — Admin control
+### Phase 4 — Native paid subscription payment
+
+- Add native mobile Stripe subscription intent API:
+  - `POST /api/v1/payments/vendors/me/subscription-intent`;
+  - request body: `{ "plan": "STARTER" | "PRO" | "ELITE" }`;
+  - returns Stripe customer id, ephemeral key, subscription id, and client secret for native card payment;
+  - does not use hosted Stripe Checkout/link flow.
+- Store vendor Stripe subscription fields:
+  - `stripeCustomerId`;
+  - `stripeSubscriptionId`;
+  - `subscriptionStatus`;
+  - `subscriptionCurrentPeriodEnd`.
+- Paid plan feature unlock rule:
+  - paid plan selected but subscription not `TRIALING`/`ACTIVE` = blocked;
+  - after Stripe confirms trial/payment through webhook = paid features unlock.
+- Required Stripe env:
+  - `STRIPE_VENDOR_STARTER_PRICE_ID`;
+  - `STRIPE_VENDOR_PRO_PRICE_ID`;
+  - `STRIPE_VENDOR_ELITE_PRICE_ID`;
+  - `STRIPE_PUBLISHABLE_KEY`;
+  - optional `VENDOR_SUBSCRIPTION_TRIAL_DAYS`, default `90`.
+
+### Phase 5 — Admin control
 
 - Add admin founding offer settings API;
 - Add admin manual founding member override;
 - Add audit logs.
 
-### Phase 5 — Swagger/manual testing docs
+### Phase 6 — Swagger/manual testing docs
 
 - Add Swagger examples;
 - Add manual curl testing doc;
@@ -920,6 +942,24 @@ assertVendorPlanFeature(vendor, 'EVENT_BOOKINGS')
 - Expected:
   - 403;
   - plan limit message.
+
+### Paid plan selected but subscription not completed
+
+- Vendor selects Starter/Pro/Elite during onboarding;
+- Vendor does not complete native subscription payment/setup;
+- Try paid feature API like quote/staff/rewards/promotions;
+- Expected:
+  - 403;
+  - message says subscription payment must be completed.
+
+### Paid subscription completed
+
+- Vendor calls `POST /api/v1/payments/vendors/me/subscription-intent`;
+- Flutter/native app confirms the returned Stripe `clientSecret`;
+- Stripe webhook sends subscription status `trialing` or `active`;
+- Expected:
+  - vendor `subscriptionStatus = TRIALING` or `ACTIVE`;
+  - paid plan features unlock according to selected plan.
 
 ### Commission calculation
 

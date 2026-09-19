@@ -91,6 +91,15 @@ export class CompleteVendorOnboardingDto {
   @IsEnum(VendorPlan)
   selectedPlan?: VendorPlan;
 
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Set true when the vendor wants to claim the founding member offer during the configured founding window.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  claimFoundingMember?: boolean;
+
   @ApiPropertyOptional({ type: OnboardingContactDto })
   @IsOptional()
   @ValidateNested()
