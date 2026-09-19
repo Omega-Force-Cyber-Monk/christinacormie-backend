@@ -6,11 +6,21 @@ import { setupSwagger } from './swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://christinacormie-frontend.vercel.app',
+    'https://christinacormie-frontend.vercel.app/',
+    ...(process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+      : []),
+  ];
+
   app.enableCors({
-    origin: ['http://localhost:5173'],
+    origin: Array.from(new Set(allowedOrigins.filter(Boolean))),
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
   app.useGlobalPipes(
     new ValidationPipe({
