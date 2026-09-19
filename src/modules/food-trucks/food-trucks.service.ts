@@ -22,6 +22,7 @@ import { UpdateGuestCapacityDto } from './dto/update-guest-capacity.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 import { UpdateOperatingStatusDto } from './dto/update-operating-status.dto';
+import { UpdateFoodTruckProfileSettingsDto } from './dto/update-profile-settings.dto';
 import { UpdateTruckLocationDto } from './dto/update-truck-location.dto';
 import { UpdateTruckImageDto } from './dto/update-truck-image.dto';
 import { FoodTrucksRepository } from './food-trucks.repository';
@@ -132,6 +133,51 @@ export class FoodTrucksService {
   ) {
     await this.ensureOwnFoodTruck(userId, foodTruckId);
     return this.foodTrucksRepository.updateDraft(foodTruckId, dto);
+  }
+
+  async updateProfileSettings(
+    userId: string,
+    foodTruckId: string,
+    dto: UpdateFoodTruckProfileSettingsDto,
+  ) {
+    await this.ensureOwnFoodTruck(userId, foodTruckId);
+
+    const normalizedHandle =
+      dto.handle === undefined ? undefined : this.normalizeHandle(dto.handle);
+
+    if (normalizedHandle) {
+      const existingHandle = await this.foodTrucksRepository.findByHandle(
+        normalizedHandle,
+        foodTruckId,
+      );
+
+      if (existingHandle) {
+        throw new BadRequestException('This food truck handle is already taken');
+      }
+    }
+
+    if (dto.cuisines !== undefined) {
+      if (!dto.cuisines.length) {
+        throw new BadRequestException('At least one cuisine is required');
+      }
+
+      for (const cuisine of dto.cuisines) {
+        if (!cuisine.cuisineId && !cuisine.name) {
+          throw new BadRequestException(
+            'Each cuisine needs either cuisineId or name',
+          );
+        }
+      }
+    }
+
+    if (dto.operatingHours !== undefined) {
+      this.validateOperatingHours(dto.operatingHours);
+    }
+
+    return this.foodTrucksRepository.updateProfileSettings(foodTruckId, {
+      ...dto,
+      ...(normalizedHandle !== undefined ? { handle: normalizedHandle } : {}),
+    });
   }
 
   async setCuisines(userId: string, foodTruckId: string, dto: SetCuisinesDto) {
@@ -309,20 +355,7 @@ export class FoodTrucksService {
   ) {
     await this.ensureOwnFoodTruck(userId, foodTruckId);
 
-    const days = new Set<number>();
-    for (const hour of dto.hours) {
-      if (days.has(hour.dayOfWeek)) {
-        throw new BadRequestException('Operating hours contain duplicate days');
-      }
-
-      if (!hour.isClosed && (!hour.openingTime || !hour.closingTime)) {
-        throw new BadRequestException(
-          'Open days need opening and closing times',
-        );
-      }
-
-      days.add(hour.dayOfWeek);
-    }
+    this.validateOperatingHours(dto.hours);
 
     return this.foodTrucksRepository.setOperatingHours(foodTruckId, dto);
   }
@@ -400,6 +433,32 @@ export class FoodTrucksService {
     }
 
     return foodTruck;
+  }
+
+  private validateOperatingHours(hours: Array<{
+    dayOfWeek: number;
+    isClosed: boolean;
+    openingTime?: string;
+    closingTime?: string;
+  }>) {
+    const days = new Set<number>();
+    for (const hour of hours) {
+      if (days.has(hour.dayOfWeek)) {
+        throw new BadRequestException('Operating hours contain duplicate days');
+      }
+
+      if (!hour.isClosed && (!hour.openingTime || !hour.closingTime)) {
+        throw new BadRequestException(
+          'Open days need opening and closing times',
+        );
+      }
+
+      days.add(hour.dayOfWeek);
+    }
+  }
+
+  private normalizeHandle(handle: string) {
+    return handle.trim().replace(/^@+/, '').toLowerCase();
   }
 
   private customerDisplayName(
