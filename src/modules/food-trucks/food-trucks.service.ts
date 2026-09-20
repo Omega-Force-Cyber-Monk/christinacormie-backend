@@ -401,7 +401,7 @@ export class FoodTrucksService {
   }
 
   private async getVendorForUser(userId: string) {
-    const vendor = await this.foodTrucksRepository.findVendorByUserId(userId);
+    const vendor = await this.foodTrucksRepository.findVendorForActor(userId);
 
     if (!vendor) {
       throw new ForbiddenException('Vendor profile is required');

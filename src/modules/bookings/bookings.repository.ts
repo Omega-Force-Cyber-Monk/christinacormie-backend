@@ -3,6 +3,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AcceptBookingQuoteDto } from './dto/accept-booking-quote.dto';
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { VendorBookingsQueryDto } from './dto/vendor-bookings-query.dto';
 
 type ServiceAreaCheck = {
   serviceAreaId: string;
@@ -158,12 +159,105 @@ export class BookingsRepository {
     });
   }
 
-  listVendorBookingsByVendorId(vendorId: string) {
+  listVendorBookingsByVendorId(
+    vendorId: string,
+    query?: VendorBookingsQueryDto,
+  ) {
+    const where: any = { vendorId };
+
+    if (query?.source === 'DIRECT') {
+      where.communityRequestId = null;
+    } else if (query?.source === 'COMMUNITY') {
+      where.communityRequestId = { not: null };
+    }
+
+    if (query?.status) {
+      const statuses = query.status
+        .split(',')
+        .map((s) => s.trim().toUpperCase())
+        .filter(Boolean);
+      where.status = statuses.length === 1 ? statuses[0] : { in: statuses };
+    } else if (query?.tab === 'REQUESTS') {
+      where.status = { in: ['PENDING', 'QUOTED'] };
+    } else if (query?.tab === 'ORDERS') {
+      where.status = {
+        in: [
+          'PAYMENT_PENDING',
+          'CONFIRMED',
+          'IN_PROGRESS',
+          'COMPLETED',
+          'CANCELLED',
+          'REJECTED',
+        ],
+      };
+    }
+
+    if (query?.foodTruckId) {
+      where.foodTruckId = query.foodTruckId;
+    }
+
     return this.prisma.booking.findMany({
-      where: { vendorId },
+      where,
       include: this.bookingInclude(),
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async countVendorRequests(vendorId: string, userId: string) {
+    const now = new Date();
+
+    const bookingsCount = await this.prisma.booking.count({
+      where: {
+        vendorId,
+        communityRequestId: null,
+        status: { in: ['PENDING', 'QUOTED'] as any },
+      },
+    });
+
+    const trucks = await this.prisma.foodTruck.findMany({
+      where: { vendorId, deletedAt: null },
+      select: { id: true },
+    });
+    const truckIds = trucks.map((t) => t.id);
+
+    const communityCount = await this.prisma.communityRequest.count({
+      where: {
+        deletedAt: null,
+        createdById: { not: userId },
+        status: 'OPEN' as any,
+        category: { in: ['NEED_TRUCK', 'VENDOR_CALLOUT'] as any },
+        actions: { none: { userId, type: 'IGNORE' as any } },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        ...(truckIds.length > 0
+          ? {
+              AND: [
+                {
+                  OR: [
+                    { visibility: 'PUBLIC' as any },
+                    {
+                      visibility: 'PRIVATE' as any,
+                      targetFoodTruckId: { in: truckIds },
+                    },
+                  ],
+                },
+              ],
+            }
+          : { visibility: 'PUBLIC' as any }),
+      },
+    });
+
+    const messagesCount = await this.prisma.conversation.count({
+      where: {
+        participants: { some: { userId } },
+        isClosed: false,
+      },
+    });
+
+    return {
+      bookings: bookingsCount,
+      community: communityCount,
+      messages: messagesCount,
+    };
   }
 
   findQuoteById(quoteId: string) {
@@ -902,6 +996,21 @@ export class BookingsRepository {
 
   private bookingInclude() {
     return {
+      customer: {
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          profile: {
+            select: {
+              displayName: true,
+              firstName: true,
+              lastName: true,
+              avatarUrl: true,
+            },
+          },
+        },
+      },
       foodTruck: {
         select: {
           id: true,

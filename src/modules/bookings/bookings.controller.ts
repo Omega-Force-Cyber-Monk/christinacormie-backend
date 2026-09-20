@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -28,6 +29,7 @@ import {
 import { CreateBookingQuoteDto } from './dto/create-booking-quote.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
+import { VendorBookingsQueryDto } from './dto/vendor-bookings-query.dto';
 import { BookingsService } from './bookings.service';
 
 const errorExample = (
@@ -214,8 +216,45 @@ export class BookingsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR, UserRole.VENDOR_STAFF)
   @Get('vendor/mine')
-  listVendorBookings(@CurrentUser() user: AuthenticatedUser) {
-    return this.bookingsService.listVendorBookings(user.sub);
+  listVendorBookings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: VendorBookingsQueryDto,
+  ) {
+    return this.bookingsService.listVendorBookings(user.sub, query);
+  }
+
+  @ApiOperation({
+    summary: 'Get request badge counts for vendor Requests screen tabs',
+    description:
+      'Returns pending booking requests, open community requests, and active conversation counts.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Request counts returned successfully.',
+    schema: {
+      example: {
+        bookings: 3,
+        community: 4,
+        messages: 2,
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: { example: unauthorizedExample },
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'User is not a vendor, vendor profile is missing, or vendor is not approved/verified.',
+    schema: { example: vendorApprovalErrorExample },
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR, UserRole.VENDOR_STAFF)
+  @Get('vendor/requests/counts')
+  getVendorRequestsCounts(@CurrentUser() user: AuthenticatedUser) {
+    return this.bookingsService.getVendorRequestsCounts(user.sub);
   }
 
   @ApiOperation({

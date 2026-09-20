@@ -18,6 +18,7 @@ import {
   ResolveBookingIssueDto,
 } from './dto/resolve-booking-issue.dto';
 import { VendorBookingDecisionDto } from './dto/vendor-booking-decision.dto';
+import { VendorBookingsQueryDto } from './dto/vendor-bookings-query.dto';
 import { UserRole } from '../../common/enums/user-role.enum';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { NotificationEventType } from '../notifications/enums/notification-event-type.enum';
@@ -97,9 +98,20 @@ export class BookingsService {
     return this.bookingsRepository.listCustomerBookings(userId);
   }
 
-  async listVendorBookings(userId: string) {
+  async listVendorBookings(
+    userId: string,
+    query?: VendorBookingsQueryDto,
+  ) {
     const vendor = await this.ensureVendor(userId);
-    return this.bookingsRepository.listVendorBookingsByVendorId(vendor.id);
+    return this.bookingsRepository.listVendorBookingsByVendorId(
+      vendor.id,
+      query,
+    );
+  }
+
+  async getVendorRequestsCounts(userId: string) {
+    const vendor = await this.ensureVendor(userId);
+    return this.bookingsRepository.countVendorRequests(vendor.id, userId);
   }
 
   async getBookingDetails(userId: string, bookingId: string) {
