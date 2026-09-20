@@ -79,6 +79,10 @@ export class VendorsService {
 
   async listVendorPlans() {
     const foundingOffer = await this.getFoundingOfferConfig();
+    const tiers = await this.prisma.vendorSubscriptionTier.findMany({
+      where: { active: true, deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
     const now = new Date();
     const isActiveNow = this.isFoundingOfferActive(foundingOffer, now);
 
@@ -95,7 +99,7 @@ export class VendorsService {
         foundingDiscountPercent: foundingOffer.subscriptionDiscountPercent,
         foundingDiscountMonths: foundingOffer.subscriptionDiscountMonths,
       },
-      plans: Object.values(VENDOR_PLAN_CONFIG),
+      plans: tiers.map((tier) => this.formatSubscriptionTier(tier)),
     };
   }
 
@@ -509,6 +513,32 @@ export class VendorsService {
     return {
       ...DEFAULT_VENDOR_FOUNDING_OFFER,
       ...value,
+    };
+  }
+
+  private formatSubscriptionTier(tier: any) {
+    return {
+      id: tier.id,
+      code: tier.code,
+      plan: tier.legacyPlan,
+      name: tier.name,
+      subtitle: tier.subtitle,
+      badge: tier.badge,
+      monthlyPriceCents: tier.monthlyPriceCents,
+      foundingMonthlyPriceCentsAfterTrial:
+        tier.foundingMonthlyPriceCentsAfterTrial,
+      normalCommissionRate: tier.normalCommissionRate,
+      foundingCommissionRate: tier.foundingCommissionRate,
+      bookingEnabled: tier.bookingEnabled,
+      maxStaffAccounts: tier.maxStaffAccounts,
+      maxIncludedTrucks: tier.maxIncludedTrucks,
+      additionalTruckMonthlyPriceCents: tier.additionalTruckMonthlyPriceCents,
+      analyticsLevel: tier.analyticsLevel,
+      trialDays: tier.trialDays,
+      features: tier.features,
+      included: tier.included,
+      notIncluded: tier.notIncluded,
+      active: tier.active,
     };
   }
 
