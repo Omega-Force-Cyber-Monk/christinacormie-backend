@@ -152,9 +152,29 @@ export class CommunityPostsService {
     const where: Prisma.CommunityRequestWhereInput = { deletedAt: null };
     if (query.tab === 'MINE') where.createdById = userId;
     else {
-      where.visibility = 'PUBLIC';
       where.status = { in: ['OPEN', 'MATCHED', 'CLOSED'] };
       where.actions = { none: { userId, type: 'IGNORE' } };
+
+      const vendor = await this.prisma.vendor.findUnique({
+        where: { userId },
+        include: {
+          foodTrucks: { where: { deletedAt: null }, select: { id: true } },
+        },
+      });
+      const truckIds = vendor?.foodTrucks?.map((t) => t.id) ?? [];
+
+      if (truckIds.length > 0) {
+        where.AND = [
+          {
+            OR: [
+              { visibility: 'PUBLIC' },
+              { visibility: 'PRIVATE', targetFoodTruckId: { in: truckIds } },
+            ],
+          },
+        ];
+      } else {
+        where.visibility = 'PUBLIC';
+      }
     }
     if (query.category) where.category = query.category;
     if (query.tab === 'REQUESTS') {

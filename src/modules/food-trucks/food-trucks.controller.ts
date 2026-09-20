@@ -416,7 +416,7 @@ export class FoodTrucksController {
     schema: { example: forbiddenVendorExample },
   })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.VENDOR)
+  @Roles(UserRole.VENDOR, UserRole.VENDOR_STAFF)
   @Get('mine')
   getMyFoodTrucks(@CurrentUser() user: AuthenticatedUser) {
     return this.foodTrucksService.getMyFoodTrucks(user.sub);
