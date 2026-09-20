@@ -26,6 +26,18 @@ export class BookingsRepository {
         selectedPlan: true,
         subscriptionStatus: true,
         lockedCommissionRate: true,
+        activeSubscriptionTier: {
+          select: {
+            code: true,
+            name: true,
+            monthlyPriceCents: true,
+            bookingEnabled: true,
+            maxStaffAccounts: true,
+            maxIncludedTrucks: true,
+            analyticsLevel: true,
+            normalCommissionRate: true,
+          },
+        },
       },
     });
   }
@@ -52,6 +64,18 @@ export class BookingsRepository {
             selectedPlan: true,
             subscriptionStatus: true,
             lockedCommissionRate: true,
+            activeSubscriptionTier: {
+              select: {
+                code: true,
+                name: true,
+                monthlyPriceCents: true,
+                bookingEnabled: true,
+                maxStaffAccounts: true,
+                maxIncludedTrucks: true,
+                analyticsLevel: true,
+                normalCommissionRate: true,
+              },
+            },
           },
         },
       },

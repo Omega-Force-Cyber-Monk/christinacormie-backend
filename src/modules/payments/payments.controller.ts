@@ -79,6 +79,7 @@ const refundExample = {
 const vendorSubscriptionExample = {
   vendor: {
     id: '3f4c4f1e-09d0-4f3c-9b8d-3a4dc3a3f7b2',
+    activeSubscriptionTierId: '0d2ad84f-7acb-48f2-b6f5-f30275d106e4',
     selectedPlan: 'STARTER',
     subscriptionStatus: 'INCOMPLETE',
     stripeCustomerId: 'cus_1QYpK2BiteDropDemo',
@@ -91,7 +92,6 @@ const vendorSubscriptionExample = {
     lockedCommissionRate: '0.120',
   },
   stripe: {
-    publishableKey: 'pk_test_...',
     customerId: 'cus_1QYpK2BiteDropDemo',
     customerEphemeralKeySecret: 'ek_test_...',
     subscriptionId: 'sub_1QYpK2BiteDropDemo',
@@ -185,9 +185,9 @@ export class PaymentsController {
 
   @ApiOperation({
     summary:
-      'Create native Stripe subscription intent for vendor paid plan',
+      'Create native Stripe subscription intent for vendor subscription tier',
     description:
-      'Use this for in-app/native card payment. It creates or reuses a Stripe customer, creates a Stripe subscription with the configured paid-plan price, and returns PaymentSheet-ready secrets. It does not return a hosted Stripe Checkout link.',
+      'Use this for in-app/native card payment. The vendor sends an admin-created tierId. Backend creates/reuses internal Stripe product/price as needed, creates the Stripe subscription, stores vendor subscription records, and returns PaymentSheet-ready secrets. It does not return a hosted Stripe Checkout link.',
   })
   @ApiResponse({
     status: 201,

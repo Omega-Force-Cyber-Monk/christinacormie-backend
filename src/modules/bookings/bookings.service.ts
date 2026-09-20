@@ -1018,9 +1018,14 @@ export class BookingsService {
   private resolveVendorCommissionRate(vendor: {
     lockedCommissionRate?: unknown;
     selectedPlan?: string | null;
+    activeSubscriptionTier?: { normalCommissionRate?: unknown } | null;
   }) {
     if (vendor.lockedCommissionRate !== null && vendor.lockedCommissionRate !== undefined) {
       return Number(vendor.lockedCommissionRate);
+    }
+
+    if (vendor.activeSubscriptionTier?.normalCommissionRate !== undefined && vendor.activeSubscriptionTier.normalCommissionRate !== null) {
+      return Number(vendor.activeSubscriptionTier.normalCommissionRate);
     }
 
     const plan = vendor.selectedPlan ?? 'FREE';

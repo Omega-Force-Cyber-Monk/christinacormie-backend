@@ -90,6 +90,62 @@ export class StripeClientService {
     });
   }
 
+  async createProduct(params: {
+    name: string;
+    description?: string | null;
+    tierId: string;
+    code: string;
+  }) {
+    return this.post('/products', {
+      name: params.name,
+      ...(params.description ? { description: params.description } : {}),
+      'metadata[tierId]': params.tierId,
+      'metadata[code]': params.code,
+    });
+  }
+
+  async updateProduct(
+    productId: string,
+    params: {
+      name?: string;
+      description?: string | null;
+      active?: boolean;
+    },
+  ) {
+    return this.post(`/products/${productId}`, {
+      ...(params.name ? { name: params.name } : {}),
+      ...(params.description !== undefined
+        ? { description: params.description ?? '' }
+        : {}),
+      ...(params.active !== undefined
+        ? { active: String(params.active) }
+        : {}),
+    });
+  }
+
+  async createRecurringPrice(params: {
+    productId: string;
+    amountCents: number;
+    currency?: string;
+    tierId: string;
+    code: string;
+  }) {
+    return this.post('/prices', {
+      product: params.productId,
+      unit_amount: String(params.amountCents),
+      currency: (params.currency ?? 'USD').toLowerCase(),
+      recurring: { interval: 'month' },
+      'metadata[tierId]': params.tierId,
+      'metadata[code]': params.code,
+    });
+  }
+
+  async archivePrice(priceId: string) {
+    return this.post(`/prices/${priceId}`, {
+      active: 'false',
+    });
+  }
+
   async createEphemeralKey(customerId: string) {
     return this.post(
       '/ephemeral_keys',
@@ -107,6 +163,7 @@ export class StripeClientService {
       priceId: string;
       vendorId: string;
       plan: string;
+      tierId?: string;
       trialDays: number;
     },
     options?: StripeRequestOptions,
@@ -122,6 +179,7 @@ export class StripeClientService {
         'payment_settings[save_default_payment_method]': 'on_subscription',
         'metadata[vendorId]': params.vendorId,
         'metadata[plan]': params.plan,
+        ...(params.tierId ? { 'metadata[tierId]': params.tierId } : {}),
         expand: ['latest_invoice.payment_intent', 'pending_setup_intent'],
       },
       options,
@@ -263,6 +321,34 @@ export class StripeClientService {
           id: `cus_mock_${Date.now()}`,
           email: params.email,
           name: params.name,
+        };
+      }
+      if (path === '/products') {
+        return {
+          id: `prod_mock_${Date.now()}`,
+          name: params.name,
+          active: true,
+        };
+      }
+      if (path.startsWith('/products/')) {
+        return {
+          id: path.split('/').pop(),
+          ...params,
+        };
+      }
+      if (path === '/prices') {
+        return {
+          id: `price_mock_${Date.now()}`,
+          product: params.product,
+          unit_amount: params.unit_amount,
+          currency: params.currency,
+          active: true,
+        };
+      }
+      if (path.startsWith('/prices/')) {
+        return {
+          id: path.split('/').pop(),
+          active: params.active !== 'false',
         };
       }
       if (path === '/ephemeral_keys') {

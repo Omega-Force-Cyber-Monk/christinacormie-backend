@@ -138,4 +138,3 @@ export const VENDOR_PLAN_CONFIG = {
 } as const;
 
 export type VendorFoundingOfferConfig = typeof DEFAULT_VENDOR_FOUNDING_OFFER;
-

@@ -38,6 +38,10 @@ import { UpsertLeaderboardRuleDto } from './dto/upsert-leaderboard-rule.dto';
 import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
 import { UpdateVendorFoundingMemberDto } from './dto/update-vendor-founding-member.dto';
 import { UpdateVendorFoundingOfferDto } from './dto/update-vendor-founding-offer.dto';
+import {
+  CreateVendorSubscriptionTierDto,
+  UpdateVendorSubscriptionTierDto,
+} from './dto/vendor-subscription-tier.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -458,6 +462,54 @@ export class AdminController {
     @Body() dto: UpdateVendorFoundingOfferDto,
   ) {
     return this.adminService.updateVendorFoundingOffer(user.sub, dto);
+  }
+
+  @ApiOperation({ summary: 'List vendor subscription tiers' })
+  @Get('vendor-subscription-tiers')
+  listVendorSubscriptionTiers(@Query('includeInactive') includeInactive?: string) {
+    return this.adminService.listVendorSubscriptionTiers(
+      includeInactive === 'true',
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Create a vendor subscription tier and automatically create Stripe product/price',
+  })
+  @Post('vendor-subscription-tiers')
+  createVendorSubscriptionTier(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateVendorSubscriptionTierDto,
+  ) {
+    return this.adminService.createVendorSubscriptionTier(user.sub, dto);
+  }
+
+  @ApiOperation({
+    summary:
+      'Update a vendor subscription tier and automatically sync Stripe product/price',
+  })
+  @Patch('vendor-subscription-tiers/:tierId')
+  updateVendorSubscriptionTier(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('tierId', ParseUUIDPipe) tierId: string,
+    @Body() dto: UpdateVendorSubscriptionTierDto,
+  ) {
+    return this.adminService.updateVendorSubscriptionTier(
+      user.sub,
+      tierId,
+      dto,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Disable a vendor subscription tier and archive Stripe price',
+  })
+  @Delete('vendor-subscription-tiers/:tierId')
+  deleteVendorSubscriptionTier(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('tierId', ParseUUIDPipe) tierId: string,
+  ) {
+    return this.adminService.deleteVendorSubscriptionTier(user.sub, tierId);
   }
 
   @ApiOperation({ summary: 'Manually update vendor founding member status' })

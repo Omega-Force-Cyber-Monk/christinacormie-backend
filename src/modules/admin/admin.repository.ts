@@ -1152,6 +1152,39 @@ export class AdminRepository {
     });
   }
 
+  listVendorSubscriptionTiers(includeInactive = false) {
+    return this.prisma.vendorSubscriptionTier.findMany({
+      where: includeInactive ? {} : { active: true, deletedAt: null },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  findVendorSubscriptionTier(tierId: string) {
+    return this.prisma.vendorSubscriptionTier.findUnique({
+      where: { id: tierId },
+    });
+  }
+
+  findVendorSubscriptionTierByCode(code: string) {
+    return this.prisma.vendorSubscriptionTier.findUnique({
+      where: { code },
+    });
+  }
+
+  createVendorSubscriptionTier(data: any) {
+    return this.prisma.vendorSubscriptionTier.create({ data });
+  }
+
+  updateVendorSubscriptionTier(tierId: string, data: any) {
+    return this.prisma.vendorSubscriptionTier.update({
+      where: { id: tierId },
+      data: {
+        ...data,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
   updateVendorFoundingMember(
     vendorId: string,
     data: {

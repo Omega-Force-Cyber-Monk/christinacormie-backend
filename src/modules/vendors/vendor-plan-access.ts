@@ -21,13 +21,38 @@ export function assertVendorPlanFeature(
   vendor: {
     selectedPlan?: VendorPlan | string | null;
     subscriptionStatus?: string | null;
+    activeSubscriptionTier?: {
+      name?: string | null;
+      code?: string | null;
+      monthlyPriceCents?: number | null;
+      bookingEnabled?: boolean | null;
+      maxStaffAccounts?: number | null;
+      maxIncludedTrucks?: number | null;
+      analyticsLevel?: string | null;
+    } | null;
   },
   feature: VendorPlanFeature,
 ) {
-  const config = getVendorPlanConfig(vendor.selectedPlan);
+  const config = vendor.activeSubscriptionTier
+    ? {
+        plan: vendor.activeSubscriptionTier.code ?? vendor.selectedPlan,
+        name:
+          vendor.activeSubscriptionTier.name ??
+          getVendorPlanConfig(vendor.selectedPlan).name,
+        bookingEnabled: Boolean(vendor.activeSubscriptionTier.bookingEnabled),
+        maxStaffAccounts:
+          vendor.activeSubscriptionTier.maxStaffAccounts ?? 0,
+        maxIncludedTrucks:
+          vendor.activeSubscriptionTier.maxIncludedTrucks ?? 1,
+        analyticsLevel:
+          vendor.activeSubscriptionTier.analyticsLevel ?? 'NONE',
+        monthlyPriceCents:
+          vendor.activeSubscriptionTier.monthlyPriceCents ?? 0,
+      }
+    : getVendorPlanConfig(vendor.selectedPlan);
 
   if (
-    config.plan !== VendorPlan.FREE &&
+    config.monthlyPriceCents > 0 &&
     !['TRIALING', 'ACTIVE'].includes(vendor.subscriptionStatus ?? 'INACTIVE')
   ) {
     throw new ForbiddenException(
@@ -47,11 +72,13 @@ export function assertVendorPlanFeature(
             : feature === 'ADVANCED_ANALYTICS'
               ? config.analyticsLevel === 'ADVANCED'
               : feature === 'PROMOTIONS'
-                ? config.plan !== VendorPlan.FREE
+                ? config.monthlyPriceCents > 0
               : feature === 'REWARDS'
-                ? config.plan !== VendorPlan.FREE
+                ? config.monthlyPriceCents > 0
                 : feature === 'COMMUNITY_BOOKING_REQUESTS'
-                  ? ['PRO', 'ELITE'].includes(config.plan)
+                  ? ['PRO', 'ELITE'].includes(String(config.plan)) ||
+                    (config.analyticsLevel !== 'NONE' &&
+                      config.maxStaffAccounts >= 2)
                   : feature === 'MULTIPLE_TRUCKS'
                     ? config.maxIncludedTrucks > 1
                     : false;

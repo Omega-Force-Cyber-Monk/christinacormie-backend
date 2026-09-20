@@ -888,16 +888,22 @@ assertVendorPlanFeature(vendor, 'EVENT_BOOKINGS')
   - if vendor leaves payment screen and comes back, call the same API again to resume the incomplete subscription and receive a fresh PaymentSheet client secret;
   - after Stripe confirms trial/payment through webhook = paid features unlock.
 - Required Stripe env:
-  - `STRIPE_VENDOR_STARTER_PRICE_ID`;
-  - `STRIPE_VENDOR_PRO_PRICE_ID`;
-  - `STRIPE_VENDOR_ELITE_PRICE_ID`;
-  - `STRIPE_PUBLISHABLE_KEY`;
+  - `STRIPE_SECRET_KEY`;
+  - `STRIPE_WEBHOOK_SECRET`;
   - optional `VENDOR_SUBSCRIPTION_TRIAL_DAYS`, default `90`.
 
 ### Phase 5 — Admin control
 
 - Add admin founding offer settings API;
 - Add admin manual founding member override;
+- Add admin vendor plan pricing API:
+  - `GET /api/v1/admin/vendor-subscription-tiers`;
+  - `POST /api/v1/admin/vendor-subscription-tiers`;
+  - `PATCH /api/v1/admin/vendor-subscription-tiers/:tierId`;
+  - `DELETE /api/v1/admin/vendor-subscription-tiers/:tierId`;
+  - admin controls plan amount, founding amount, commission rates, features, and limits;
+  - backend creates/archives Stripe product/price internally;
+  - admin never enters Stripe `price_...` IDs manually;
 - Add audit logs.
 
 ### Phase 6 — Swagger/manual testing docs
