@@ -193,12 +193,20 @@ export class CommunityPostsService {
       where.OR = [{ expiresAt: null }, { expiresAt: { gt: new Date() } }];
     }
     let distances: Map<string, number> | undefined;
-    if (query.latitude !== undefined && query.longitude !== undefined) {
+    if (
+      query.tab !== 'MINE' &&
+      query.latitude !== undefined &&
+      query.longitude !== undefined
+    ) {
       const rows = await this.prisma.$queryRaw<
-        { id: string; distanceKm: number }[]
-      >`SELECT id, ST_Distance(location, ST_SetSRID(ST_MakePoint(${query.longitude}, ${query.latitude}), 4326)::geography) / 1000 AS "distanceKm" FROM community_requests WHERE deleted_at IS NULL AND ST_DWithin(location, ST_SetSRID(ST_MakePoint(${query.longitude}, ${query.latitude}), 4326)::geography, ${(query.radiusKm ?? 40) * 1000})`;
+        { id: string; distanceKm: number | null }[]
+      >`SELECT id, CASE WHEN location IS NOT NULL THEN ST_Distance(location, ST_SetSRID(ST_MakePoint(${query.longitude}, ${query.latitude}), 4326)::geography) / 1000 ELSE NULL END AS "distanceKm" FROM community_requests WHERE deleted_at IS NULL AND (location IS NULL OR ST_DWithin(location, ST_SetSRID(ST_MakePoint(${query.longitude}, ${query.latitude}), 4326)::geography, ${(query.radiusKm ?? 40) * 1000}))`;
       where.id = { in: rows.map((r) => r.id) };
-      distances = new Map(rows.map((r) => [r.id, r.distanceKm]));
+      distances = new Map(
+        rows
+          .filter((r) => r.distanceKm !== null)
+          .map((r) => [r.id, r.distanceKm as number]),
+      );
     }
     const limit = query.limit ?? 20;
     const offset = query.offset ?? 0;
