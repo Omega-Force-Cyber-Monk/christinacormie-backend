@@ -49,7 +49,26 @@ export class CommunityRepository {
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      select: { id: true, status: true, isVerified: true, selectedPlan: true, subscriptionStatus: true, lockedCommissionRate: true },
+      select: {
+        id: true,
+        status: true,
+        isVerified: true,
+        selectedPlan: true,
+        subscriptionStatus: true,
+        lockedCommissionRate: true,
+        activeSubscriptionTier: {
+          select: {
+            code: true,
+            name: true,
+            monthlyPriceCents: true,
+            bookingEnabled: true,
+            maxStaffAccounts: true,
+            maxIncludedTrucks: true,
+            analyticsLevel: true,
+            normalCommissionRate: true,
+          },
+        },
+      },
     });
   }
 
