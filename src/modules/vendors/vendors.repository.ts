@@ -124,6 +124,14 @@ export class VendorsRepository {
         const radiusKm = dto.serviceRadiusKm ?? dto.serviceRadius ?? 20;
         const latitude = dto.latitude ?? 30.2672;
         const longitude = dto.longitude ?? -97.7431;
+        const subscriptionTier = await tx.vendorSubscriptionTier.findFirst({
+          where: {
+            legacyPlan: selectedPlan as any,
+            active: true,
+            deletedAt: null,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        });
 
         await this.ensureUniqueUserContactInfo(
           tx,
@@ -165,6 +173,7 @@ export class VendorsRepository {
           where: { id: vendorId },
           data: {
             selectedPlan,
+            activeSubscriptionTierId: subscriptionTier?.id,
             ...(selectedPlan === 'FREE'
               ? { subscriptionStatus: 'ACTIVE' as const }
               : { subscriptionStatus: 'INCOMPLETE' as const }),
@@ -879,6 +888,12 @@ export class VendorsRepository {
         },
       },
       market: true,
+      activeSubscriptionTier: true,
+      subscriptions: {
+        orderBy: { createdAt: 'desc' as const },
+        take: 5,
+        include: { tier: true },
+      },
       verificationRequests: {
         orderBy: { createdAt: 'desc' as const },
       },

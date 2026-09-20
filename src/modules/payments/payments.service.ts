@@ -1,13 +1,11 @@
 import { platformCommissionRate } from '../bookings/quote-financials';
 import { getVendorPlanConfig } from '../vendors/vendor-plan-access';
-import { VENDOR_PLAN_CONFIG } from '../vendors/vendor-plan.config';
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { VendorPlan } from '@prisma/client';
 import { CreateBookingPaymentDto } from './dto/create-booking-payment.dto';
 import { CreateConnectAccountDto } from './dto/create-connect-account.dto';
 import { CreateRefundDto } from './dto/create-refund.dto';
@@ -90,26 +88,27 @@ export class PaymentsService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if ((dto.plan as VendorPlan) === VendorPlan.FREE) {
+    const tier = await this.resolveSubscriptionTier(dto);
+
+    if (tier.monthlyPriceCents <= 0) {
       throw new BadRequestException(
-        'Free plan does not require subscription payment',
+        'Free tier does not require subscription payment',
       );
     }
 
-    const planConfig = VENDOR_PLAN_CONFIG[dto.plan];
-    if (!planConfig) {
-      throw new BadRequestException('Invalid vendor subscription plan');
-    }
+    const hasActivePaidSubscription =
+      Boolean(vendor.stripeSubscriptionId) &&
+      ['TRIALING', 'ACTIVE'].includes(vendor.subscriptionStatus);
 
-    if (['TRIALING', 'ACTIVE'].includes(vendor.subscriptionStatus)) {
-      if (vendor.selectedPlan === dto.plan) {
+    if (hasActivePaidSubscription) {
+      if (vendor.activeSubscriptionTierId === tier.id) {
         throw new BadRequestException(
-          'Vendor subscription is already active for this plan',
+          'Vendor subscription is already active for this tier',
         );
       }
 
       throw new BadRequestException(
-        'Changing an active vendor subscription plan is not available yet',
+        'Changing an active vendor subscription tier is not available yet',
       );
     }
 
@@ -135,7 +134,7 @@ export class PaymentsService {
 
     if (
       vendor.stripeSubscriptionId &&
-      vendor.selectedPlan === dto.plan &&
+      vendor.activeSubscriptionTierId === tier.id &&
       ['INCOMPLETE', 'PAST_DUE', 'UNPAID'].includes(
         vendor.subscriptionStatus,
       )
@@ -148,7 +147,7 @@ export class PaymentsService {
       const updatedVendor = await this.syncVendorSubscriptionFromStripe(
         vendor.id,
         subscription,
-        dto.plan,
+        tier,
       );
 
       return this.buildVendorSubscriptionIntentResponse(
@@ -159,18 +158,19 @@ export class PaymentsService {
       );
     }
 
-    const priceId = this.resolveVendorStripePriceId(dto.plan);
+    const syncedTier = await this.ensureTierStripePrice(tier);
     const [ephemeralKey, subscription] = await Promise.all([
       this.stripeClient.createEphemeralKey(customerId),
       this.stripeClient.createSubscription(
         {
           customerId,
-          priceId,
+          priceId: syncedTier.stripePriceId,
           vendorId: vendor.id,
-          plan: dto.plan,
-          trialDays: this.vendorSubscriptionTrialDays(),
+          plan: syncedTier.code,
+          tierId: syncedTier.id,
+          trialDays: syncedTier.trialDays,
         },
-        { idempotencyKey: `vendor-subscription-${vendor.id}-${dto.plan}` },
+        { idempotencyKey: `vendor-subscription-${vendor.id}-${syncedTier.id}` },
       ),
     ]);
 
@@ -184,14 +184,29 @@ export class PaymentsService {
 
     const updatedVendor =
       await this.paymentsRepository.updateVendorSubscription(vendor.id, {
-        selectedPlan: dto.plan,
+        selectedPlan: syncedTier.legacyPlan ?? vendor.selectedPlan,
         stripeCustomerId: customerId,
         stripeSubscriptionId: subscription.id,
         subscriptionStatus,
         trialStartedAt: trialStartedAt ?? vendor.trialStartedAt ?? new Date(),
         trialEndsAt,
         subscriptionCurrentPeriodEnd: currentPeriodEnd,
+        activeSubscriptionTierId: syncedTier.id,
       });
+
+    await this.paymentsRepository.upsertVendorSubscriptionRecord({
+      vendorId: vendor.id,
+      tierId: syncedTier.id,
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscription.id,
+      status: subscriptionStatus,
+      monthlyPriceCents: syncedTier.monthlyPriceCents,
+      commissionRate: this.resolveTierCommissionRate(vendor, syncedTier),
+      isFoundingMember: vendor.isFoundingMember,
+      trialStartedAt: trialStartedAt ?? vendor.trialStartedAt ?? new Date(),
+      trialEndsAt,
+      currentPeriodEnd,
+    });
 
     return this.buildVendorSubscriptionIntentResponse(
       updatedVendor,
@@ -724,18 +739,17 @@ export class PaymentsService {
 
   private async handleVendorSubscriptionUpdated(subscription: any) {
     const vendorId = subscription.metadata?.vendorId;
+    const tier = subscription.metadata?.tierId
+      ? await this.paymentsRepository.findActiveSubscriptionTierById(
+          subscription.metadata.tierId,
+        )
+      : null;
     const vendor = vendorId
-      ? await this.paymentsRepository.updateVendorSubscription(vendorId, {
-          selectedPlan: subscription.metadata?.plan,
-          stripeSubscriptionId: subscription.id,
-          subscriptionStatus:
-            this.resolveVendorSubscriptionStatus(subscription),
-          trialStartedAt: this.fromStripeTimestamp(subscription.trial_start),
-          trialEndsAt: this.fromStripeTimestamp(subscription.trial_end),
-          subscriptionCurrentPeriodEnd: this.fromStripeTimestamp(
-            subscription.current_period_end,
-          ),
-        })
+      ? await this.syncVendorSubscriptionFromStripe(
+          vendorId,
+          subscription,
+          tier,
+        )
       : subscription.id
         ? await this.syncVendorSubscriptionByStripeId(subscription)
         : null;
@@ -753,15 +767,16 @@ export class PaymentsService {
       return null;
     }
 
-    return this.paymentsRepository.updateVendorSubscription(vendor.id, {
-      selectedPlan: subscription.metadata?.plan,
-      subscriptionStatus: this.resolveVendorSubscriptionStatus(subscription),
-      trialStartedAt: this.fromStripeTimestamp(subscription.trial_start),
-      trialEndsAt: this.fromStripeTimestamp(subscription.trial_end),
-      subscriptionCurrentPeriodEnd: this.fromStripeTimestamp(
-        subscription.current_period_end,
-      ),
-    });
+    const existing =
+      await this.paymentsRepository.findVendorSubscriptionByStripeId(
+        subscription.id,
+      );
+
+    return this.syncVendorSubscriptionFromStripe(
+      vendor.id,
+      subscription,
+      existing?.tier,
+    );
   }
 
   private async handleSubscriptionInvoiceUpdated(
@@ -792,6 +807,31 @@ export class PaymentsService {
         invoice.lines?.data?.[0]?.period?.end,
       ),
     });
+
+    const existing =
+      await this.paymentsRepository.findVendorSubscriptionByStripeId(
+        subscriptionId,
+      );
+    if (existing) {
+      await this.paymentsRepository.upsertVendorSubscriptionRecord({
+        vendorId: existing.vendorId,
+        tierId: existing.tierId,
+        stripeCustomerId: existing.stripeCustomerId,
+        stripeSubscriptionId: subscriptionId,
+        status: fallbackStatus,
+        monthlyPriceCents: existing.monthlyPriceCents,
+        commissionRate:
+          existing.commissionRate === null
+            ? null
+            : Number(existing.commissionRate),
+        isFoundingMember: existing.isFoundingMember,
+        trialStartedAt: existing.trialStartedAt,
+        trialEndsAt: existing.trialEndsAt,
+        currentPeriodEnd: this.fromStripeTimestamp(
+          invoice.lines?.data?.[0]?.period?.end,
+        ),
+      });
+    }
   }
 
   private async handleSubscriptionSetupIntentSucceeded(setupIntent: any) {
@@ -814,11 +854,15 @@ export class PaymentsService {
     const subscription = await this.stripeClient.retrieveSubscription(
       vendor.stripeSubscriptionId,
     );
+    const existing =
+      await this.paymentsRepository.findVendorSubscriptionByStripeId(
+        vendor.stripeSubscriptionId,
+      );
 
     await this.syncVendorSubscriptionFromStripe(
       vendor.id,
       subscription,
-      vendor.selectedPlan,
+      existing?.tier,
     );
   }
 
@@ -842,6 +886,29 @@ export class PaymentsService {
     await this.paymentsRepository.updateVendorSubscription(vendor.id, {
       subscriptionStatus: 'INCOMPLETE',
     });
+
+    const existing =
+      await this.paymentsRepository.findVendorSubscriptionByStripeId(
+        vendor.stripeSubscriptionId,
+      );
+    if (existing) {
+      await this.paymentsRepository.upsertVendorSubscriptionRecord({
+        vendorId: existing.vendorId,
+        tierId: existing.tierId,
+        stripeCustomerId: existing.stripeCustomerId,
+        stripeSubscriptionId: existing.stripeSubscriptionId,
+        status: 'INCOMPLETE',
+        monthlyPriceCents: existing.monthlyPriceCents,
+        commissionRate:
+          existing.commissionRate === null
+            ? null
+            : Number(existing.commissionRate),
+        isFoundingMember: existing.isFoundingMember,
+        trialStartedAt: existing.trialStartedAt,
+        trialEndsAt: existing.trialEndsAt,
+        currentPeriodEnd: existing.currentPeriodEnd,
+      });
+    }
   }
 
   private async handleAccountUpdated(account: any) {
@@ -1044,6 +1111,7 @@ export class PaymentsService {
   private resolveVendorCommissionRate(vendor?: {
     lockedCommissionRate?: unknown;
     selectedPlan?: string | null;
+    activeSubscriptionTier?: { normalCommissionRate?: unknown } | null;
   } | null) {
     if (
       vendor?.lockedCommissionRate !== null &&
@@ -1055,10 +1123,13 @@ export class PaymentsService {
       }
     }
 
-    const planRate = getVendorPlanConfig(vendor?.selectedPlan)
-      .normalCommissionRate;
+    const planRate =
+      vendor?.activeSubscriptionTier?.normalCommissionRate ??
+      getVendorPlanConfig(vendor?.selectedPlan).normalCommissionRate;
 
-    return planRate ?? platformCommissionRate();
+    return planRate === null || planRate === undefined
+      ? platformCommissionRate()
+      : Number(planRate);
   }
 
   private toMinorUnit(amount: number) {
@@ -1093,21 +1164,114 @@ export class PaymentsService {
     return 'PENDING';
   }
 
+  private async resolveSubscriptionTier(dto: CreateVendorSubscriptionDto) {
+    const tier = await this.paymentsRepository.findActiveSubscriptionTierById(
+      dto.tierId,
+    );
+
+    if (!tier) {
+      throw new BadRequestException(
+        'Active subscription tier not found. Select a valid tier.',
+      );
+    }
+
+    return tier;
+  }
+
+  private async ensureTierStripePrice(tier: any) {
+    if (tier.monthlyPriceCents <= 0) {
+      return tier;
+    }
+
+    let stripeProductId = tier.stripeProductId;
+    if (!stripeProductId) {
+      const product = await this.stripeClient.createProduct({
+        name: tier.name,
+        description: tier.subtitle,
+        tierId: tier.id,
+        code: tier.code,
+      });
+      stripeProductId = product.id;
+    }
+
+    let stripePriceId = tier.stripePriceId;
+    if (!stripePriceId) {
+      const price = await this.stripeClient.createRecurringPrice({
+        productId: stripeProductId,
+        amountCents: tier.monthlyPriceCents,
+        tierId: tier.id,
+        code: tier.code,
+      });
+      stripePriceId = price.id;
+    }
+
+    if (
+      stripeProductId !== tier.stripeProductId ||
+      stripePriceId !== tier.stripePriceId
+    ) {
+      return this.paymentsRepository.updateSubscriptionTierStripeIds(tier.id, {
+        stripeProductId,
+        stripePriceId,
+      });
+    }
+
+    return tier;
+  }
+
+  private resolveTierCommissionRate(vendor: any, tier: any) {
+    if (
+      vendor?.lockedCommissionRate !== null &&
+      vendor?.lockedCommissionRate !== undefined
+    ) {
+      return Number(vendor.lockedCommissionRate);
+    }
+
+    const rate = vendor?.isFoundingMember
+      ? tier.foundingCommissionRate
+      : tier.normalCommissionRate;
+
+    return rate === null || rate === undefined ? null : Number(rate);
+  }
+
   private async syncVendorSubscriptionFromStripe(
     vendorId: string,
     subscription: any,
-    selectedPlan?: string | null,
+    tier?: any,
   ) {
-    return this.paymentsRepository.updateVendorSubscription(vendorId, {
-      selectedPlan: selectedPlan ?? subscription.metadata?.plan,
+    const status = this.resolveVendorSubscriptionStatus(subscription);
+    const tierId = tier?.id ?? subscription.metadata?.tierId;
+    const vendor = await this.paymentsRepository.updateVendorSubscription(vendorId, {
+      ...(tier?.legacyPlan ? { selectedPlan: tier.legacyPlan } : {}),
       stripeSubscriptionId: subscription.id,
-      subscriptionStatus: this.resolveVendorSubscriptionStatus(subscription),
+      subscriptionStatus: status,
       trialStartedAt: this.fromStripeTimestamp(subscription.trial_start),
       trialEndsAt: this.fromStripeTimestamp(subscription.trial_end),
       subscriptionCurrentPeriodEnd: this.fromStripeTimestamp(
         subscription.current_period_end,
       ),
+      ...(tierId ? { activeSubscriptionTierId: tierId } : {}),
     });
+
+    if (tierId && tier) {
+      await this.paymentsRepository.upsertVendorSubscriptionRecord({
+        vendorId,
+        tierId,
+        stripeCustomerId: vendor.stripeCustomerId,
+        stripeSubscriptionId: subscription.id,
+        status,
+        monthlyPriceCents: tier.monthlyPriceCents,
+        commissionRate: this.resolveTierCommissionRate(vendor, tier),
+        isFoundingMember: vendor.isFoundingMember,
+        trialStartedAt: this.fromStripeTimestamp(subscription.trial_start),
+        trialEndsAt: this.fromStripeTimestamp(subscription.trial_end),
+        currentPeriodEnd: this.fromStripeTimestamp(
+          subscription.current_period_end,
+        ),
+        canceledAt: this.fromStripeTimestamp(subscription.canceled_at),
+      });
+    }
+
+    return vendor;
   }
 
   private buildVendorSubscriptionIntentResponse(
@@ -1129,6 +1293,7 @@ export class PaymentsService {
     return {
       vendor: {
         id: vendor.id,
+        activeSubscriptionTierId: vendor.activeSubscriptionTierId,
         selectedPlan: vendor.selectedPlan,
         subscriptionStatus: vendor.subscriptionStatus,
         stripeCustomerId: vendor.stripeCustomerId,
@@ -1141,7 +1306,6 @@ export class PaymentsService {
         lockedCommissionRate: vendor.lockedCommissionRate,
       },
       stripe: {
-        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null,
         customerId,
         customerEphemeralKeySecret,
         subscriptionId: subscription.id,
@@ -1149,29 +1313,6 @@ export class PaymentsService {
         clientSecretType,
       },
     };
-  }
-
-  private resolveVendorStripePriceId(plan: VendorPlan) {
-    const keyByPlan: Record<VendorPlan, string | null> = {
-      [VendorPlan.FREE]: null,
-      [VendorPlan.STARTER]: process.env.STRIPE_VENDOR_STARTER_PRICE_ID ?? null,
-      [VendorPlan.PRO]: process.env.STRIPE_VENDOR_PRO_PRICE_ID ?? null,
-      [VendorPlan.ELITE]: process.env.STRIPE_VENDOR_ELITE_PRICE_ID ?? null,
-    };
-    const priceId = keyByPlan[plan];
-
-    if (!priceId && !process.env.STRIPE_SECRET_KEY?.includes('change_me')) {
-      throw new BadRequestException(
-        `Stripe price id is not configured for ${plan} plan`,
-      );
-    }
-
-    return priceId ?? `price_mock_${plan.toLowerCase()}`;
-  }
-
-  private vendorSubscriptionTrialDays() {
-    const value = Number(process.env.VENDOR_SUBSCRIPTION_TRIAL_DAYS ?? 90);
-    return Number.isFinite(value) && value > 0 ? Math.round(value) : 90;
   }
 
   private mapStripeSubscriptionStatus(status?: string) {

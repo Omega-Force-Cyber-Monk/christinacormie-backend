@@ -12,6 +12,38 @@ export class PaymentsRepository {
     });
   }
 
+  findPlatformSetting(key: string) {
+    return this.prisma.platformSetting.findUnique({
+      where: { key },
+    });
+  }
+
+  findActiveSubscriptionTierById(tierId: string) {
+    return this.prisma.vendorSubscriptionTier.findFirst({
+      where: { id: tierId, active: true, deletedAt: null },
+    });
+  }
+
+  updateSubscriptionTierStripeIds(
+    tierId: string,
+    data: { stripeProductId?: string | null; stripePriceId?: string | null },
+  ) {
+    return this.prisma.vendorSubscriptionTier.update({
+      where: { id: tierId },
+      data: {
+        ...data,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  findVendorSubscriptionByStripeId(stripeSubscriptionId: string) {
+    return this.prisma.vendorSubscription.findUnique({
+      where: { stripeSubscriptionId },
+      include: { tier: true },
+    });
+  }
+
   findVendorByStripeSubscriptionId(stripeSubscriptionId: string) {
     return this.prisma.vendor.findUnique({
       where: { stripeSubscriptionId },
@@ -44,6 +76,7 @@ export class PaymentsRepository {
       trialStartedAt?: Date | null;
       trialEndsAt?: Date | null;
       subscriptionCurrentPeriodEnd?: Date | null;
+      activeSubscriptionTierId?: string | null;
     },
   ) {
     return this.prisma.vendor.update({
@@ -71,8 +104,58 @@ export class PaymentsRepository {
                 data.subscriptionCurrentPeriodEnd,
             }
           : {}),
+        ...(data.activeSubscriptionTierId !== undefined
+          ? { activeSubscriptionTierId: data.activeSubscriptionTierId }
+          : {}),
         updatedAt: new Date(),
       },
+    });
+  }
+
+  upsertVendorSubscriptionRecord(data: {
+    vendorId: string;
+    tierId: string;
+    stripeCustomerId?: string | null;
+    stripeSubscriptionId?: string | null;
+    status: string;
+    monthlyPriceCents: number;
+    commissionRate?: number | null;
+    isFoundingMember?: boolean;
+    trialStartedAt?: Date | null;
+    trialEndsAt?: Date | null;
+    currentPeriodStart?: Date | null;
+    currentPeriodEnd?: Date | null;
+    canceledAt?: Date | null;
+  }) {
+    const values = {
+      vendorId: data.vendorId,
+      tierId: data.tierId,
+      stripeCustomerId: data.stripeCustomerId,
+      stripeSubscriptionId: data.stripeSubscriptionId,
+      status: data.status as any,
+      monthlyPriceCents: data.monthlyPriceCents,
+      commissionRate: data.commissionRate,
+      isFoundingMember: data.isFoundingMember ?? false,
+      trialStartedAt: data.trialStartedAt,
+      trialEndsAt: data.trialEndsAt,
+      currentPeriodStart: data.currentPeriodStart,
+      currentPeriodEnd: data.currentPeriodEnd,
+      canceledAt: data.canceledAt,
+      updatedAt: new Date(),
+    };
+
+    if (data.stripeSubscriptionId) {
+      return this.prisma.vendorSubscription.upsert({
+        where: { stripeSubscriptionId: data.stripeSubscriptionId },
+        create: values,
+        update: values,
+        include: { tier: true },
+      });
+    }
+
+    return this.prisma.vendorSubscription.create({
+      data: values,
+      include: { tier: true },
     });
   }
 
@@ -94,7 +177,7 @@ export class PaymentsRepository {
       where: { id: payoutId },
       include: {
         vendor: {
-          include: { paymentAccount: true },
+          include: { paymentAccount: true, activeSubscriptionTier: true },
         },
         payment: true,
         booking: true,
@@ -239,6 +322,7 @@ export class PaymentsRepository {
         vendor: {
           include: {
             paymentAccount: true,
+            activeSubscriptionTier: true,
           },
         },
         commission: true,

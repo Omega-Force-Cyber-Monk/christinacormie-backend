@@ -27,6 +27,11 @@ import { UpsertPlatformSettingDto } from './dto/upsert-platform-setting.dto';
 import { UpdateVendorFoundingMemberDto } from './dto/update-vendor-founding-member.dto';
 import { UpdateVendorFoundingOfferDto } from './dto/update-vendor-founding-offer.dto';
 import {
+  CreateVendorSubscriptionTierDto,
+  UpdateVendorSubscriptionTierDto,
+} from './dto/vendor-subscription-tier.dto';
+import { StripeClientService } from '../payments/stripe-client.service';
+import {
   DEFAULT_VENDOR_FOUNDING_OFFER,
   VENDOR_FOUNDING_OFFER_SETTING_KEY,
 } from '../vendors/vendor-plan.config';
@@ -39,6 +44,7 @@ export class AdminService {
     private readonly reviewsService: ReviewsService,
     private readonly bookingsService: BookingsService,
     private readonly paymentsService: PaymentsService,
+    private readonly stripeClient: StripeClientService,
   ) {}
 
   listUsers(query: AdminListQueryDto) {
@@ -599,6 +605,100 @@ export class AdminService {
     );
   }
 
+  listVendorSubscriptionTiers(includeInactive = false) {
+    return this.adminRepository.listVendorSubscriptionTiers(includeInactive);
+  }
+
+  async createVendorSubscriptionTier(
+    adminUserId: string,
+    dto: CreateVendorSubscriptionTierDto,
+  ) {
+    const existing = await this.adminRepository.findVendorSubscriptionTierByCode(
+      dto.code,
+    );
+    if (existing) {
+      throw new BadRequestException('Subscription tier code already exists');
+    }
+
+    const tier = await this.adminRepository.createVendorSubscriptionTier({
+      ...this.toTierData(dto),
+      active: true,
+    });
+
+    const synced = await this.syncTierStripeObjects(tier);
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'CREATE_VENDOR_SUBSCRIPTION_TIER',
+      'VendorSubscriptionTier',
+      synced.id,
+      dto as any,
+    );
+    return synced;
+  }
+
+  async updateVendorSubscriptionTier(
+    adminUserId: string,
+    tierId: string,
+    dto: UpdateVendorSubscriptionTierDto,
+  ) {
+    const existing =
+      await this.adminRepository.findVendorSubscriptionTier(tierId);
+    if (!existing || existing.deletedAt) {
+      throw new NotFoundException('Subscription tier not found');
+    }
+
+    const priceChanged =
+      dto.monthlyPriceCents !== undefined &&
+      dto.monthlyPriceCents !== existing.monthlyPriceCents;
+
+    let tier = await this.adminRepository.updateVendorSubscriptionTier(tierId, {
+      ...this.toTierData(dto),
+      ...(dto.active !== undefined ? { active: dto.active } : {}),
+    });
+
+    tier = await this.syncTierStripeObjects(tier, { forceNewPrice: priceChanged });
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'UPDATE_VENDOR_SUBSCRIPTION_TIER',
+      'VendorSubscriptionTier',
+      tier.id,
+      dto as any,
+    );
+    return tier;
+  }
+
+  async deleteVendorSubscriptionTier(adminUserId: string, tierId: string) {
+    const existing =
+      await this.adminRepository.findVendorSubscriptionTier(tierId);
+    if (!existing || existing.deletedAt) {
+      throw new NotFoundException('Subscription tier not found');
+    }
+
+    if (existing.stripePriceId) {
+      await this.stripeClient.archivePrice(existing.stripePriceId);
+    }
+    if (existing.stripeProductId) {
+      await this.stripeClient.updateProduct(existing.stripeProductId, {
+        active: false,
+      });
+    }
+
+    const tier = await this.adminRepository.updateVendorSubscriptionTier(
+      tierId,
+      {
+        active: false,
+        deletedAt: new Date(),
+      },
+    );
+    await this.adminRepository.createAuditLog(
+      adminUserId,
+      'DELETE_VENDOR_SUBSCRIPTION_TIER',
+      'VendorSubscriptionTier',
+      tier.id,
+    );
+    return tier;
+  }
+
   async upsertPlatformSetting(
     key: string,
     adminUserId: string,
@@ -716,5 +816,102 @@ export class AdminService {
 
   getVendorsAnalytics() {
     return this.adminRepository.getVendorsAnalytics();
+  }
+
+  private toTierData(
+    dto: Partial<CreateVendorSubscriptionTierDto & UpdateVendorSubscriptionTierDto>,
+  ) {
+    return {
+      ...(dto.code !== undefined ? { code: dto.code } : {}),
+      ...(dto.legacyPlan !== undefined ? { legacyPlan: dto.legacyPlan } : {}),
+      ...(dto.name !== undefined ? { name: dto.name } : {}),
+      ...(dto.subtitle !== undefined ? { subtitle: dto.subtitle } : {}),
+      ...(dto.badge !== undefined ? { badge: dto.badge } : {}),
+      ...(dto.monthlyPriceCents !== undefined
+        ? { monthlyPriceCents: dto.monthlyPriceCents }
+        : {}),
+      ...(dto.foundingMonthlyPriceCentsAfterTrial !== undefined
+        ? {
+            foundingMonthlyPriceCentsAfterTrial:
+              dto.foundingMonthlyPriceCentsAfterTrial,
+          }
+        : {}),
+      ...(dto.normalCommissionRate !== undefined
+        ? { normalCommissionRate: dto.normalCommissionRate }
+        : {}),
+      ...(dto.foundingCommissionRate !== undefined
+        ? { foundingCommissionRate: dto.foundingCommissionRate }
+        : {}),
+      ...(dto.bookingEnabled !== undefined
+        ? { bookingEnabled: dto.bookingEnabled }
+        : {}),
+      ...(dto.maxStaffAccounts !== undefined
+        ? { maxStaffAccounts: dto.maxStaffAccounts }
+        : {}),
+      ...(dto.maxIncludedTrucks !== undefined
+        ? { maxIncludedTrucks: dto.maxIncludedTrucks }
+        : {}),
+      ...(dto.additionalTruckMonthlyPriceCents !== undefined
+        ? {
+            additionalTruckMonthlyPriceCents:
+              dto.additionalTruckMonthlyPriceCents,
+          }
+        : {}),
+      ...(dto.analyticsLevel !== undefined
+        ? { analyticsLevel: dto.analyticsLevel }
+        : {}),
+      ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+      ...(dto.trialDays !== undefined ? { trialDays: dto.trialDays } : {}),
+      ...(dto.features !== undefined ? { features: dto.features as any } : {}),
+      ...(dto.included !== undefined ? { included: dto.included as any } : {}),
+      ...(dto.notIncluded !== undefined
+        ? { notIncluded: dto.notIncluded as any }
+        : {}),
+    };
+  }
+
+  private async syncTierStripeObjects(
+    tier: any,
+    options: { forceNewPrice?: boolean } = {},
+  ) {
+    if (tier.monthlyPriceCents <= 0) {
+      return tier;
+    }
+
+    let stripeProductId = tier.stripeProductId;
+    if (!stripeProductId) {
+      const product = await this.stripeClient.createProduct({
+        name: tier.name,
+        description: tier.subtitle,
+        tierId: tier.id,
+        code: tier.code,
+      });
+      stripeProductId = product.id;
+    } else {
+      await this.stripeClient.updateProduct(stripeProductId, {
+        name: tier.name,
+        description: tier.subtitle,
+        active: tier.active,
+      });
+    }
+
+    let stripePriceId = tier.stripePriceId;
+    if (!stripePriceId || options.forceNewPrice) {
+      if (stripePriceId) {
+        await this.stripeClient.archivePrice(stripePriceId);
+      }
+      const price = await this.stripeClient.createRecurringPrice({
+        productId: stripeProductId,
+        amountCents: tier.monthlyPriceCents,
+        tierId: tier.id,
+        code: tier.code,
+      });
+      stripePriceId = price.id;
+    }
+
+    return this.adminRepository.updateVendorSubscriptionTier(tier.id, {
+      stripeProductId,
+      stripePriceId,
+    });
   }
 }

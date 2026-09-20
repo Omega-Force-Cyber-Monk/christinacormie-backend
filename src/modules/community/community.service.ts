@@ -300,12 +300,17 @@ export class CommunityService {
   private resolveVendorCommissionRate(vendor: {
     lockedCommissionRate?: unknown;
     selectedPlan?: string | null;
+    activeSubscriptionTier?: { normalCommissionRate?: unknown } | null;
   }) {
     if (
       vendor.lockedCommissionRate !== null &&
       vendor.lockedCommissionRate !== undefined
     ) {
       return Number(vendor.lockedCommissionRate);
+    }
+
+    if (vendor.activeSubscriptionTier?.normalCommissionRate !== undefined && vendor.activeSubscriptionTier.normalCommissionRate !== null) {
+      return Number(vendor.activeSubscriptionTier.normalCommissionRate);
     }
 
     if (vendor.selectedPlan === 'STARTER') return 0.15;

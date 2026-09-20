@@ -35,6 +35,17 @@ export class FoodTrucksRepository {
         isVerified: true,
         selectedPlan: true,
         subscriptionStatus: true,
+        activeSubscriptionTier: {
+          select: {
+            code: true,
+            name: true,
+            monthlyPriceCents: true,
+            bookingEnabled: true,
+            maxStaffAccounts: true,
+            maxIncludedTrucks: true,
+            analyticsLevel: true,
+          },
+        },
       },
     });
   }
