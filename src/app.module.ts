@@ -17,6 +17,7 @@ import { ReferralsModule } from './modules/referrals/referrals.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { RewardsModule } from './modules/rewards/rewards.module';
 import { SocialModule } from './modules/social/social.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { UsersModule } from './modules/users/users.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
@@ -42,6 +43,7 @@ import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
     CheckInsModule,
     RewardsModule,
     ReferralsModule,
+    SubscriptionsModule,
     LeaderboardsModule,
   ],
   controllers: [AppController],

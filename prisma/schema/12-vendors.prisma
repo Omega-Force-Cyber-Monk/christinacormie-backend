@@ -74,6 +74,7 @@ model Vendor {
   qrKitShipments            QrKitShipment[]
   photoShootRequests        VendorPhotoShootRequest[]
   staffMembers              VendorStaff[]
+  subscriptions             VendorSubscription[]
 
   @@map("vendors")
 }

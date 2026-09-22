@@ -15,11 +15,11 @@ import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { addDuration } from '../../common/utils/date.util';
 import { MailService } from '../../infrastructure/mail/mail.service';
+import { FirebaseService } from '../../infrastructure/firebase/firebase.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { GoogleAuthDto } from './dto/google-auth.dto';
+import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { LoginDto } from './dto/login.dto';
-import { GoogleTokenVerifierService } from './google-token-verifier.service';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterVendorDto } from './dto/register-vendor.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -40,8 +40,8 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly googleTokenVerifier: GoogleTokenVerifierService,
     private readonly mailService: MailService,
+    private readonly firebaseService: FirebaseService,
   ) {}
 
   async registerCustomer(dto: RegisterCustomerDto) {
@@ -429,48 +429,76 @@ export class AuthService {
     };
   }
 
-  async loginWithGoogle(dto: GoogleAuthDto) {
-    const googleProfile = await this.googleTokenVerifier.verifyIdToken(
-      dto.idToken,
-    );
+  async loginWithFirebase(dto: FirebaseAuthDto) {
+    const decoded = await this.firebaseService.verifyAuthToken(dto.idToken);
+    const provider = decoded.firebase?.sign_in_provider ?? 'firebase';
+
+    if (!['google.com', 'apple.com'].includes(provider)) {
+      throw new BadRequestException(
+        'Only Google and Apple Firebase sign-in are supported',
+      );
+    }
+
+    const email = decoded.email?.toLowerCase() ?? null;
+    if (email && decoded.email_verified === false) {
+      throw new BadRequestException('Firebase account email is not verified');
+    }
+
+    const authProvider = provider === 'apple.com' ? 'apple' : 'google';
+    const lookupConditions = [
+      { firebaseUid: decoded.uid },
+      ...(email ? [{ email }] : []),
+    ];
 
     let user = await this.prisma.user.findFirst({
       where: {
-        email: googleProfile.email,
         deletedAt: null,
+        OR: lookupConditions,
       },
       include: this.authUserInclude(),
     });
+
+    if (user?.firebaseUid && user.firebaseUid !== decoded.uid) {
+      throw new ConflictException(
+        'This email is already linked to another Firebase account',
+      );
+    }
 
     if (!user) {
       const requestedRole = dto.role ?? UserRole.CUSTOMER;
 
       if (requestedRole === UserRole.ADMIN) {
         throw new ForbiddenException(
-          'Admin accounts cannot be created with Google sign-in',
+          'Admin accounts cannot be created with Firebase sign-in',
         );
       }
 
       if (requestedRole === UserRole.VENDOR && !dto.businessName) {
         throw new BadRequestException(
-          'Business name is required when registering as a vendor with Google sign-in',
+          'Business name is required when registering as a vendor with Firebase sign-in',
         );
       }
 
+      const displayName =
+        decoded.name ?? email?.split('@')[0] ?? `${authProvider} user`;
+      const profileName = this.parseProfileName(displayName);
+
       user = await this.prisma.user.create({
         data: {
-          email: googleProfile.email,
+          email,
+          firebaseUid: decoded.uid,
+          authProvider,
           status: AccountStatus.ACTIVE,
-          emailVerifiedAt: new Date(),
+          emailVerifiedAt: email ? new Date() : null,
           userRoles: {
             create: [{ role: requestedRole }],
           },
           profile: {
             create: {
-              firstName: googleProfile.firstName ?? undefined,
-              lastName: googleProfile.lastName ?? undefined,
-              displayName: googleProfile.displayName ?? undefined,
-              avatarUrl: googleProfile.avatarUrl ?? undefined,
+              firstName: profileName.firstName,
+              lastName: profileName.lastName,
+              displayName,
+              avatarUrl: decoded.picture,
               dateOfBirth: dto.dateOfBirth,
             },
           },
@@ -485,7 +513,7 @@ export class AuthService {
                 vendor: {
                   create: {
                     businessName: dto.businessName!,
-                    businessEmail: googleProfile.email,
+                    businessEmail: email,
                     status: 'DRAFT',
                   },
                 },
@@ -497,53 +525,53 @@ export class AuthService {
     } else {
       this.ensureAccountCanAuthenticate(user.status);
 
-      const shouldUpdateProfile =
-        !user.profile?.firstName ||
-        !user.profile?.lastName ||
-        !user.profile?.displayName ||
-        !user.profile?.avatarUrl;
+      const displayName =
+        decoded.name ??
+        user.profile?.displayName ??
+        email?.split('@')[0] ??
+        `${authProvider} user`;
+      const profileName = this.parseProfileName(displayName);
 
-      if (shouldUpdateProfile || !user.emailVerifiedAt) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
-            profile: {
-              upsert: {
-                create: {
-                  firstName: googleProfile.firstName ?? undefined,
-                  lastName: googleProfile.lastName ?? undefined,
-                  displayName: googleProfile.displayName ?? undefined,
-                  avatarUrl: googleProfile.avatarUrl ?? undefined,
-                  dateOfBirth: dto.dateOfBirth,
-                },
-                update: {
-                  ...(user.profile?.firstName
-                    ? {}
-                    : { firstName: googleProfile.firstName ?? undefined }),
-                  ...(user.profile?.lastName
-                    ? {}
-                    : { lastName: googleProfile.lastName ?? undefined }),
-                  ...(user.profile?.displayName
-                    ? {}
-                    : { displayName: googleProfile.displayName ?? undefined }),
-                  ...(user.profile?.avatarUrl
-                    ? {}
-                    : { avatarUrl: googleProfile.avatarUrl ?? undefined }),
-                  ...(user.profile?.dateOfBirth || !dto.dateOfBirth
-                    ? {}
-                    : { dateOfBirth: dto.dateOfBirth }),
-                },
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          firebaseUid: user.firebaseUid ?? decoded.uid,
+          authProvider: user.authProvider ?? authProvider,
+          emailVerifiedAt: user.emailVerifiedAt ?? (email ? new Date() : null),
+          lastLoginAt: new Date(),
+          profile: {
+            upsert: {
+              create: {
+                firstName: profileName.firstName,
+                lastName: profileName.lastName,
+                displayName,
+                avatarUrl: decoded.picture,
+                dateOfBirth: dto.dateOfBirth,
+              },
+              update: {
+                ...(user.profile?.firstName
+                  ? {}
+                  : { firstName: profileName.firstName }),
+                ...(user.profile?.lastName
+                  ? {}
+                  : { lastName: profileName.lastName }),
+                ...(user.profile?.displayName ? {} : { displayName }),
+                ...(user.profile?.avatarUrl || !decoded.picture
+                  ? {}
+                  : { avatarUrl: decoded.picture }),
+                ...(user.profile?.dateOfBirth || !dto.dateOfBirth
+                  ? {}
+                  : { dateOfBirth: dto.dateOfBirth }),
               },
             },
           },
-        });
+        },
+      });
 
-        user = await this.prisma.user.findUniqueOrThrow({
-          where: { id: user.id },
-          include: this.authUserInclude(),
-        });
-      }
+      user = await this.prisma.user.findUniqueOrThrow({
+        where: { id: user.id },
+        include: this.authUserInclude(),
+      });
     }
 
     await this.prisma.user.update({
@@ -813,7 +841,7 @@ export class AuthService {
 
     if (!user.passwordHash) {
       throw new BadRequestException(
-        'This account uses Google sign-in. Please continue with Google sign-in.',
+        'This account uses Firebase social sign-in. Please continue with Google or Apple sign-in.',
       );
     }
 

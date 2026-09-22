@@ -9,19 +9,20 @@ import {
 } from 'class-validator';
 import { UserRole } from '../../../common/enums/user-role.enum';
 
-export class GoogleAuthDto {
+export class FirebaseAuthDto {
   @ApiProperty({
-    description: 'Google ID token from client sign-in flow',
+    description:
+      'Firebase Auth ID token from Flutter after Google or Apple sign-in',
     example: 'eyJhbGciOiJSUzI1NiIsImtpZCI6Ij...',
   })
   @IsString()
-  idToken: string;
+  idToken!: string;
 
   @ApiPropertyOptional({
     enum: UserRole,
     example: UserRole.CUSTOMER,
     description:
-      'Role to assign when creating a new account through Google sign-in',
+      'Role to assign when creating a new account through Firebase Auth',
   })
   @IsOptional()
   @IsEnum(UserRole)
@@ -29,7 +30,7 @@ export class GoogleAuthDto {
 
   @ApiPropertyOptional({
     example: 'Tasty Tacos Food Truck',
-    description: 'Required when creating a new vendor through Google sign-in',
+    description: 'Required when creating a new vendor through Firebase Auth',
   })
   @IsOptional()
   @IsString()

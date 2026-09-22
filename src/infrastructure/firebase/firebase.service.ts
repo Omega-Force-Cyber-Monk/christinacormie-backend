@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { getFirebaseConfig } from '../../config/firebase.config';
 
 type PushMessageInput = {
@@ -31,6 +36,20 @@ type FirebaseAdminModule = {
       successCount: number;
       failureCount: number;
     }>;
+  };
+  auth: (app?: unknown) => {
+    verifyIdToken: (idToken: string) => Promise<FirebaseDecodedIdToken>;
+  };
+};
+
+export type FirebaseDecodedIdToken = {
+  uid: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+  firebase?: {
+    sign_in_provider?: string;
   };
 };
 
@@ -96,6 +115,26 @@ export class FirebaseService {
         failedCount: tokens.length,
         invalidTokens: [] as string[],
       };
+    }
+  }
+
+  async verifyAuthToken(idToken: string): Promise<FirebaseDecodedIdToken> {
+    if (!idToken?.trim()) {
+      throw new BadRequestException('Firebase ID token is required');
+    }
+
+    const admin = this.getAdminModule();
+
+    if (!admin || !this.app) {
+      throw new BadRequestException(
+        'Firebase authentication is not configured',
+      );
+    }
+
+    try {
+      return await admin.auth(this.app).verifyIdToken(idToken);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired Firebase ID token');
     }
   }
 

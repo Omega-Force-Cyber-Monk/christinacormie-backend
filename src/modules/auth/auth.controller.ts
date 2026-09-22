@@ -12,8 +12,8 @@ import type { AuthenticatedUser } from '../../common/interfaces/authenticated-re
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { LoginDto } from './dto/login.dto';
-import { GoogleAuthDto } from './dto/google-auth.dto';
 import { ResendEmailCodeDto } from './dto/resend-email-code.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
@@ -389,7 +389,7 @@ export class AuthController {
     schema: {
       example: errorExample(
         400,
-        'This account uses Google sign-in. Please continue with Google sign-in.',
+        'This account uses Firebase social sign-in. Please continue with Google or Apple sign-in.',
         'Bad Request',
       ),
     },
@@ -509,47 +509,56 @@ export class AuthController {
     return this.authService.resetPassword(dto);
   }
 
-  @ApiOperation({ summary: 'Login or register with Google ID token' })
+  @ApiOperation({
+    summary: 'Login or register with Firebase Auth ID token',
+    description:
+      'Use this for Flutter Firebase Auth. Supports Firebase Google and Apple sign-in tokens.',
+  })
   @ApiResponse({
     status: 201,
     description:
-      'Google login/signup successful. Returns access and refresh tokens.',
+      'Firebase login/signup successful. Returns access and refresh tokens.',
     schema: {
       example: authResponseExample,
     },
   })
   @ApiResponse({
     status: 400,
-    description: 'Vendor Google signup is missing businessName.',
+    description:
+      'Firebase auth is not configured, unsupported provider, or vendor businessName is missing.',
     schema: {
       example: errorExample(
         400,
-        'Business name is required when registering as a vendor with Google sign-in',
+        'Only Google and Apple Firebase sign-in are supported',
         'Bad Request',
       ),
     },
   })
   @ApiResponse({
     status: 401,
-    description: 'Google token is missing, invalid, expired, or mismatched.',
-    schema: {
-      example: errorExample(401, 'Invalid Google token', 'Unauthorized'),
-    },
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Admin signup is not allowed or account cannot authenticate.',
+    description: 'Firebase token is missing, invalid, or expired.',
     schema: {
       example: errorExample(
-        403,
-        'Admin accounts cannot be created with Google sign-in',
-        'Forbidden',
+        401,
+        'Invalid or expired Firebase ID token',
+        'Unauthorized',
       ),
     },
   })
-  @Post('google')
-  loginWithGoogle(@Body() dto: GoogleAuthDto) {
-    return this.authService.loginWithGoogle(dto);
+  @ApiResponse({
+    status: 409,
+    description: 'Email is already linked to another Firebase account.',
+    schema: {
+      example: errorExample(
+        409,
+        'This email is already linked to another Firebase account',
+        'Conflict',
+      ),
+    },
+  })
+  @Post('firebase')
+  loginWithFirebase(@Body() dto: FirebaseAuthDto) {
+    return this.authService.loginWithFirebase(dto);
   }
 
   @ApiOperation({ summary: 'Refresh access token using refresh token' })
