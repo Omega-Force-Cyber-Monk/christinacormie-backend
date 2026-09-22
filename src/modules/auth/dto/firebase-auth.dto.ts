@@ -30,7 +30,8 @@ export class FirebaseAuthDto {
 
   @ApiPropertyOptional({
     example: 'Tasty Tacos Food Truck',
-    description: 'Required when creating a new vendor through Firebase Auth',
+    description:
+      'Optional. If missing for a new vendor, backend creates a draft vendor profile and returns onboarding.requiresVendorOnboarding=true.',
   })
   @IsOptional()
   @IsString()

@@ -104,6 +104,9 @@ describe('AuthService Firebase login', () => {
     expect(result.refreshToken).toBe('refresh-token');
     expect(result.user.email).toBe('user@example.com');
     expect(result.user.roles).toEqual([UserRole.CUSTOMER]);
+    expect(result.authFlow).toBe('SIGN_UP');
+    expect(result.isNewUser).toBe(true);
+    expect(result.onboarding.requiresProfileSetup).toBe(true);
   });
 
   it('rejects customer registration when the email is already registered', async () => {
@@ -278,24 +281,59 @@ describe('AuthService Firebase login', () => {
     });
   });
 
-  it('rejects new vendor Firebase sign-in without businessName', async () => {
+  it('creates draft vendor Firebase account without businessName and returns onboarding flags', async () => {
     (firebaseService.verifyAuthToken as jest.Mock).mockResolvedValue({
       uid: 'firebase-vendor-1',
       email: 'vendor@example.com',
       email_verified: true,
+      name: 'Vendor Owner',
       firebase: { sign_in_provider: 'google.com' },
     });
     prisma.user.findFirst.mockResolvedValue(null);
+    prisma.user.create.mockResolvedValue({
+      id: 'vendor-user-1',
+      email: 'vendor@example.com',
+      status: AccountStatus.ACTIVE,
+      userRoles: [{ role: UserRole.VENDOR }],
+      profile: {
+        firstName: 'Vendor',
+        lastName: 'Owner',
+        displayName: 'Vendor Owner',
+        avatarUrl: null,
+        dateOfBirth: null,
+      },
+      settings: {},
+      notificationPreference: {},
+      vendor: {
+        id: 'vendor-1',
+        businessName: 'Vendor Owner',
+        businessPhone: null,
+        status: 'DRAFT',
+      },
+    });
 
-    await expect(
-      service.loginWithFirebase({
-        idToken: 'firebase-token',
-        role: UserRole.VENDOR,
+    const result = await service.loginWithFirebase({
+      idToken: 'firebase-token',
+      role: UserRole.VENDOR,
+    });
+
+    expect(prisma.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          vendor: {
+            create: expect.objectContaining({
+              businessName: 'Vendor Owner',
+              status: 'DRAFT',
+            }),
+          },
+        }),
       }),
-    ).rejects.toThrow(
-      new BadRequestException(
-        'Business name is required when registering as a vendor with Firebase sign-in',
-      ),
+    );
+    expect(result.authFlow).toBe('SIGN_UP');
+    expect(result.isNewUser).toBe(true);
+    expect(result.onboarding.requiresVendorOnboarding).toBe(true);
+    expect(result.onboarding.missingFields).toEqual(
+      expect.arrayContaining(['dateOfBirth', 'businessPhone']),
     );
   });
 });
