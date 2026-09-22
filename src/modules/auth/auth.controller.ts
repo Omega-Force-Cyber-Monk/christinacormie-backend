@@ -65,6 +65,18 @@ const authResponseExample = {
   },
 };
 
+const firebaseAuthResponseExample = {
+  ...authResponseExample,
+  authFlow: 'SIGN_UP',
+  isNewUser: true,
+  onboarding: {
+    requiresProfileSetup: true,
+    requiresVendorOnboarding: false,
+    nextStep: 'PROFILE_SETUP',
+    missingFields: ['dateOfBirth'],
+  },
+};
+
 const vendorAuthResponseExample = {
   ...authResponseExample,
   user: {
@@ -76,6 +88,14 @@ const vendorAuthResponseExample = {
       id: '12441f40-2dc9-456d-948a-c33135359c70',
       businessName: 'Taco Paradise',
     },
+  },
+  authFlow: 'SIGN_UP',
+  isNewUser: true,
+  onboarding: {
+    requiresProfileSetup: true,
+    requiresVendorOnboarding: true,
+    nextStep: 'PROFILE_SETUP',
+    missingFields: ['dateOfBirth', 'businessPhone'],
   },
 };
 
@@ -512,20 +532,20 @@ export class AuthController {
   @ApiOperation({
     summary: 'Login or register with Firebase Auth ID token',
     description:
-      'Use this for Flutter Firebase Auth. Supports Firebase Google and Apple sign-in tokens.',
+      'Use this for Flutter Firebase Auth. Supports Firebase Google and Apple sign-in tokens. Backend detects login vs signup using firebaseUid/email and returns onboarding flags for app navigation.',
   })
   @ApiResponse({
     status: 201,
     description:
       'Firebase login/signup successful. Returns access and refresh tokens.',
     schema: {
-      example: authResponseExample,
+      example: firebaseAuthResponseExample,
     },
   })
   @ApiResponse({
     status: 400,
     description:
-      'Firebase auth is not configured, unsupported provider, or vendor businessName is missing.',
+      'Firebase auth is not configured, unsupported provider, unverified email, or invalid request body.',
     schema: {
       example: errorExample(
         400,

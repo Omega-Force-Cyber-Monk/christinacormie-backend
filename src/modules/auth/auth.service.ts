@@ -432,6 +432,7 @@ export class AuthService {
   async loginWithFirebase(dto: FirebaseAuthDto) {
     const decoded = await this.firebaseService.verifyAuthToken(dto.idToken);
     const provider = decoded.firebase?.sign_in_provider ?? 'firebase';
+    let isNewUser = false;
 
     if (!['google.com', 'apple.com'].includes(provider)) {
       throw new BadRequestException(
@@ -473,15 +474,10 @@ export class AuthService {
         );
       }
 
-      if (requestedRole === UserRole.VENDOR && !dto.businessName) {
-        throw new BadRequestException(
-          'Business name is required when registering as a vendor with Firebase sign-in',
-        );
-      }
-
       const displayName =
         decoded.name ?? email?.split('@')[0] ?? `${authProvider} user`;
       const profileName = this.parseProfileName(displayName);
+      isNewUser = true;
 
       user = await this.prisma.user.create({
         data: {
@@ -512,7 +508,10 @@ export class AuthService {
             ? {
                 vendor: {
                   create: {
-                    businessName: dto.businessName!,
+                    businessName:
+                      dto.businessName?.trim() ||
+                      displayName ||
+                      'Pending Vendor Profile',
                     businessEmail: email,
                     status: 'DRAFT',
                   },
@@ -579,7 +578,10 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    return this.createAuthResponse(user);
+    return this.createAuthResponse(user, {
+      authFlow: isNewUser ? 'SIGN_UP' : 'LOGIN',
+      isNewUser,
+    });
   }
 
   async refresh(refreshToken: string) {
@@ -661,7 +663,13 @@ export class AuthService {
     return { success: true };
   }
 
-  private async createAuthResponse(user: any) {
+  private async createAuthResponse(
+    user: any,
+    authContext?: {
+      authFlow?: 'LOGIN' | 'SIGN_UP';
+      isNewUser?: boolean;
+    },
+  ) {
     const roles = this.getRoles(user);
     const accessToken = await this.jwtService.signAsync(
       {
@@ -701,6 +709,13 @@ export class AuthService {
       accessToken,
       refreshToken,
       user: this.toAuthUser(user),
+      ...(authContext
+        ? {
+            authFlow: authContext.authFlow,
+            isNewUser: authContext.isNewUser,
+            onboarding: this.toOnboardingState(user),
+          }
+        : {}),
     };
   }
 
@@ -984,6 +999,44 @@ export class AuthService {
             },
           }
         : {}),
+    };
+  }
+
+  private toOnboardingState(user: any) {
+    const roles = this.getRoles(user);
+    const isVendor = roles.includes(UserRole.VENDOR);
+    const missingFields: string[] = [];
+
+    if (!user.profile?.dateOfBirth) {
+      missingFields.push('dateOfBirth');
+    }
+
+    if (isVendor) {
+      if (
+        !user.vendor?.businessName ||
+        user.vendor.businessName === 'Pending Vendor Profile'
+      ) {
+        missingFields.push('businessName');
+      }
+
+      if (!user.vendor?.businessPhone) {
+        missingFields.push('businessPhone');
+      }
+    }
+
+    const requiresProfileSetup = !user.profile?.dateOfBirth;
+    const requiresVendorOnboarding =
+      isVendor && (!user.vendor || user.vendor.status === 'DRAFT');
+
+    return {
+      requiresProfileSetup,
+      requiresVendorOnboarding,
+      nextStep: requiresProfileSetup
+        ? 'PROFILE_SETUP'
+        : requiresVendorOnboarding
+          ? 'VENDOR_ONBOARDING'
+          : 'HOME',
+      missingFields,
     };
   }
 
