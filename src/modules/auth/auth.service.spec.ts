@@ -3,11 +3,11 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { FirebaseService } from '../../infrastructure/firebase/firebase.service';
 import { MailService } from '../../infrastructure/mail/mail.service';
 import { AuthService } from './auth.service';
-import { GoogleTokenVerifierService } from './google-token-verifier.service';
 
-describe('AuthService Google login', () => {
+describe('AuthService Firebase login', () => {
   const prisma = {
     user: {
       findFirst: jest.fn(),
@@ -39,24 +39,19 @@ describe('AuthService Google login', () => {
     signAsync: jest.fn(),
   } as unknown as JwtService;
 
-  const googleTokenVerifier = {
-    verifyIdToken: jest.fn(),
-  } as unknown as GoogleTokenVerifierService;
-
   const mailService = {
     send: jest.fn(),
   } as unknown as MailService;
+
+  const firebaseService = {
+    verifyAuthToken: jest.fn(),
+  } as unknown as FirebaseService;
 
   let service: AuthService;
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new AuthService(
-      prisma,
-      jwtService,
-      googleTokenVerifier,
-      mailService,
-    );
+    service = new AuthService(prisma, jwtService, mailService, firebaseService);
     (jwtService.signAsync as jest.Mock)
       .mockResolvedValueOnce('access-token')
       .mockResolvedValueOnce('refresh-token');
@@ -69,14 +64,14 @@ describe('AuthService Google login', () => {
     );
   });
 
-  it('creates a new customer account from Google and returns auth tokens', async () => {
-    (googleTokenVerifier.verifyIdToken as jest.Mock).mockResolvedValue({
+  it('creates a new customer account from Firebase Google and returns auth tokens', async () => {
+    (firebaseService.verifyAuthToken as jest.Mock).mockResolvedValue({
+      uid: 'firebase-user-1',
       email: 'user@example.com',
-      emailVerified: true,
-      firstName: 'John',
-      lastName: 'Doe',
-      displayName: 'John Doe',
-      avatarUrl: 'https://example.com/avatar.jpg',
+      email_verified: true,
+      name: 'John Doe',
+      picture: 'https://example.com/avatar.jpg',
+      firebase: { sign_in_provider: 'google.com' },
     });
     prisma.user.findFirst.mockResolvedValue(null);
     prisma.user.create.mockResolvedValue({
@@ -96,13 +91,13 @@ describe('AuthService Google login', () => {
       vendor: null,
     });
 
-    const result = await service.loginWithGoogle({
-      idToken: 'google-token',
+    const result = await service.loginWithFirebase({
+      idToken: 'firebase-token',
       role: UserRole.CUSTOMER,
     });
 
-    expect(googleTokenVerifier.verifyIdToken).toHaveBeenCalledWith(
-      'google-token',
+    expect(firebaseService.verifyAuthToken).toHaveBeenCalledWith(
+      'firebase-token',
     );
     expect(prisma.user.create).toHaveBeenCalled();
     expect(result.accessToken).toBe('access-token');
@@ -283,21 +278,23 @@ describe('AuthService Google login', () => {
     });
   });
 
-  it('rejects new vendor Google sign-in without businessName', async () => {
-    (googleTokenVerifier.verifyIdToken as jest.Mock).mockResolvedValue({
+  it('rejects new vendor Firebase sign-in without businessName', async () => {
+    (firebaseService.verifyAuthToken as jest.Mock).mockResolvedValue({
+      uid: 'firebase-vendor-1',
       email: 'vendor@example.com',
-      emailVerified: true,
+      email_verified: true,
+      firebase: { sign_in_provider: 'google.com' },
     });
     prisma.user.findFirst.mockResolvedValue(null);
 
     await expect(
-      service.loginWithGoogle({
-        idToken: 'google-token',
+      service.loginWithFirebase({
+        idToken: 'firebase-token',
         role: UserRole.VENDOR,
       }),
     ).rejects.toThrow(
       new BadRequestException(
-        'Business name is required when registering as a vendor with Google sign-in',
+        'Business name is required when registering as a vendor with Firebase sign-in',
       ),
     );
   });

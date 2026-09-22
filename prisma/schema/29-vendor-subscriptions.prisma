@@ -1,0 +1,138 @@
+enum VendorSubscriptionProvider {
+  REVENUECAT
+}
+
+enum VendorSubscriptionPlatform {
+  WEB
+  IOS
+  ANDROID
+  UNKNOWN
+}
+
+enum VendorSubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+  REFUNDED
+  GRACE_PERIOD
+  DISABLED
+}
+
+enum SubscriptionWebhookProcessingStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+model VendorSubscriptionPlan {
+  id                     String                              @id @default(uuid()) @db.Uuid
+  code                   VendorPlan                          @unique
+  name                   String                              @db.VarChar(100)
+  description            String?
+  monthlyPrice           Decimal                             @default(0) @map("monthly_price") @db.Decimal(12, 2)
+  standardCommissionRate Decimal                             @map("standard_commission_rate") @db.Decimal(6, 3)
+  foundingCommissionRate Decimal                             @map("founding_commission_rate") @db.Decimal(6, 3)
+  trialDays              Int                                 @default(90) @map("trial_days")
+  features               Json                                @default("[]")
+  limits                 Json                                @default("{}")
+  active                 Boolean                             @default(true)
+  sortOrder              Int                                 @default(0) @map("sort_order")
+  createdAt              DateTime                            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?                           @map("deleted_at") @db.Timestamptz(6)
+  providerProducts       VendorSubscriptionProviderProduct[]
+  vendorSubscriptions    VendorSubscription[]
+
+  @@index([active, sortOrder])
+  @@map("vendor_subscription_plans")
+}
+
+model VendorSubscriptionProviderProduct {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  planId               String                     @map("plan_id") @db.Uuid
+  provider             VendorSubscriptionProvider @default(REVENUECAT)
+  platform             VendorSubscriptionPlatform @default(UNKNOWN)
+  productId            String?                    @map("product_id") @db.VarChar(255)
+  entitlementId        String?                    @map("entitlement_id") @db.VarChar(255)
+  revenueCatOfferingId String?                    @map("revenuecat_offering_id") @db.VarChar(255)
+  revenueCatPackageId  String?                    @map("revenuecat_package_id") @db.VarChar(255)
+  stripeProductId      String?                    @map("stripe_product_id") @db.VarChar(255)
+  stripePriceId        String?                    @map("stripe_price_id") @db.VarChar(255)
+  active               Boolean                    @default(true)
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  plan                 VendorSubscriptionPlan     @relation(fields: [planId], references: [id])
+
+  @@unique([provider, platform, productId])
+  @@index([planId, active])
+  @@index([provider, entitlementId])
+  @@map("vendor_subscription_provider_products")
+}
+
+model VendorFoundingOfferConfig {
+  id                 String   @id @default("default") @db.VarChar(32)
+  active             Boolean  @default(true)
+  startsAt           DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt             DateTime @map("ends_at") @db.Timestamptz(6)
+  discountPercent    Decimal  @default(50) @map("discount_percent") @db.Decimal(5, 2)
+  discountStartMonth Int      @default(4) @map("discount_start_month")
+  discountEndMonth   Int      @default(12) @map("discount_end_month")
+  trialDays          Int      @default(90) @map("trial_days")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("vendor_founding_offer_config")
+}
+
+model VendorSubscription {
+  id                           String                     @id @default(uuid()) @db.Uuid
+  vendorId                     String                     @map("vendor_id") @db.Uuid
+  planId                       String                     @map("plan_id") @db.Uuid
+  provider                     VendorSubscriptionProvider @default(REVENUECAT)
+  platform                     VendorSubscriptionPlatform @default(UNKNOWN)
+  status                       VendorSubscriptionStatus
+  isFoundingVendor             Boolean                    @default(false) @map("is_founding_vendor")
+  foundingLockedCommissionRate Decimal?                   @map("founding_locked_commission_rate") @db.Decimal(6, 3)
+  startedAt                    DateTime?                  @map("started_at") @db.Timestamptz(6)
+  trialEndsAt                  DateTime?                  @map("trial_ends_at") @db.Timestamptz(6)
+  currentPeriodStartsAt        DateTime?                  @map("current_period_starts_at") @db.Timestamptz(6)
+  currentPeriodEndsAt          DateTime?                  @map("current_period_ends_at") @db.Timestamptz(6)
+  willRenew                    Boolean?                   @map("will_renew")
+  revenueCatAppUserId          String?                    @map("revenuecat_app_user_id") @db.VarChar(255)
+  externalCustomerId           String?                    @map("external_customer_id") @db.VarChar(255)
+  externalSubscriptionId       String?                    @map("external_subscription_id") @db.VarChar(255)
+  productId                    String?                    @map("product_id") @db.VarChar(255)
+  entitlementId                String?                    @map("entitlement_id") @db.VarChar(255)
+  latestTransactionId          String?                    @map("latest_transaction_id") @db.VarChar(255)
+  originalTransactionId        String?                    @map("original_transaction_id") @db.VarChar(255)
+  rawProviderStatus            Json?                      @map("raw_provider_status")
+  createdAt                    DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                    DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  vendor                       Vendor                     @relation(fields: [vendorId], references: [id])
+  plan                         VendorSubscriptionPlan     @relation(fields: [planId], references: [id])
+
+  @@index([vendorId, status])
+  @@index([revenueCatAppUserId])
+  @@index([provider, platform])
+  @@map("vendor_subscriptions")
+}
+
+model SubscriptionWebhookEvent {
+  id          String                              @id @default(uuid()) @db.Uuid
+  provider    VendorSubscriptionProvider          @default(REVENUECAT)
+  eventId     String                              @unique @map("event_id") @db.VarChar(255)
+  vendorId    String?                             @map("vendor_id") @db.Uuid
+  eventType   String                              @map("event_type") @db.VarChar(100)
+  status      SubscriptionWebhookProcessingStatus @default(RECEIVED)
+  payload     Json
+  error       String?
+  receivedAt  DateTime                            @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt DateTime?                           @map("processed_at") @db.Timestamptz(6)
+
+  @@index([provider, status])
+  @@index([vendorId])
+  @@map("subscription_webhook_events")
+}

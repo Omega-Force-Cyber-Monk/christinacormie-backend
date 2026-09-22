@@ -18,6 +18,8 @@ model User {
   id                                 String                      @id @default(uuid()) @db.Uuid
   email                              String?                     @unique @db.VarChar(255)
   phone                              String?                     @unique @db.VarChar(30)
+  firebaseUid                        String?                     @unique @map("firebase_uid") @db.VarChar(255)
+  authProvider                       String?                     @map("auth_provider") @db.VarChar(30)
   passwordHash                       String?                     @map("password_hash") @db.VarChar(255)
   status                             AccountStatus               @default(PENDING)
   emailVerifiedAt                    DateTime?                   @map("email_verified_at") @db.Timestamptz(6)
