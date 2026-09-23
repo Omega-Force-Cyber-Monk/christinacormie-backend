@@ -43,6 +43,8 @@ export class PaymentsService {
           disabledReason: stripeAccount.requirements?.disabled_reason ?? null,
         },
       );
+    } else {
+      paymentAccount = await this.refreshPaymentAccountStatus(paymentAccount);
     }
 
     const refreshUrl = dto.refreshUrl ?? process.env.STRIPE_CONNECT_REFRESH_URL;
@@ -68,7 +70,11 @@ export class PaymentsService {
 
   async getVendorPaymentAccount(userId: string) {
     const vendor = await this.ensureVendor(userId);
-    return vendor.paymentAccount;
+    if (!vendor.paymentAccount) {
+      return null;
+    }
+
+    return this.refreshPaymentAccountStatus(vendor.paymentAccount);
   }
 
   async getVendorPayouts(userId: string) {
@@ -598,6 +604,44 @@ export class PaymentsService {
         disabledReason: account.requirements?.disabled_reason ?? null,
       },
     );
+  }
+
+  private async refreshPaymentAccountStatus(paymentAccount: {
+    stripeAccountId: string;
+  }) {
+    const stripeAccount = await this.stripeClient.retrieveConnectAccount(
+      paymentAccount.stripeAccountId,
+    );
+
+    const updated =
+      await this.paymentsRepository.updateVendorPaymentAccountByStripeId(
+        stripeAccount.id,
+        {
+          onboardingCompleted: Boolean(stripeAccount.details_submitted),
+          chargesEnabled: Boolean(stripeAccount.charges_enabled),
+          payoutsEnabled: Boolean(stripeAccount.payouts_enabled),
+          disabledReason: stripeAccount.requirements?.disabled_reason ?? null,
+        },
+      );
+
+    return {
+      ...updated,
+      stripe: {
+        accountType: stripeAccount.type ?? null,
+        country: stripeAccount.country ?? null,
+        detailsSubmitted: Boolean(stripeAccount.details_submitted),
+        chargesEnabled: Boolean(stripeAccount.charges_enabled),
+        payoutsEnabled: Boolean(stripeAccount.payouts_enabled),
+        requirements: {
+          currentlyDue: stripeAccount.requirements?.currently_due ?? [],
+          eventuallyDue: stripeAccount.requirements?.eventually_due ?? [],
+          pastDue: stripeAccount.requirements?.past_due ?? [],
+          pendingVerification:
+            stripeAccount.requirements?.pending_verification ?? [],
+          disabledReason: stripeAccount.requirements?.disabled_reason ?? null,
+        },
+      },
+    };
   }
 
   private async handlePaymentSucceeded(paymentIntent: any) {
