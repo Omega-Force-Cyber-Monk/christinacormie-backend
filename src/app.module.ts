@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { MailModule } from './infrastructure/mail/mail.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
@@ -24,6 +26,12 @@ import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
 
 @Module({
   imports: [
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: Number(process.env.RATE_LIMIT_GLOBAL_PER_MINUTE ?? 120),
+      },
+    ]),
     MailModule,
     PrismaModule,
     AdminModule,
@@ -47,10 +55,11 @@ import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
     LeaderboardsModule,
   ],
   controllers: [AppController],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
-/**
- * RATE LIMITING HARDENING:
- * If `@nestjs/throttler` is installed in production, register ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }])
- * and bind APP_GUARD with ThrottlerGuard here.
- */
 export class AppModule {}
