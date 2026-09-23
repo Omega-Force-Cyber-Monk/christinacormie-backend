@@ -10,34 +10,33 @@ export class StripeClientService {
   private readonly apiBaseUrl = 'https://api.stripe.com/v1';
 
   async createConnectAccount(country = 'US') {
-    const accountType =
-      process.env.STRIPE_CONNECT_ACCOUNT_TYPE || 'express';
-
-    const buildParams = (type: string) => {
-      const params: Record<string, unknown> = {
-        type,
-        country,
-      };
-      if (type === 'express' || type === 'custom') {
-        params['capabilities[card_payments][requested]'] = 'true';
-        params['capabilities[transfers][requested]'] = 'true';
-      }
-      return params;
-    };
-
     try {
-      return await this.post('/accounts', buildParams(accountType));
+      return await this.post('/accounts', {
+        type: 'express',
+        country,
+        'capabilities[card_payments][requested]': 'true',
+        'capabilities[transfers][requested]': 'true',
+      });
     } catch (error: any) {
+      const message = error?.message ?? '';
+
       if (
-        accountType !== 'standard' &&
-        error.message?.includes(
-          'cannot create accounts where the platform is loss-liable',
-        )
+        message.includes('loss-liable') ||
+        message.includes('country') ||
+        message.includes('capabilities') ||
+        message.includes('Connect')
       ) {
-        return await this.post('/accounts', buildParams('standard'));
+        throw new BadRequestException(
+          `Stripe Connect Express account could not be created. Please make sure this Stripe platform account supports Express connected accounts for ${country} vendors. Stripe message: ${message}`,
+        );
       }
+
       throw error;
     }
+  }
+
+  async retrieveConnectAccount(accountId: string) {
+    return this.get(`/accounts/${accountId}`);
   }
 
   async createAccountLink(
@@ -216,6 +215,49 @@ export class StripeClientService {
           : {}),
       },
       body,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new BadRequestException(
+        data?.error?.message ?? 'Stripe request failed',
+      );
+    }
+
+    return data;
+  }
+
+  private async get(path: string) {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+
+    if (!secretKey) {
+      throw new Error('STRIPE_SECRET_KEY is not set');
+    }
+
+    if (secretKey.includes('change_me')) {
+      if (path.startsWith('/accounts/')) {
+        return {
+          id: path.split('/').pop(),
+          type: 'express',
+          details_submitted: true,
+          charges_enabled: true,
+          payouts_enabled: true,
+          requirements: {
+            currently_due: [],
+            eventually_due: [],
+            past_due: [],
+            disabled_reason: null,
+          },
+        };
+      }
+    }
+
+    const response = await fetch(`${this.apiBaseUrl}${path}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+      },
     });
 
     const data = await response.json();
