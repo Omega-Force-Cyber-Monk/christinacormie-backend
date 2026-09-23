@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -362,6 +363,7 @@ export class RewardsController {
     },
   })
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post('api/v1/rewards/redeem')
   redeemReward(
     @CurrentUser() user: AuthenticatedUser,
@@ -394,6 +396,7 @@ export class RewardsController {
     schema: { example: errorExample(404, 'User not found', 'Not Found') },
   })
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post('api/v1/rewards/me/daily-streak')
   claimDailyStreak(@CurrentUser() user: AuthenticatedUser) {
     return this.rewardsService.claimDailyStreak(user.sub);
@@ -430,6 +433,7 @@ export class RewardsController {
     schema: { example: unauthorizedExample },
   })
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post('api/v1/rewards/me/birthday-bonus')
   claimBirthdayBonus(@CurrentUser() user: AuthenticatedUser) {
     return this.rewardsService.claimBirthdayBonus(user.sub);
@@ -479,6 +483,7 @@ export class RewardsController {
     schema: { example: errorExample(404, 'Food truck not found', 'Not Found') },
   })
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post('api/v1/rewards/me/redemption-codes')
   createRedemptionCode(
     @CurrentUser() user: AuthenticatedUser,
@@ -547,6 +552,7 @@ export class RewardsController {
   })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.VENDOR, UserRole.VENDOR_STAFF)
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post('api/v1/vendors/me/redemptions/confirm')
   confirmVendorRedemption(
     @CurrentUser() user: AuthenticatedUser,

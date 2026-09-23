@@ -5,6 +5,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -157,6 +158,7 @@ export class CheckInsController {
     description: 'QR code was not found or is inactive.',
     schema: { example: errorExample(404, 'QR code not found', 'Not Found') },
   })
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Get(':code/profile')
   getQrProfile(@Param('code') code: string) {
     return this.checkInsService.getQrProfile(code);
@@ -195,6 +197,7 @@ export class CheckInsController {
     description: 'QR code was not found or is inactive.',
     schema: { example: errorExample(404, 'QR code not found', 'Not Found') },
   })
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Post(':code/scans')
   recordAnonymousQrScan(@Param('code') code: string, @Body() dto: ScanQrDto) {
     return this.checkInsService.recordQrScan(undefined, code, dto);
@@ -234,6 +237,7 @@ export class CheckInsController {
     schema: { example: errorExample(404, 'QR code not found', 'Not Found') },
   })
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @Post(':code/scans/authenticated')
   recordAuthenticatedQrScan(
     @CurrentUser() user: AuthenticatedUser,
@@ -292,6 +296,7 @@ export class CheckInsController {
     schema: { example: errorExample(404, 'QR code not found', 'Not Found') },
   })
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post(':code/check-ins')
   createCheckIn(
     @CurrentUser() user: AuthenticatedUser,

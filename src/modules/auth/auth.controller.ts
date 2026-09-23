@@ -6,6 +6,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
@@ -146,6 +147,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 15 * 60_000, limit: 5 } })
   @Post('register/customer')
   registerCustomer(@Body() dto: RegisterCustomerDto) {
     return this.authService.registerCustomer(dto);
@@ -224,6 +226,7 @@ export class AuthController {
       },
     },
   })
+  @Throttle({ default: { ttl: 15 * 60_000, limit: 5 } })
   @Post('register/vendor')
   registerVendor(@Body() dto: RegisterVendorDto) {
     return this.authService.registerVendor(dto);
@@ -262,6 +265,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 5 * 60_000, limit: 10 } })
   @Post('verify-email')
   verifyEmail(@Body() dto: VerifyEmailCodeDto) {
     return this.authService.verifyEmailCode(dto);
@@ -311,6 +315,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 10 * 60_000, limit: 3 } })
   @Post('resend-verification-code')
   resendVerificationCode(@Body() dto: ResendEmailCodeDto) {
     return this.authService.resendVerificationCode(dto.email);
@@ -353,6 +358,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
@@ -387,6 +393,7 @@ export class AuthController {
       example: errorExample(401, 'Invalid email or PIN', 'Unauthorized'),
     },
   })
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post('staff/login')
   staffLogin(@Body() dto: StaffLoginDto) {
     return this.authService.staffLogin(dto);
@@ -447,6 +454,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 10 * 60_000, limit: 3 } })
   @Post('forgot-password')
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto.email);
@@ -485,6 +493,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 5 * 60_000, limit: 10 } })
   @Post('verify-reset-code')
   verifyResetCode(@Body() dto: VerifyResetCodeDto) {
     return this.authService.verifyResetCode(dto);
@@ -524,6 +533,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 10 * 60_000, limit: 5 } })
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
@@ -576,6 +586,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post('firebase')
   loginWithFirebase(@Body() dto: FirebaseAuthDto) {
     return this.authService.loginWithFirebase(dto);
@@ -601,6 +612,7 @@ export class AuthController {
       ),
     },
   })
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refreshToken);

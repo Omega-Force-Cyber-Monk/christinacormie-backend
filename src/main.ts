@@ -6,6 +6,7 @@ import { setupSwagger } from './swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:3000',
