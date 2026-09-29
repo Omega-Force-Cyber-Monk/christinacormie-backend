@@ -7,6 +7,33 @@ import { PrismaService } from './prisma.service';
 const PASSWORD_SALT_ROUNDS = 12;
 const DEFAULT_PASSWORD = 'Password123!';
 
+const DEFAULT_REWARD_RULES = [
+  {
+    name: '$5 Bite Drop Reward',
+    pointsRequired: 500,
+    rewardValue: 5,
+    minimumPurchaseAmount: 15,
+  },
+  {
+    name: '$10 Bite Drop Reward',
+    pointsRequired: 1000,
+    rewardValue: 10,
+    minimumPurchaseAmount: 25,
+  },
+  {
+    name: '$15 Bite Drop Reward',
+    pointsRequired: 1400,
+    rewardValue: 15,
+    minimumPurchaseAmount: 35,
+  },
+  {
+    name: '$20 Bite Drop Reward',
+    pointsRequired: 1800,
+    rewardValue: 20,
+    minimumPurchaseAmount: 45,
+  },
+] as const;
+
 const DEMO_TRUCKS = [
   {
     name: 'Taco Paradise',
@@ -299,6 +326,7 @@ export class SeedService implements OnApplicationBootstrap {
     try {
       await this.seedUsers();
       await this.seedCuisines();
+      await this.seedDefaultRewardRules();
       await this.seedLeaderboardsAndFoodTrucks();
     } catch (error) {
       this.logger.error(
@@ -448,6 +476,51 @@ export class SeedService implements OnApplicationBootstrap {
     });
 
     this.logger.log(`Created seed Admin account: ${email}`);
+  }
+
+  private async seedDefaultRewardRules() {
+    const admin = await this.prisma.user.findFirst({
+      where: {
+        userRoles: {
+          some: { role: UserRole.ADMIN },
+        },
+      },
+      select: { id: true },
+    });
+
+    for (const reward of DEFAULT_REWARD_RULES) {
+      const existing = await this.prisma.rewardRule.findFirst({
+        where: { name: reward.name },
+        select: { id: true },
+      });
+
+      if (existing) {
+        continue;
+      }
+
+      await this.prisma.rewardRule.create({
+        data: {
+          name: reward.name,
+          description: `Redeem ${reward.pointsRequired} points for a $${reward.rewardValue} Bite Drop Reward. Minimum purchase $${reward.minimumPurchaseAmount}.`,
+          triggerType: 'LOYALTY_POINTS',
+          rewardType: 'DISCOUNT',
+          pointsRequired: reward.pointsRequired,
+          rewardValue: reward.rewardValue,
+          fundingType: 'VENDOR_FUNDED',
+          minimumPurchaseAmount: reward.minimumPurchaseAmount,
+          eligibleVendorScope: 'ALL_APPROVED_VENDORS',
+          configuration: {
+            seedKey: `default_bitedrop_reward_${reward.rewardValue}`,
+            discountType: 'FIXED_AMOUNT',
+            amount: reward.rewardValue,
+          },
+          isActive: true,
+          createdById: admin?.id,
+        },
+      });
+    }
+
+    this.logger.log('Seeded default Bite Drop reward rules successfully');
   }
 
   private async seedLeaderboardsAndFoodTrucks() {

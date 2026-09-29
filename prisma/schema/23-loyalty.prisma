@@ -28,6 +28,16 @@ enum RewardRedemptionMethod {
   SELF_SERVICE
 }
 
+enum RewardFundingType {
+  VENDOR_FUNDED
+  BITEDROP_FUNDED
+}
+
+enum RewardEligibleVendorScope {
+  ALL_APPROVED_VENDORS
+  SELECTED_VENDORS
+}
+
 model LoyaltyAccount {
   id              String               @id @default(uuid()) @db.Uuid
   userId          String               @unique @map("user_id") @db.Uuid
@@ -60,43 +70,63 @@ model LoyaltyTransaction {
 }
 
 model RewardRule {
-  id                 String             @id @default(uuid()) @db.Uuid
-  name               String             @db.VarChar(255)
-  description        String?
-  triggerType        String             @map("trigger_type") @db.VarChar(50)
-  rewardType         RewardType         @map("reward_type")
-  pointsRequired     Int?               @map("points_required")
-  rewardValue        Decimal?           @map("reward_value") @db.Decimal(12, 2)
-  configuration      Json?
-  maximumUsesPerUser Int?               @map("maximum_uses_per_user")
-  startsAt           DateTime?          @map("starts_at") @db.Timestamptz(6)
-  endsAt             DateTime?          @map("ends_at") @db.Timestamptz(6)
-  isActive           Boolean            @default(true) @map("is_active")
-  createdById        String?            @map("created_by") @db.Uuid
-  createdBy          User?              @relation("RewardRuleCreatedBy", fields: [createdById], references: [id])
-  redemptions        RewardRedemption[]
+  id                    String                    @id @default(uuid()) @db.Uuid
+  name                  String                    @db.VarChar(255)
+  description           String?
+  triggerType           String                    @map("trigger_type") @db.VarChar(50)
+  rewardType            RewardType                @map("reward_type")
+  pointsRequired        Int?                      @map("points_required")
+  rewardValue           Decimal?                  @map("reward_value") @db.Decimal(12, 2)
+  fundingType           RewardFundingType         @default(VENDOR_FUNDED) @map("funding_type")
+  minimumPurchaseAmount Decimal?                  @map("minimum_purchase_amount") @db.Decimal(12, 2)
+  eligibleVendorScope   RewardEligibleVendorScope @default(ALL_APPROVED_VENDORS) @map("eligible_vendor_scope")
+  configuration         Json?
+  maximumUsesPerUser    Int?                      @map("maximum_uses_per_user")
+  totalRedemptionLimit  Int?                      @map("total_redemption_limit")
+  startsAt              DateTime?                 @map("starts_at") @db.Timestamptz(6)
+  endsAt                DateTime?                 @map("ends_at") @db.Timestamptz(6)
+  isActive              Boolean                   @default(true) @map("is_active")
+  createdById           String?                   @map("created_by") @db.Uuid
+  createdBy             User?                     @relation("RewardRuleCreatedBy", fields: [createdById], references: [id])
+  redemptions           RewardRedemption[]
+  eligibleVendors       RewardRuleVendor[]
 
   @@map("reward_rules")
 }
 
+model RewardRuleVendor {
+  id           String     @id @default(uuid()) @db.Uuid
+  rewardRuleId String     @map("reward_rule_id") @db.Uuid
+  vendorId     String     @map("vendor_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  rewardRule   RewardRule @relation(fields: [rewardRuleId], references: [id], onDelete: Cascade)
+  vendor       Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([rewardRuleId, vendorId])
+  @@index([vendorId])
+  @@map("reward_rule_vendors")
+}
+
 model RewardRedemption {
-  id               String                  @id @default(uuid()) @db.Uuid
-  rewardRuleId     String?                 @map("reward_rule_id") @db.Uuid
-  userId           String                  @map("user_id") @db.Uuid
-  vendorId         String?                 @map("vendor_id") @db.Uuid
-  foodTruckId      String?                 @map("food_truck_id") @db.Uuid
-  pointsSpent      Int                     @default(0) @map("points_spent")
-  rewardValue      Decimal?                @map("reward_value") @db.Decimal(12, 2)
-  backupCode       String?                 @map("backup_code") @db.VarChar(10)
-  redemptionToken  String?                 @unique @map("redemption_token") @db.VarChar(255)
-  redemptionMethod RewardRedemptionMethod? @map("redemption_method")
-  status           String                  @default("ACTIVE") @db.VarChar(30)
-  redeemedAt       DateTime                @default(now()) @map("redeemed_at") @db.Timestamptz(6)
-  usedAt           DateTime?               @map("used_at") @db.Timestamptz(6)
-  expiresAt        DateTime?               @map("expires_at") @db.Timestamptz(6)
-  rewardRule       RewardRule?             @relation(fields: [rewardRuleId], references: [id])
-  user             User                    @relation(fields: [userId], references: [id])
-  review           Review?
+  id                    String                  @id @default(uuid()) @db.Uuid
+  rewardRuleId          String?                 @map("reward_rule_id") @db.Uuid
+  userId                String                  @map("user_id") @db.Uuid
+  vendorId              String?                 @map("vendor_id") @db.Uuid
+  foodTruckId           String?                 @map("food_truck_id") @db.Uuid
+  pointsSpent           Int                     @default(0) @map("points_spent")
+  rewardValue           Decimal?                @map("reward_value") @db.Decimal(12, 2)
+  fundingType           RewardFundingType       @default(VENDOR_FUNDED) @map("funding_type")
+  minimumPurchaseAmount Decimal?                @map("minimum_purchase_amount") @db.Decimal(12, 2)
+  backupCode            String?                 @map("backup_code") @db.VarChar(10)
+  redemptionToken       String?                 @unique @map("redemption_token") @db.VarChar(255)
+  redemptionMethod      RewardRedemptionMethod? @map("redemption_method")
+  status                String                  @default("ACTIVE") @db.VarChar(30)
+  redeemedAt            DateTime                @default(now()) @map("redeemed_at") @db.Timestamptz(6)
+  usedAt                DateTime?               @map("used_at") @db.Timestamptz(6)
+  expiresAt             DateTime?               @map("expires_at") @db.Timestamptz(6)
+  rewardRule            RewardRule?             @relation(fields: [rewardRuleId], references: [id])
+  user                  User                    @relation(fields: [userId], references: [id])
+  review                Review?
 
   @@index([backupCode])
   @@index([vendorId, usedAt])
