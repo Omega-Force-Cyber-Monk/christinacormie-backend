@@ -133,18 +133,42 @@ export class RewardsService {
     };
   }
 
-  listRewardRules() {
-    return this.rewardsRepository.listActiveRewardRules();
+  async listRewardRules() {
+    const rewardRules = await this.rewardsRepository.listActiveRewardRules();
+
+    return rewardRules.map((rule) => ({
+      id: rule.id,
+      name: rule.name,
+      description: rule.description,
+      triggerType: rule.triggerType,
+      rewardType: rule.rewardType,
+      pointsRequired: rule.pointsRequired,
+      rewardAmount: rule.rewardValue ? Number(rule.rewardValue) : null,
+      rewardValue: rule.rewardValue ? Number(rule.rewardValue) : null,
+      minimumPurchaseAmount: rule.minimumPurchaseAmount
+        ? Number(rule.minimumPurchaseAmount)
+        : null,
+      fundingType: rule.fundingType,
+      eligibleVendorScope: rule.eligibleVendorScope,
+      totalRedemptionLimit: rule.totalRedemptionLimit,
+      maximumUsesPerUser: rule.maximumUsesPerUser,
+      configuration: rule.configuration,
+      startsAt: rule.startsAt,
+      endsAt: rule.endsAt,
+      isActive: rule.isActive,
+    }));
   }
 
-  createRewardRule(adminUserId: string, dto: CreateRewardRuleDto) {
+  async createRewardRule(adminUserId: string, dto: CreateRewardRuleDto) {
     this.validateRuleWindow(dto.startsAt, dto.endsAt);
+    await this.validateEligibleVendorPayload(dto);
     return this.rewardsRepository.createRewardRule(adminUserId, dto);
   }
 
   async updateRewardRule(rewardRuleId: string, dto: UpdateRewardRuleDto) {
     await this.ensureRewardRuleExists(rewardRuleId);
     this.validateRuleWindow(dto.startsAt, dto.endsAt);
+    await this.validateEligibleVendorPayload(dto);
     return this.rewardsRepository.updateRewardRule(rewardRuleId, dto);
   }
 
@@ -240,6 +264,19 @@ export class RewardsService {
       }
     }
 
+    if (rewardRule.totalRedemptionLimit) {
+      const totalUseCount =
+        await this.rewardsRepository.countActiveRewardRuleRedemptions(
+          rewardRule.id,
+        );
+
+      if (totalUseCount >= rewardRule.totalRedemptionLimit) {
+        throw new BadRequestException(
+          'Reward campaign total redemption limit reached',
+        );
+      }
+    }
+
     const account = await this.rewardsRepository.ensureLoyaltyAccount(userId);
 
     if (account.availablePoints < rewardRule.pointsRequired) {
@@ -319,7 +356,63 @@ export class RewardsService {
 
   async createRedemptionCode(userId: string, dto: CreateRedemptionCodeDto) {
     await this.rewardsRepository.refundExpiredPendingRedemptions(userId);
-    const pointsSpent = dto.amount * 100;
+    const rewardRule = dto.rewardRuleId
+      ? await this.ensureRewardRuleExists(dto.rewardRuleId)
+      : null;
+    const now = new Date();
+    const amount = rewardRule
+      ? Number(rewardRule.rewardValue ?? 0)
+      : (dto.amount ?? 0);
+    const pointsSpent = rewardRule
+      ? (rewardRule.pointsRequired ?? 0)
+      : amount * 100;
+
+    if (rewardRule) {
+      if (!rewardRule.isActive) {
+        throw new BadRequestException('Reward rule is inactive');
+      }
+
+      if (rewardRule.startsAt && rewardRule.startsAt > now) {
+        throw new BadRequestException('Reward is not available yet');
+      }
+
+      if (rewardRule.endsAt && rewardRule.endsAt < now) {
+        throw new BadRequestException('Reward has expired');
+      }
+
+      if (!rewardRule.pointsRequired || rewardRule.pointsRequired <= 0) {
+        throw new BadRequestException('Reward does not require points');
+      }
+
+      if (!rewardRule.rewardValue || Number(rewardRule.rewardValue) <= 0) {
+        throw new BadRequestException('Reward amount is not configured');
+      }
+
+      if (rewardRule.maximumUsesPerUser) {
+        const useCount = await this.rewardsRepository.countRewardRedemptions(
+          userId,
+          rewardRule.id,
+        );
+
+        if (useCount >= rewardRule.maximumUsesPerUser) {
+          throw new BadRequestException('Reward redemption limit reached');
+        }
+      }
+
+      if (rewardRule.totalRedemptionLimit) {
+        const totalUseCount =
+          await this.rewardsRepository.countActiveRewardRuleRedemptions(
+            rewardRule.id,
+          );
+
+        if (totalUseCount >= rewardRule.totalRedemptionLimit) {
+          throw new BadRequestException(
+            'Reward campaign total redemption limit reached',
+          );
+        }
+      }
+    }
+
     const account = await this.rewardsRepository.ensureLoyaltyAccount(userId);
     const loyalty = this.getLoyaltyProgressForPoints(
       account.availablePoints,
@@ -329,17 +422,17 @@ export class RewardsService {
 
     if (account.availablePoints < pointsSpent) {
       throw new BadRequestException(
-        `Not enough points. ${pointsSpent} points required for $${dto.amount} credit.`,
+        `Not enough points. ${pointsSpent} points required for $${amount} reward.`,
       );
     }
 
-    if (dto.amount > MAX_REDEEM_PER_VISIT) {
+    if (!rewardRule && amount > MAX_REDEEM_PER_VISIT) {
       throw new BadRequestException(
         `Maximum redemption per visit is $${MAX_REDEEM_PER_VISIT}.`,
       );
     }
 
-    if (dto.amount > loyalty.availableCreditAmount) {
+    if (!rewardRule && amount > loyalty.availableCreditAmount) {
       throw new BadRequestException(
         `Redeem amount exceeds available credit. You can redeem up to $${loyalty.availableCreditAmount} now.`,
       );
@@ -360,7 +453,18 @@ export class RewardsService {
         foodTruck.vendor.status !== 'APPROVED' ||
         !foodTruck.vendor.isVerified
       ) {
-        throw new ForbiddenException('Food truck is not available for redemption');
+          throw new ForbiddenException('Food truck is not available for redemption');
+      }
+
+      if (
+        rewardRule?.eligibleVendorScope === 'SELECTED_VENDORS' &&
+        !rewardRule.eligibleVendors.some(
+          (eligibleVendor) => eligibleVendor.vendorId === foodTruck.vendorId,
+        )
+      ) {
+        throw new BadRequestException(
+          'This food truck is not eligible for this reward',
+        );
       }
     }
 
@@ -370,19 +474,30 @@ export class RewardsService {
 
     const redemption = await this.rewardsRepository.createRedemptionCode({
       userId,
-      amount: dto.amount,
+      amount,
       pointsSpent,
+      rewardRuleId: rewardRule?.id,
       backupCode,
       redemptionToken,
       expiresAt,
       foodTruckId: dto.foodTruckId,
+      fundingType: rewardRule?.fundingType ?? 'VENDOR_FUNDED',
+      minimumPurchaseAmount: rewardRule?.minimumPurchaseAmount
+        ? Number(rewardRule.minimumPurchaseAmount)
+        : null,
     });
 
     return {
       redemptionId: redemption.id,
       redemptionToken,
       backupCode,
-      amount: dto.amount,
+      amount,
+      rewardAmount: amount,
+      rewardRuleId: rewardRule?.id ?? null,
+      fundingType: redemption.fundingType,
+      minimumPurchaseAmount: redemption.minimumPurchaseAmount
+        ? Number(redemption.minimumPurchaseAmount)
+        : null,
       pointsSpent,
       expiresAt,
       status: 'PENDING',
@@ -449,6 +564,17 @@ export class RewardsService {
       }
     }
 
+    if (
+      redemption.rewardRule?.eligibleVendorScope === 'SELECTED_VENDORS' &&
+      !redemption.rewardRule.eligibleVendors.some(
+        (eligibleVendor) => eligibleVendor.vendorId === vendor.id,
+      )
+    ) {
+      throw new BadRequestException(
+        'This vendor is not eligible to redeem this reward',
+      );
+    }
+
     const completed = await this.rewardsRepository.completeVendorRedemption(
       redemption.id,
       vendor.id,
@@ -476,6 +602,9 @@ export class RewardsService {
     const amountApplied = Number(
       completed.rewardValue ?? redemption.rewardValue ?? 0,
     ).toFixed(2);
+    const minimumPurchaseAmount = Number(
+      completed.minimumPurchaseAmount ?? redemption.minimumPurchaseAmount ?? 0,
+    );
 
     await this.notificationsService.notifyReward(
       completed.userId,
@@ -487,6 +616,8 @@ export class RewardsService {
     return {
       success: true,
       amountApplied: Number(amountApplied),
+      minimumPurchaseAmount:
+        minimumPurchaseAmount > 0 ? minimumPurchaseAmount : null,
       customerName,
       remainingCustomerBalance: Number(remainingCredit),
       message: `Redemption Complete. $${amountApplied} credit applied for ${customerName}.`,
@@ -528,6 +659,9 @@ export class RewardsService {
         foodTruckName: foodTruck?.name ?? null,
         vendorId: redemption.vendorId,
         amountApplied: Number(redemption.rewardValue ?? 0),
+        minimumPurchaseAmount: redemption.minimumPurchaseAmount
+          ? Number(redemption.minimumPurchaseAmount)
+          : null,
         confirmedAt: redemption.usedAt,
         redemptionMethod: redemption.redemptionMethod,
         alreadyReviewed: Boolean(redemption.review),
@@ -924,6 +1058,35 @@ export class RewardsService {
     }
 
     return rewardRule;
+  }
+
+  private async validateEligibleVendorPayload(
+    dto: Pick<
+      CreateRewardRuleDto,
+      'eligibleVendorScope' | 'eligibleVendorIds'
+    >,
+  ) {
+    if (
+      dto.eligibleVendorScope === 'SELECTED_VENDORS' &&
+      !dto.eligibleVendorIds?.length
+    ) {
+      throw new BadRequestException(
+        'eligibleVendorIds is required when eligibleVendorScope is SELECTED_VENDORS',
+      );
+    }
+
+    if (dto.eligibleVendorIds?.length) {
+      const approvedVendorCount =
+        await this.rewardsRepository.countApprovedVendorsByIds(
+          dto.eligibleVendorIds,
+        );
+
+      if (approvedVendorCount !== dto.eligibleVendorIds.length) {
+        throw new BadRequestException(
+          'All eligibleVendorIds must be approved and verified vendors',
+        );
+      }
+    }
   }
 
   private async ensureBadgeExists(badgeId: string) {

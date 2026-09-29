@@ -120,6 +120,9 @@ export class RewardsRepository {
   findRewardRuleById(rewardRuleId: string) {
     return this.prisma.rewardRule.findUnique({
       where: { id: rewardRuleId },
+      include: {
+        eligibleVendors: true,
+      },
     });
   }
 
@@ -151,6 +154,9 @@ export class RewardsRepository {
   }
 
   createRewardRule(adminUserId: string, dto: CreateRewardRuleDto) {
+    const eligibleVendorScope =
+      dto.eligibleVendorScope ?? 'ALL_APPROVED_VENDORS';
+
     return this.prisma.rewardRule.create({
       data: {
         name: dto.name,
@@ -159,8 +165,21 @@ export class RewardsRepository {
         rewardType: dto.rewardType as any,
         pointsRequired: dto.pointsRequired,
         rewardValue: dto.rewardValue,
+        fundingType: dto.fundingType ?? 'VENDOR_FUNDED',
+        minimumPurchaseAmount: dto.minimumPurchaseAmount,
+        eligibleVendorScope,
+        ...(eligibleVendorScope === 'SELECTED_VENDORS'
+          ? {
+              eligibleVendors: {
+                create: (dto.eligibleVendorIds ?? []).map((vendorId) => ({
+                  vendorId,
+                })),
+              },
+            }
+          : {}),
         configuration: dto.configuration as any,
         maximumUsesPerUser: dto.maximumUsesPerUser,
+        totalRedemptionLimit: dto.totalRedemptionLimit,
         startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
         endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
         isActive: dto.isActive ?? true,
@@ -170,39 +189,71 @@ export class RewardsRepository {
   }
 
   updateRewardRule(rewardRuleId: string, dto: UpdateRewardRuleDto) {
-    return this.prisma.rewardRule.update({
-      where: { id: rewardRuleId },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.description !== undefined
-          ? { description: dto.description }
-          : {}),
-        ...(dto.triggerType !== undefined
-          ? { triggerType: dto.triggerType }
-          : {}),
-        ...(dto.rewardType !== undefined
-          ? { rewardType: dto.rewardType as any }
-          : {}),
-        ...(dto.pointsRequired !== undefined
-          ? { pointsRequired: dto.pointsRequired }
-          : {}),
-        ...(dto.rewardValue !== undefined
-          ? { rewardValue: dto.rewardValue }
-          : {}),
-        ...(dto.configuration !== undefined
-          ? { configuration: dto.configuration as any }
-          : {}),
-        ...(dto.maximumUsesPerUser !== undefined
-          ? { maximumUsesPerUser: dto.maximumUsesPerUser }
-          : {}),
-        ...(dto.startsAt !== undefined
-          ? { startsAt: dto.startsAt ? new Date(dto.startsAt) : null }
-          : {}),
-        ...(dto.endsAt !== undefined
-          ? { endsAt: dto.endsAt ? new Date(dto.endsAt) : null }
-          : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const rewardRule = await tx.rewardRule.update({
+        where: { id: rewardRuleId },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.description !== undefined
+            ? { description: dto.description }
+            : {}),
+          ...(dto.triggerType !== undefined
+            ? { triggerType: dto.triggerType }
+            : {}),
+          ...(dto.rewardType !== undefined
+            ? { rewardType: dto.rewardType as any }
+            : {}),
+          ...(dto.pointsRequired !== undefined
+            ? { pointsRequired: dto.pointsRequired }
+            : {}),
+          ...(dto.rewardValue !== undefined
+            ? { rewardValue: dto.rewardValue }
+            : {}),
+          ...(dto.fundingType !== undefined
+            ? { fundingType: dto.fundingType }
+            : {}),
+          ...(dto.minimumPurchaseAmount !== undefined
+            ? { minimumPurchaseAmount: dto.minimumPurchaseAmount }
+            : {}),
+          ...(dto.eligibleVendorScope !== undefined
+            ? { eligibleVendorScope: dto.eligibleVendorScope }
+            : {}),
+          ...(dto.configuration !== undefined
+            ? { configuration: dto.configuration as any }
+            : {}),
+          ...(dto.maximumUsesPerUser !== undefined
+            ? { maximumUsesPerUser: dto.maximumUsesPerUser }
+            : {}),
+          ...(dto.totalRedemptionLimit !== undefined
+            ? { totalRedemptionLimit: dto.totalRedemptionLimit }
+            : {}),
+          ...(dto.startsAt !== undefined
+            ? { startsAt: dto.startsAt ? new Date(dto.startsAt) : null }
+            : {}),
+          ...(dto.endsAt !== undefined
+            ? { endsAt: dto.endsAt ? new Date(dto.endsAt) : null }
+            : {}),
+          ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        },
+      });
+
+      if (dto.eligibleVendorIds !== undefined) {
+        await tx.rewardRuleVendor.deleteMany({
+          where: { rewardRuleId },
+        });
+
+        if (dto.eligibleVendorIds.length) {
+          await tx.rewardRuleVendor.createMany({
+            data: dto.eligibleVendorIds.map((vendorId) => ({
+              rewardRuleId,
+              vendorId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      return rewardRule;
     });
   }
 
@@ -282,6 +333,8 @@ export class RewardsRepository {
           userId,
           pointsSpent: pointsRequired,
           rewardValue: rewardRule.rewardValue,
+          fundingType: rewardRule.fundingType ?? 'VENDOR_FUNDED',
+          minimumPurchaseAmount: rewardRule.minimumPurchaseAmount,
           expiresAt: rewardRule.endsAt,
           status: 'COMPLETED',
           usedAt: new Date(),
@@ -311,6 +364,9 @@ export class RewardsRepository {
     userId: string;
     amount: number;
     pointsSpent: number;
+    rewardRuleId?: string;
+    fundingType?: 'VENDOR_FUNDED' | 'BITEDROP_FUNDED';
+    minimumPurchaseAmount?: number | null;
     backupCode: string;
     redemptionToken: string;
     expiresAt: Date;
@@ -336,10 +392,13 @@ export class RewardsRepository {
 
       const redemption = await tx.rewardRedemption.create({
         data: {
+          rewardRuleId: data.rewardRuleId,
           userId: data.userId,
           foodTruckId: data.foodTruckId,
           pointsSpent: data.pointsSpent,
           rewardValue: data.amount,
+          fundingType: data.fundingType ?? 'VENDOR_FUNDED',
+          minimumPurchaseAmount: data.minimumPurchaseAmount,
           backupCode: data.backupCode,
           redemptionToken: data.redemptionToken,
           status: 'PENDING',
@@ -374,6 +433,11 @@ export class RewardsRepository {
         expiresAt: { gte: now },
       },
       include: {
+        rewardRule: {
+          include: {
+            eligibleVendors: true,
+          },
+        },
         user: {
           include: {
             profile: true,
@@ -559,6 +623,8 @@ export class RewardsRepository {
       select: {
         id: true,
         rewardValue: true,
+        fundingType: true,
+        minimumPurchaseAmount: true,
         foodTruckId: true,
       },
     });
@@ -579,6 +645,8 @@ export class RewardsRepository {
         foodTruckId: true,
         vendorId: true,
         rewardValue: true,
+        fundingType: true,
+        minimumPurchaseAmount: true,
         usedAt: true,
         redemptionMethod: true,
         review: {
@@ -631,7 +699,35 @@ export class RewardsRepository {
 
   countRewardRedemptions(userId: string, rewardRuleId: string) {
     return this.prisma.rewardRedemption.count({
-      where: { userId, rewardRuleId },
+      where: {
+        userId,
+        rewardRuleId,
+        status: { not: 'EXPIRED' },
+      },
+    });
+  }
+
+  countActiveRewardRuleRedemptions(rewardRuleId: string) {
+    return this.prisma.rewardRedemption.count({
+      where: {
+        rewardRuleId,
+        status: { not: 'EXPIRED' },
+      },
+    });
+  }
+
+  countApprovedVendorsByIds(vendorIds: string[]) {
+    if (!vendorIds.length) {
+      return Promise.resolve(0);
+    }
+
+    return this.prisma.vendor.count({
+      where: {
+        id: { in: vendorIds },
+        status: 'APPROVED',
+        isVerified: true,
+        deletedAt: null,
+      },
     });
   }
 

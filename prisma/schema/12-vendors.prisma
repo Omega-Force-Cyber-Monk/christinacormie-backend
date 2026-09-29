@@ -70,6 +70,7 @@ model Vendor {
   payouts                   Payout[]
   reviews                   Review[]
   vendorBadges              VendorBadge[]
+  rewardRules               RewardRuleVendor[]
   leaderboardEntries        LeaderboardEntry[]
   qrKitShipments            QrKitShipment[]
   photoShootRequests        VendorPhotoShootRequest[]

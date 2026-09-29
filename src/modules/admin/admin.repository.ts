@@ -2758,6 +2758,13 @@ export class AdminRepository {
         : null,
       points: -Math.abs(redemption.pointsSpent),
       credit,
+      minimumPurchaseAmount: redemption.minimumPurchaseAmount
+        ? Number(redemption.minimumPurchaseAmount)
+        : null,
+      fundingType:
+        redemption.fundingType ??
+        redemption.rewardRule?.fundingType ??
+        'VENDOR_FUNDED',
       date: redemption.usedAt ?? redemption.redeemedAt,
       status: this.rewardRedemptionStatus(redemption),
       rewardRule: redemption.rewardRule
@@ -2765,6 +2772,9 @@ export class AdminRepository {
             id: redemption.rewardRule.id,
             name: redemption.rewardRule.name,
             rewardType: redemption.rewardRule.rewardType,
+            fundingType: redemption.rewardRule.fundingType,
+            totalRedemptionLimit: redemption.rewardRule.totalRedemptionLimit,
+            eligibleVendorScope: redemption.rewardRule.eligibleVendorScope,
           }
         : null,
       code: redemption.backupCode ?? null,
