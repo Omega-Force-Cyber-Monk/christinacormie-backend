@@ -7,9 +7,6 @@ export class LeaderboardsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   findLeaderboards(query: LeaderboardQueryDto) {
-    const limit = Math.min(query.limit ?? 20, 100);
-    const offset = query.offset ?? 0;
-
     return this.prisma.leaderboard.findMany({
       where: {
         isActive: true,
@@ -21,8 +18,6 @@ export class LeaderboardsRepository {
         rule: true,
         entries: {
           orderBy: { rank: 'asc' },
-          take: limit,
-          skip: offset,
           include: {
             vendor: {
               select: {
@@ -30,6 +25,7 @@ export class LeaderboardsRepository {
                 businessName: true,
                 status: true,
                 isVerified: true,
+                creditAcceptanceEnabled: true,
                 reliabilityScore: true,
               },
             },
@@ -43,9 +39,7 @@ export class LeaderboardsRepository {
     });
   }
 
-  findLeaderboardById(leaderboardId: string, limit = 20, offset = 0) {
-    const safeLimit = Math.min(limit, 100);
-
+  findLeaderboardById(leaderboardId: string) {
     return this.prisma.leaderboard.findUnique({
       where: { id: leaderboardId },
       include: {
@@ -53,8 +47,6 @@ export class LeaderboardsRepository {
         rule: true,
         entries: {
           orderBy: { rank: 'asc' },
-          take: safeLimit,
-          skip: offset,
           include: {
             vendor: {
               select: {
@@ -62,6 +54,7 @@ export class LeaderboardsRepository {
                 businessName: true,
                 status: true,
                 isVerified: true,
+                creditAcceptanceEnabled: true,
                 reliabilityScore: true,
               },
             },
@@ -75,9 +68,6 @@ export class LeaderboardsRepository {
   }
 
   findLeaderboardByType(type: string, query: LeaderboardQueryDto) {
-    const limit = Math.min(query.limit ?? 20, 100);
-    const offset = query.offset ?? 0;
-
     return this.prisma.leaderboard.findFirst({
       where: {
         isActive: true,
@@ -92,8 +82,6 @@ export class LeaderboardsRepository {
         rule: true,
         entries: {
           orderBy: { rank: 'asc' },
-          take: limit,
-          skip: offset,
           include: {
             vendor: {
               select: {
@@ -101,6 +89,7 @@ export class LeaderboardsRepository {
                 businessName: true,
                 status: true,
                 isVerified: true,
+                creditAcceptanceEnabled: true,
                 reliabilityScore: true,
               },
             },

@@ -8,8 +8,13 @@ export class LeaderboardsService {
     private readonly leaderboardsRepository: LeaderboardsRepository,
   ) {}
 
-  getLeaderboards(query: LeaderboardQueryDto) {
-    return this.leaderboardsRepository.findLeaderboards(query);
+  async getLeaderboards(query: LeaderboardQueryDto) {
+    const leaderboards =
+      await this.leaderboardsRepository.findLeaderboards(query);
+
+    return leaderboards.map((leaderboard) =>
+      this.prioritizeCreditAcceptedEntries(leaderboard, query),
+    );
   }
 
   async getLeaderboardById(
@@ -19,15 +24,16 @@ export class LeaderboardsService {
   ) {
     const leaderboard = await this.leaderboardsRepository.findLeaderboardById(
       leaderboardId,
-      limit,
-      offset,
     );
 
     if (!leaderboard) {
       throw new NotFoundException('Leaderboard not found');
     }
 
-    return leaderboard;
+    return this.prioritizeCreditAcceptedEntries(leaderboard, {
+      limit,
+      offset,
+    });
   }
 
   async getLeaderboardByType(type: string, query: LeaderboardQueryDto) {
@@ -40,7 +46,7 @@ export class LeaderboardsService {
       throw new NotFoundException(`Leaderboard for type '${type}' not found`);
     }
 
-    return leaderboard;
+    return this.prioritizeCreditAcceptedEntries(leaderboard, query);
   }
 
   async recalculateLeaderboard(leaderboardId: string) {
@@ -142,5 +148,42 @@ export class LeaderboardsService {
     }
 
     return { processed };
+  }
+
+  private prioritizeCreditAcceptedEntries<T extends { entries?: any[] }>(
+    leaderboard: T,
+    query: Pick<LeaderboardQueryDto, 'limit' | 'offset'>,
+  ): T {
+    const limit = Math.min(query.limit ?? 20, 100);
+    const offset = query.offset ?? 0;
+    const entries = leaderboard.entries ?? [];
+
+    const sortedEntries = [...entries].sort((a, b) => {
+      const aAcceptsCredit = a.vendor?.creditAcceptanceEnabled !== false;
+      const bAcceptsCredit = b.vendor?.creditAcceptanceEnabled !== false;
+
+      if (aAcceptsCredit !== bAcceptsCredit) {
+        return aAcceptsCredit ? -1 : 1;
+      }
+
+      return (
+        (a.rank ?? Number.MAX_SAFE_INTEGER) -
+        (b.rank ?? Number.MAX_SAFE_INTEGER)
+      );
+    });
+
+    const paginatedEntries = sortedEntries
+      .slice(offset, offset + limit)
+      .map((entry, index) => ({
+        ...entry,
+        originalRank: entry.rank,
+        rank: offset + index + 1,
+        creditAccepted: entry.vendor?.creditAcceptanceEnabled !== false,
+      }));
+
+    return {
+      ...leaderboard,
+      entries: paginatedEntries,
+    };
   }
 }

@@ -30,6 +30,8 @@ const leaderboardEntryExample = {
   vendorId: 'vendor-id',
   foodTruckId: 'food-truck-id',
   rank: 1,
+  originalRank: 3,
+  creditAccepted: true,
   previousRank: 2,
   score: 98.75,
   bookingScore: 35,
@@ -44,6 +46,7 @@ const leaderboardEntryExample = {
     businessName: 'Taco Paradise',
     status: 'APPROVED',
     isVerified: true,
+    creditAcceptanceEnabled: true,
     reliabilityScore: 96.5,
   },
   foodTruck: {
