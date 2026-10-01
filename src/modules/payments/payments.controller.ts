@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -145,6 +153,25 @@ export class PaymentsController {
     return this.paymentsService.getVendorPaymentAccount(user.sub);
   }
 
+  @ApiOperation({
+    summary: 'Create a Stripe Express dashboard login link for vendor',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Stripe Express dashboard login link created successfully.',
+    schema: {
+      example: {
+        url: 'https://connect.stripe.com/express/abc123',
+      },
+    },
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Post('connect/dashboard-link')
+  createVendorStripeDashboardLink(@CurrentUser() user: AuthenticatedUser) {
+    return this.paymentsService.createVendorStripeDashboardLink(user.sub);
+  }
+
   @ApiOperation({ summary: 'List payouts for the authenticated vendor' })
   @ApiResponse({
     status: 200,
@@ -156,6 +183,63 @@ export class PaymentsController {
   @Get('payouts/mine')
   getVendorPayouts(@CurrentUser() user: AuthenticatedUser) {
     return this.paymentsService.getVendorPayouts(user.sub);
+  }
+
+  @ApiOperation({ summary: 'Get vendor payment dashboard summary' })
+  @ApiResponse({
+    status: 200,
+    description: 'Vendor payment summary returned successfully.',
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Get('vendor/summary')
+  getVendorPaymentSummary(@CurrentUser() user: AuthenticatedUser) {
+    return this.paymentsService.getVendorPaymentSummary(user.sub);
+  }
+
+  @ApiOperation({ summary: 'List vendor payment transactions' })
+  @ApiResponse({
+    status: 200,
+    description: 'Vendor transactions returned successfully.',
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Get('vendor/transactions')
+  getVendorTransactions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: any,
+  ) {
+    return this.paymentsService.getVendorTransactions(user.sub, query);
+  }
+
+  @ApiOperation({ summary: 'Get one vendor payment transaction detail' })
+  @ApiResponse({
+    status: 200,
+    description: 'Vendor transaction detail returned successfully.',
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Get('vendor/transactions/:paymentId')
+  getVendorTransaction(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('paymentId') paymentId: string,
+  ) {
+    return this.paymentsService.getVendorTransaction(user.sub, paymentId);
+  }
+
+  @ApiOperation({ summary: 'List vendor payment refunds' })
+  @ApiResponse({
+    status: 200,
+    description: 'Vendor refunds returned successfully.',
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Get('vendor/refunds')
+  getVendorRefunds(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: any,
+  ) {
+    return this.paymentsService.getVendorRefunds(user.sub, query);
   }
 
   @ApiOperation({

@@ -31,15 +31,22 @@ export class PaymentsService {
     if (!paymentAccount) {
       const stripeAccount = await this.stripeClient.createConnectAccount(
         dto.country ?? 'US',
+        vendor.businessEmail ?? vendor.user.email,
       );
 
       paymentAccount = await this.paymentsRepository.upsertVendorPaymentAccount(
         vendor.id,
         stripeAccount.id,
         {
-          onboardingCompleted: Boolean(stripeAccount.details_submitted),
-          chargesEnabled: Boolean(stripeAccount.charges_enabled),
-          payoutsEnabled: Boolean(stripeAccount.payouts_enabled),
+          onboardingCompleted: Boolean(
+            stripeAccount.details_submitted ?? stripeAccount.detailsSubmitted,
+          ),
+          chargesEnabled: Boolean(
+            stripeAccount.charges_enabled ?? stripeAccount.chargesEnabled,
+          ),
+          payoutsEnabled: Boolean(
+            stripeAccount.payouts_enabled ?? stripeAccount.payoutsEnabled,
+          ),
           disabledReason: stripeAccount.requirements?.disabled_reason ?? null,
         },
       );
@@ -80,6 +87,189 @@ export class PaymentsService {
   async getVendorPayouts(userId: string) {
     const vendor = await this.ensureVendor(userId);
     return this.paymentsRepository.findVendorPayouts(vendor.id);
+  }
+
+  async createVendorStripeDashboardLink(userId: string) {
+    const vendor = await this.ensureVendor(userId);
+
+    if (!vendor.paymentAccount?.stripeAccountId) {
+      throw new BadRequestException(
+        'Vendor Stripe account is not connected yet.',
+      );
+    }
+
+    return this.stripeClient.createLoginLink(
+      vendor.paymentAccount.stripeAccountId,
+    );
+  }
+
+  async getVendorPaymentSummary(userId: string) {
+    const vendor = await this.ensureVendor(userId);
+    const payments = await this.paymentsRepository.findVendorPaymentsForSummary(
+      vendor.id,
+    );
+
+    const summary = {
+      totalPayments: payments.length,
+      succeededPayments: 0,
+      failedPayments: 0,
+      processingPayments: 0,
+      refundedPayments: 0,
+      totalGross: 0,
+      totalCommission: 0,
+      totalNet: 0,
+      totalRefunded: 0,
+      pendingPayout: 0,
+      processingPayout: 0,
+      paidPayout: 0,
+      failedPayout: 0,
+      currency: payments[0]?.currency ?? 'USD',
+    };
+
+    for (const payment of payments) {
+      if (payment.status === 'SUCCEEDED') {
+        summary.succeededPayments += 1;
+      }
+      if (payment.status === 'FAILED') {
+        summary.failedPayments += 1;
+      }
+      if (payment.status === 'PROCESSING' || payment.status === 'PENDING') {
+        summary.processingPayments += 1;
+      }
+      if (
+        payment.status === 'REFUNDED' ||
+        payment.status === 'PARTIALLY_REFUNDED'
+      ) {
+        summary.refundedPayments += 1;
+      }
+
+      summary.totalGross += Number(payment.amount);
+      summary.totalCommission += Number(payment.commission?.commissionAmount ?? 0);
+      summary.totalNet += Number(
+        payment.commission?.vendorNetAmount ?? payment.amount,
+      );
+      summary.totalRefunded += payment.refunds
+        .filter((refund) => refund.status === 'REFUNDED')
+        .reduce((total, refund) => total + Number(refund.amount), 0);
+
+      if (payment.payout?.status === 'PENDING') {
+        summary.pendingPayout += Number(payment.payout.amount);
+      }
+      if (payment.payout?.status === 'PROCESSING') {
+        summary.processingPayout += Number(payment.payout.amount);
+      }
+      if (payment.payout?.status === 'PAID') {
+        summary.paidPayout += Number(payment.payout.amount);
+      }
+      if (payment.payout?.status === 'FAILED') {
+        summary.failedPayout += Number(payment.payout.amount);
+      }
+    }
+
+    return this.formatMoneyObject(summary);
+  }
+
+  async getVendorTransactions(
+    userId: string,
+    query: {
+      status?: string;
+      from?: string;
+      to?: string;
+      page?: string;
+      limit?: string;
+    },
+  ) {
+    const vendor = await this.ensureVendor(userId);
+    const pagination = this.resolvePagination(query.page, query.limit);
+    const dateRange = this.resolveDateRange(query.from, query.to);
+
+    const [items, total] = await Promise.all([
+      this.paymentsRepository.findVendorPayments(vendor.id, {
+        status: query.status,
+        ...dateRange,
+        skip: pagination.skip,
+        take: pagination.limit,
+      }),
+      this.paymentsRepository.countVendorPayments(vendor.id, {
+        status: query.status,
+        ...dateRange,
+      }),
+    ]);
+
+    return {
+      items: items.map((payment) => this.toVendorTransaction(payment)),
+      meta: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+        totalPages: Math.ceil(total / pagination.limit),
+      },
+    };
+  }
+
+  async getVendorTransaction(userId: string, paymentId: string) {
+    const vendor = await this.ensureVendor(userId);
+    const payment = await this.paymentsRepository.findVendorPaymentById(
+      vendor.id,
+      paymentId,
+    );
+
+    if (!payment) {
+      throw new NotFoundException('Vendor transaction not found');
+    }
+
+    return this.toVendorTransaction(payment);
+  }
+
+  async getVendorRefunds(
+    userId: string,
+    query: {
+      status?: string;
+      from?: string;
+      to?: string;
+      page?: string;
+      limit?: string;
+    },
+  ) {
+    const vendor = await this.ensureVendor(userId);
+    const pagination = this.resolvePagination(query.page, query.limit);
+    const dateRange = this.resolveDateRange(query.from, query.to);
+
+    const [items, total] = await Promise.all([
+      this.paymentsRepository.findVendorRefunds(vendor.id, {
+        status: query.status,
+        ...dateRange,
+        skip: pagination.skip,
+        take: pagination.limit,
+      }),
+      this.paymentsRepository.countVendorRefunds(vendor.id, {
+        status: query.status,
+        ...dateRange,
+      }),
+    ]);
+
+    return {
+      items: items.map((refund) => ({
+        id: refund.id,
+        paymentId: refund.paymentId,
+        bookingId: refund.payment.bookingId,
+        bookingNumber: refund.payment.booking.bookingNumber,
+        eventName: refund.payment.booking.eventName,
+        stripeRefundId: refund.stripeRefundId,
+        amount: this.formatAmount(refund.amount),
+        currency: refund.payment.currency,
+        reason: refund.reason,
+        status: refund.status,
+        processedAt: refund.processedAt,
+        paymentStatus: refund.payment.status,
+      })),
+      meta: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+        totalPages: Math.ceil(total / pagination.limit),
+      },
+    };
   }
 
   async createBookingPaymentIntent(
@@ -627,7 +817,7 @@ export class PaymentsService {
     return {
       ...updated,
       stripe: {
-        accountType: stripeAccount.type ?? null,
+        accountType: stripeAccount.type ?? stripeAccount.dashboard ?? 'express',
         country: stripeAccount.country ?? null,
         detailsSubmitted: Boolean(stripeAccount.details_submitted),
         chargesEnabled: Boolean(stripeAccount.charges_enabled),
@@ -822,6 +1012,111 @@ export class PaymentsService {
 
   private toMinorUnit(amount: number) {
     return Math.round(amount * 100);
+  }
+
+  private resolvePagination(page?: string, limit?: string) {
+    const resolvedPage = Math.max(Number(page) || 1, 1);
+    const resolvedLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+    return {
+      page: resolvedPage,
+      limit: resolvedLimit,
+      skip: (resolvedPage - 1) * resolvedLimit,
+    };
+  }
+
+  private resolveDateRange(from?: string, to?: string) {
+    return {
+      from: from ? new Date(from) : undefined,
+      to: to ? new Date(to) : undefined,
+    };
+  }
+
+  private toVendorTransaction(payment: any) {
+    const customerProfile = payment.booking?.customer?.profile;
+    const customerName =
+      customerProfile?.displayName ||
+      [customerProfile?.firstName, customerProfile?.lastName]
+        .filter(Boolean)
+        .join(' ') ||
+      payment.booking?.customer?.email ||
+      null;
+
+    return {
+      paymentId: payment.id,
+      bookingId: payment.bookingId,
+      bookingNumber: payment.booking?.bookingNumber ?? null,
+      eventName: payment.booking?.eventName ?? null,
+      eventStartsAt: payment.booking?.startsAt ?? null,
+      foodTruck: payment.booking?.foodTruck
+        ? {
+            id: payment.booking.foodTruck.id,
+            name: payment.booking.foodTruck.name,
+          }
+        : null,
+      customer: payment.booking?.customer
+        ? {
+            id: payment.booking.customer.id,
+            name: customerName,
+            email: payment.booking.customer.email,
+          }
+        : null,
+      stripePaymentIntentId: payment.stripePaymentIntentId,
+      grossAmount: this.formatAmount(payment.amount),
+      commissionAmount: this.formatAmount(
+        payment.commission?.commissionAmount ?? 0,
+      ),
+      vendorNetAmount: this.formatAmount(
+        payment.commission?.vendorNetAmount ?? payment.amount,
+      ),
+      currency: payment.currency,
+      paymentStatus: payment.status,
+      payout: payment.payout
+        ? {
+            id: payment.payout.id,
+            stripeTransferId: payment.payout.stripeTransferId,
+            amount: this.formatAmount(payment.payout.amount),
+            status: payment.payout.status,
+            failureReason: payment.payout.failureReason,
+            paidAt: payment.payout.paidAt,
+            createdAt: payment.payout.createdAt,
+          }
+        : null,
+      refunds: (payment.refunds ?? []).map((refund: any) => ({
+        id: refund.id,
+        stripeRefundId: refund.stripeRefundId,
+        amount: this.formatAmount(refund.amount),
+        reason: refund.reason,
+        status: refund.status,
+        processedAt: refund.processedAt,
+      })),
+      paidAt: payment.paidAt,
+      createdAt: payment.createdAt,
+    };
+  }
+
+  private formatMoneyObject<T extends Record<string, any>>(value: T) {
+    const moneyKeys = [
+      'totalGross',
+      'totalCommission',
+      'totalNet',
+      'totalRefunded',
+      'pendingPayout',
+      'processingPayout',
+      'paidPayout',
+      'failedPayout',
+    ];
+
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        moneyKeys.includes(key) ? this.formatAmount(item) : item,
+      ]),
+    );
+  }
+
+  private formatAmount(value: any) {
+    return Number(value ?? 0).toFixed(2);
   }
 
   private toStripeRefundReason(reason?: string) {

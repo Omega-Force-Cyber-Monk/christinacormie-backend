@@ -878,95 +878,101 @@ export class BookingsRepository {
       Date.now() + (dto.paymentWindowMinutes ?? 30) * 60_000,
     );
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${quote.bookingId}::uuid FOR UPDATE`;
-      const currentQuote = await tx.bookingQuote.findUnique({
-        where: { id: quoteId },
-        include: { booking: true },
-      });
-      if (
-        !currentQuote ||
-        currentQuote.status !== 'PENDING' ||
-        currentQuote.booking.status !== 'QUOTED' ||
-        currentQuote.booking.customerId !== userId
-      )
-        throw new ConflictException(
-          'This quote is no longer available for acceptance',
-        );
-      if (currentQuote.expiresAt && currentQuote.expiresAt <= new Date())
-        throw new ConflictException('Quote has expired');
-      const { foodTruckId, startsAt, endsAt } = currentQuote.booking;
-      if (!endsAt || endsAt <= startsAt || startsAt <= new Date())
-        throw new ConflictException(
-          'The booking needs a valid future event window',
-        );
-      await tx.$queryRaw`SELECT id FROM food_trucks WHERE id = ${foodTruckId}::uuid FOR UPDATE`;
-      const overlap = await tx.booking.findFirst({
-        where: {
-          id: { not: currentQuote.bookingId },
-          foodTruckId,
-          status: { in: ['PAYMENT_PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
-          startsAt: { lt: endsAt },
-          OR: [{ endsAt: null }, { endsAt: { gt: startsAt } }],
-        },
-      });
-      const hold = await tx.bookingHold.findFirst({
-        where: {
-          foodTruckId,
-          expiresAt: { gt: new Date() },
-          startsAt: { lt: endsAt },
-          endsAt: { gt: startsAt },
-        },
-      });
-      if (overlap || hold)
-        throw new ConflictException(
-          'Food truck is already booked or reserved during this event',
-        );
-      await tx.bookingQuote.update({
-        where: { id: quoteId },
-        data: { status: 'ACCEPTED' as any },
-      });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM bookings WHERE id = ${quote.bookingId}::uuid FOR UPDATE`;
+        const currentQuote = await tx.bookingQuote.findUnique({
+          where: { id: quoteId },
+          include: { booking: true },
+        });
+        if (
+          !currentQuote ||
+          currentQuote.status !== 'PENDING' ||
+          currentQuote.booking.status !== 'QUOTED' ||
+          currentQuote.booking.customerId !== userId
+        )
+          throw new ConflictException(
+            'This quote is no longer available for acceptance',
+          );
+        if (currentQuote.expiresAt && currentQuote.expiresAt <= new Date())
+          throw new ConflictException('Quote has expired');
+        const { foodTruckId, startsAt, endsAt } = currentQuote.booking;
+        if (!endsAt || endsAt <= startsAt || startsAt <= new Date())
+          throw new ConflictException(
+            'The booking needs a valid future event window',
+          );
+        await tx.$queryRaw`SELECT id FROM food_trucks WHERE id = ${foodTruckId}::uuid FOR UPDATE`;
+        const overlap = await tx.booking.findFirst({
+          where: {
+            id: { not: currentQuote.bookingId },
+            foodTruckId,
+            status: { in: ['PAYMENT_PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
+            startsAt: { lt: endsAt },
+            OR: [{ endsAt: null }, { endsAt: { gt: startsAt } }],
+          },
+        });
+        const hold = await tx.bookingHold.findFirst({
+          where: {
+            foodTruckId,
+            expiresAt: { gt: new Date() },
+            startsAt: { lt: endsAt },
+            endsAt: { gt: startsAt },
+          },
+        });
+        if (overlap || hold)
+          throw new ConflictException(
+            'Food truck is already booked or reserved during this event',
+          );
+        await tx.bookingQuote.update({
+          where: { id: quoteId },
+          data: { status: 'ACCEPTED' as any },
+        });
 
-      await tx.booking.update({
-        where: { id: quote!.bookingId },
-        data: {
-          status: 'PAYMENT_PENDING' as any,
-          subtotal: quote!.subtotal,
-          outsideRadiusFee: quote!.outsideRadiusFee,
-          serviceFee: quote!.serviceFee,
-          taxAmount: quote!.taxAmount,
-          discountAmount: quote!.discountAmount,
-          totalAmount: quote!.totalAmount,
-          paymentPreference: (quote!.paymentPreference as any) ?? undefined,
-          acceptedAt: new Date(),
-        },
-      });
+        await tx.booking.update({
+          where: { id: quote!.bookingId },
+          data: {
+            status: 'PAYMENT_PENDING' as any,
+            subtotal: quote!.subtotal,
+            outsideRadiusFee: quote!.outsideRadiusFee,
+            serviceFee: quote!.serviceFee,
+            taxAmount: quote!.taxAmount,
+            discountAmount: quote!.discountAmount,
+            totalAmount: quote!.totalAmount,
+            paymentPreference: (quote!.paymentPreference as any) ?? undefined,
+            acceptedAt: new Date(),
+          },
+        });
 
-      await tx.bookingHold.create({
-        data: {
-          foodTruckId: quote!.booking.foodTruckId,
-          userId,
-          startsAt: quote!.booking.startsAt,
-          endsAt: quote!.booking.endsAt!,
-          expiresAt: holdExpiresAt,
-        },
-      });
+        await tx.bookingHold.create({
+          data: {
+            foodTruckId: quote!.booking.foodTruckId,
+            userId,
+            startsAt: quote!.booking.startsAt,
+            endsAt: quote!.booking.endsAt!,
+            expiresAt: holdExpiresAt,
+          },
+        });
 
-      await tx.bookingStatusHistory.create({
-        data: {
-          bookingId: quote!.bookingId,
-          previousStatus: quote!.booking.status as any,
-          newStatus: 'PAYMENT_PENDING' as any,
-          changedById: userId,
-          reason: 'Customer accepted quote',
-        },
-      });
+        await tx.bookingStatusHistory.create({
+          data: {
+            bookingId: quote!.bookingId,
+            previousStatus: quote!.booking.status as any,
+            newStatus: 'PAYMENT_PENDING' as any,
+            changedById: userId,
+            reason: 'Customer accepted quote',
+          },
+        });
 
-      return tx.booking.findUnique({
-        where: { id: quote!.bookingId },
-        include: this.bookingInclude(),
-      });
-    });
+        return tx.booking.findUnique({
+          where: { id: quote!.bookingId },
+          include: this.bookingInclude(),
+        });
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
+      },
+    );
   }
 
   private createStatusHistory(
