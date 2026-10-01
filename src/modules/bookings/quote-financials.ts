@@ -106,7 +106,6 @@ export function calculateQuote(dto: QuoteInput, guests?: number | null) {
       'The vendor must choose DEPOSIT_ONLY or PREPAID_IN_FULL',
     );
   const rate = platformCommissionRate();
-  const commissionAmount = money(total * rate);
   let depositAmount = total;
   let depositPercent = 100;
   if (paymentPreference === 'DEPOSIT_ONLY') {
@@ -136,10 +135,6 @@ export function calculateQuote(dto: QuoteInput, guests?: number | null) {
       throw new BadRequestException(
         'Deposit must be greater than zero and cannot exceed the quote total',
       );
-    if (depositAmount < commissionAmount)
-      throw new BadRequestException(
-        `Deposit must cover the platform commission: minimum $${commissionAmount.toFixed(2)} (${rate * 100}% of the quote total)`,
-      );
     depositPercent = dto.depositPercent ?? money((depositAmount / total) * 100);
   } else if (
     (dto.depositAmount !== undefined && money(dto.depositAmount) !== total) ||
@@ -157,6 +152,7 @@ export function calculateQuote(dto: QuoteInput, guests?: number | null) {
     throw new BadRequestException(
       'balanceDueAtEvent must equal the quote total minus deposit',
     );
+  const commissionAmount = money(depositAmount * rate);
   return {
     pricingModel,
     pricePerPerson: dto.pricePerPerson,
