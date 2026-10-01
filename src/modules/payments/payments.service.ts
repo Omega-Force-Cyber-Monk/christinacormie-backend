@@ -688,11 +688,7 @@ export class PaymentsService {
     }
 
     const rate = platformCommissionRate();
-    const totalCommissionAmount = Number(
-      (totalContractAmount * rate).toFixed(2),
-    );
-
-    const applicationFeeAmount = Math.min(chargeAmount, totalCommissionAmount);
+    const applicationFeeAmount = Number((chargeAmount * rate).toFixed(2));
     const vendorNetAmount = Number(
       (chargeAmount - applicationFeeAmount).toFixed(2),
     );
@@ -702,7 +698,7 @@ export class PaymentsService {
       totalContractAmount,
       chargeAmount,
       commissionRate: rate,
-      totalCommissionAmount,
+      totalCommissionAmount: applicationFeeAmount,
       applicationFeeAmount,
       vendorNetAmount,
     };
