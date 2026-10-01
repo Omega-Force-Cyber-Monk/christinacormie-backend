@@ -229,6 +229,16 @@ const serviceAreaExample = {
   outsideRadiusFee: 25,
 };
 
+const serviceAreaRequestExample = {
+  name: 'New York Test Service Area',
+  centerAddress: '100 Main St, New York, NY 10001',
+  latitude: 40.7128,
+  longitude: -74.006,
+  radiusKm: 50,
+  outsideRadiusAllowed: true,
+  outsideRadiusFee: 0,
+};
+
 const imageExample = {
   id: 'image-id',
   foodTruckId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
@@ -943,6 +953,15 @@ export class FoodTrucksController {
 
   @ApiOperation({ summary: 'Set service area radius and location (Vendor)' })
   @ApiBearerAuth()
+  @ApiBody({
+    type: SetupServiceAreaDto,
+    examples: {
+      paymentTestServiceArea: {
+        summary: 'Service area for booking/payment testing',
+        value: serviceAreaRequestExample,
+      },
+    },
+  })
   @ApiResponse({
     status: 200,
     description: 'Food truck service area saved successfully.',

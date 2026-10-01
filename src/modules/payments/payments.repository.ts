@@ -8,7 +8,14 @@ export class PaymentsRepository {
   findVendorByUserId(userId: string) {
     return this.prisma.vendor.findUnique({
       where: { userId },
-      include: { paymentAccount: true },
+      include: {
+        paymentAccount: true,
+        user: {
+          select: {
+            email: true,
+          },
+        },
+      },
     });
   }
 
@@ -22,6 +29,232 @@ export class PaymentsRepository {
     return this.prisma.payout.findMany({
       where: { vendorId },
       orderBy: { createdAt: 'desc' },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            bookingNumber: true,
+            eventName: true,
+            startsAt: true,
+          },
+        },
+        payment: {
+          select: {
+            id: true,
+            status: true,
+            amount: true,
+            currency: true,
+            paidAt: true,
+          },
+        },
+      },
+    });
+  }
+
+  findVendorPayments(
+    vendorId: string,
+    filters: {
+      status?: string;
+      from?: Date;
+      to?: Date;
+      skip: number;
+      take: number;
+    },
+  ) {
+    const where = {
+      vendorId,
+      ...(filters.status ? { status: filters.status as any } : {}),
+      ...(filters.from || filters.to
+        ? {
+            createdAt: {
+              ...(filters.from ? { gte: filters.from } : {}),
+              ...(filters.to ? { lte: filters.to } : {}),
+            },
+          }
+        : {}),
+    };
+
+    return this.prisma.payment.findMany({
+      where,
+      skip: filters.skip,
+      take: filters.take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            bookingNumber: true,
+            eventName: true,
+            startsAt: true,
+            address: true,
+            customer: {
+              select: {
+                id: true,
+                email: true,
+                profile: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    displayName: true,
+                  },
+                },
+              },
+            },
+            foodTruck: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        commission: true,
+        payout: true,
+        refunds: {
+          orderBy: { processedAt: 'desc' },
+        },
+      },
+    });
+  }
+
+  countVendorPayments(
+    vendorId: string,
+    filters: {
+      status?: string;
+      from?: Date;
+      to?: Date;
+    },
+  ) {
+    return this.prisma.payment.count({
+      where: {
+        vendorId,
+        ...(filters.status ? { status: filters.status as any } : {}),
+        ...(filters.from || filters.to
+          ? {
+              createdAt: {
+                ...(filters.from ? { gte: filters.from } : {}),
+                ...(filters.to ? { lte: filters.to } : {}),
+              },
+            }
+          : {}),
+      },
+    });
+  }
+
+  findVendorPaymentById(vendorId: string, paymentId: string) {
+    return this.prisma.payment.findFirst({
+      where: { id: paymentId, vendorId },
+      include: {
+        booking: {
+          include: {
+            customer: {
+              select: {
+                id: true,
+                email: true,
+                profile: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    displayName: true,
+                  },
+                },
+              },
+            },
+            foodTruck: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        commission: true,
+        payout: true,
+        refunds: {
+          orderBy: { processedAt: 'desc' },
+        },
+      },
+    });
+  }
+
+  findVendorRefunds(
+    vendorId: string,
+    filters: {
+      status?: string;
+      from?: Date;
+      to?: Date;
+      skip: number;
+      take: number;
+    },
+  ) {
+    return this.prisma.refund.findMany({
+      where: {
+        payment: {
+          vendorId,
+        },
+        ...(filters.status ? { status: filters.status as any } : {}),
+        ...(filters.from || filters.to
+          ? {
+              processedAt: {
+                ...(filters.from ? { gte: filters.from } : {}),
+                ...(filters.to ? { lte: filters.to } : {}),
+              },
+            }
+          : {}),
+      },
+      skip: filters.skip,
+      take: filters.take,
+      orderBy: { processedAt: 'desc' },
+      include: {
+        payment: {
+          include: {
+            booking: {
+              select: {
+                id: true,
+                bookingNumber: true,
+                eventName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  countVendorRefunds(
+    vendorId: string,
+    filters: {
+      status?: string;
+      from?: Date;
+      to?: Date;
+    },
+  ) {
+    return this.prisma.refund.count({
+      where: {
+        payment: {
+          vendorId,
+        },
+        ...(filters.status ? { status: filters.status as any } : {}),
+        ...(filters.from || filters.to
+          ? {
+              processedAt: {
+                ...(filters.from ? { gte: filters.from } : {}),
+                ...(filters.to ? { lte: filters.to } : {}),
+              },
+            }
+          : {}),
+      },
+    });
+  }
+
+  findVendorPaymentsForSummary(vendorId: string) {
+    return this.prisma.payment.findMany({
+      where: { vendorId },
+      include: {
+        commission: true,
+        payout: true,
+        refunds: true,
+      },
     });
   }
 
@@ -125,6 +358,7 @@ export class PaymentsRepository {
           },
         },
         commission: true,
+        payout: true,
         refunds: true,
       },
     });
