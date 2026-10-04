@@ -8,7 +8,6 @@ type StripeRequestOptions = {
 @Injectable()
 export class StripeClientService {
   private readonly apiBaseUrl = 'https://api.stripe.com/v1';
-  private readonly apiV2BaseUrl = 'https://api.stripe.com/v2';
 
   async createConnectAccount(country = 'US', contactEmail?: string | null) {
     if (!contactEmail) {
@@ -18,36 +17,12 @@ export class StripeClientService {
     }
 
     try {
-      return await this.postJson('/core/accounts', {
-        contact_email: contactEmail,
-        identity: {
-          country,
-        },
-        dashboard: 'express',
-        defaults: {
-          responsibilities: {
-            fees_collector: 'application',
-            losses_collector: 'application',
-          },
-        },
-        configuration: {
-          merchant: {
-            capabilities: {
-              card_payments: {
-                requested: true,
-              },
-            },
-          },
-          recipient: {
-            capabilities: {
-              stripe_balance: {
-                stripe_transfers: {
-                  requested: true,
-                },
-              },
-            },
-          },
-        },
+      return await this.post('/accounts', {
+        type: 'express',
+        country,
+        email: contactEmail,
+        'capabilities[card_payments][requested]': true,
+        'capabilities[transfers][requested]': true,
       });
     } catch (error: any) {
       const message = error?.message ?? '';
@@ -56,7 +31,7 @@ export class StripeClientService {
         message.includes('loss-liable') ||
         message.includes('country') ||
         message.includes('capabilities') ||
-        message.includes('contact_email') ||
+        message.includes('email') ||
         message.includes('Connect')
       ) {
         throw new BadRequestException(
@@ -257,52 +232,6 @@ export class StripeClientService {
           : {}),
       },
       body,
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new BadRequestException(
-        data?.error?.message ?? 'Stripe request failed',
-      );
-    }
-
-    return data;
-  }
-
-  private async postJson(
-    path: string,
-    params: Record<string, unknown>,
-    options?: StripeRequestOptions,
-  ) {
-    const secretKey = process.env.STRIPE_SECRET_KEY;
-
-    if (!secretKey) {
-      throw new Error('STRIPE_SECRET_KEY is not set');
-    }
-
-    if (secretKey.includes('change_me')) {
-      if (path === '/core/accounts') {
-        return {
-          id: `acct_mock_${Date.now()}`,
-          detailsSubmitted: false,
-          chargesEnabled: false,
-          payoutsEnabled: false,
-        };
-      }
-    }
-
-    const response = await fetch(`${this.apiV2BaseUrl}${path}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${secretKey}`,
-        'Stripe-Version': '2026-08-26.dahlia',
-        'Content-Type': 'application/json',
-        ...(options?.idempotencyKey
-          ? { 'Idempotency-Key': options.idempotencyKey }
-          : {}),
-      },
-      body: JSON.stringify(params),
     });
 
     const data = await response.json();
