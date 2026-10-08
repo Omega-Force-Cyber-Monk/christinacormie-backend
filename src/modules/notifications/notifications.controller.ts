@@ -29,7 +29,7 @@ export class NotificationsController {
   @ApiResponse({
     status: 200,
     description:
-      'Notifications returned as an array. Use metadata/actionUrl or related IDs to navigate in the app.',
+      'Notifications returned as an array. Use metadata.entityType + metadata.entityId for app navigation. Supported entityType values include BOOKING, CONVERSATION, COMMUNITY_REQUEST, BOOKING_ISSUE, PAYMENT, REFUND, VENDOR_VERIFICATION, VENDOR, FOOD_TRUCK, PROMOTION, REWARD_REDEMPTION, REWARD, CHECK_IN, BADGE, POST, REVIEW, REPORT, and REFERRAL. Push notifications use the same keys in FCM data.',
     schema: {
       example: [
         {

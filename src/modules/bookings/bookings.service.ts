@@ -32,6 +32,7 @@ import { BookingsRepository } from './bookings.repository';
 export class BookingsService {
   private readonly vendorApprovalMessage =
     'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+  private readonly issueMessageNotificationCooldownMinutes = 5;
 
   constructor(
     private readonly bookingsRepository: BookingsRepository,
@@ -360,28 +361,62 @@ export class BookingsService {
       dto.message,
     );
 
-    if (senderRole !== 'ADMIN') {
-      await this.notificationsService.notifyAdmins({
-        actorUserId: user.sub,
-        title: 'New booking issue message',
-        message: `New ${senderRole.toLowerCase()} message on booking ${issue.booking.bookingNumber}.`,
+    const issueMessageNotificationPayload = {
+      actorUserId: user.sub,
+      title: 'New booking issue message',
+      message: `New ${senderRole.toLowerCase()} message on booking ${issue.booking.bookingNumber}.`,
+      bookingId,
+      foodTruckId: issue.booking.foodTruckId,
+      metadata: {
+        eventType: NotificationEventType.BOOKING_ISSUE_MESSAGE_CREATED,
+        entityType: 'BOOKING_ISSUE',
+        entityId: issueId,
         bookingId,
-        foodTruckId: issue.booking.foodTruckId,
-        actionUrl: `/api/v1/admin/bookings/${bookingId}`,
-        priority: 'MEDIUM',
+        issueId,
+        messageId: message.id,
+        senderRole,
+      },
+      pushData: {
+        eventType: NotificationEventType.BOOKING_ISSUE_MESSAGE_CREATED,
+        bookingId,
+        issueId,
+        messageId: message.id,
+      },
+      dedupe: {
+        windowMinutes: this.issueMessageNotificationCooldownMinutes,
         metadata: {
           eventType: NotificationEventType.BOOKING_ISSUE_MESSAGE_CREATED,
-          bookingId,
           issueId,
-          messageId: message.id,
-          senderRole,
         },
-        pushData: {
-          eventType: NotificationEventType.BOOKING_ISSUE_MESSAGE_CREATED,
-          bookingId,
-          issueId,
-          messageId: message.id,
-        },
+      },
+    };
+
+    if (senderRole !== 'ADMIN') {
+      await this.notificationsService.notifyAdmins({
+        ...issueMessageNotificationPayload,
+        actionUrl: `/api/v1/admin/bookings/${bookingId}`,
+        priority: 'MEDIUM',
+      });
+    }
+
+    const participantRecipients =
+      senderRole === 'ADMIN'
+        ? [issue.booking.customerId, issue.booking.vendor.userId]
+        : senderRole === 'CUSTOMER'
+          ? [issue.booking.vendor.userId]
+          : [issue.booking.customerId];
+
+    for (const recipientUserId of participantRecipients) {
+      if (!recipientUserId || recipientUserId === user.sub) {
+        continue;
+      }
+
+      await this.notificationsService.notify({
+        ...issueMessageNotificationPayload,
+        userId: recipientUserId,
+        type: 'BOOKING',
+        actionUrl: `/api/v1/bookings/${bookingId}/issues/${issueId}/messages`,
+        pushPreferenceKey: 'bookingAlerts',
       });
     }
 
