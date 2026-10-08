@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { withNotificationEntityMetadata } from './notification-navigation.util';
 
 export type NotificationInput = {
   userId: string;
@@ -19,11 +20,11 @@ export type NotificationInput = {
 export class NotificationsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findForUser(
+  async findForUser(
     userId: string,
     options: { unreadOnly?: boolean; limit: number; offset?: number },
   ) {
-    return this.prisma.notification.findMany({
+    const notifications = await this.prisma.notification.findMany({
       where: {
         userId,
         ...(options.unreadOnly ? { isRead: false } : {}),
@@ -55,6 +56,17 @@ export class NotificationsRepository {
         },
       },
     });
+
+    return notifications.map((notification) => ({
+      ...notification,
+      metadata: withNotificationEntityMetadata({
+        bookingId: notification.bookingId,
+        conversationId: notification.conversationId,
+        foodTruckId: notification.foodTruckId,
+        postId: notification.postId,
+        metadata: notification.metadata as Record<string, unknown> | null,
+      }),
+    }));
   }
 
   countUnread(userId: string) {
@@ -67,6 +79,57 @@ export class NotificationsRepository {
     return this.prisma.notification.findFirst({
       where: { id: notificationId, userId },
     });
+  }
+
+  async findRecentForUser(
+    data: Pick<
+      NotificationInput,
+      | 'userId'
+      | 'type'
+      | 'bookingId'
+      | 'conversationId'
+      | 'foodTruckId'
+      | 'postId'
+    > & {
+      since: Date;
+      metadata?: Record<string, string>;
+    },
+  ) {
+    const notifications = await this.prisma.notification.findMany({
+      where: {
+        userId: data.userId,
+        type: data.type as any,
+        createdAt: { gte: data.since },
+        ...(data.bookingId ? { bookingId: data.bookingId } : {}),
+        ...(data.conversationId ? { conversationId: data.conversationId } : {}),
+        ...(data.foodTruckId ? { foodTruckId: data.foodTruckId } : {}),
+        ...(data.postId ? { postId: data.postId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        metadata: true,
+      },
+    });
+
+    const metadata = data.metadata ?? {};
+    const metadataEntries = Object.entries(metadata);
+
+    if (!metadataEntries.length) {
+      return notifications[0] ?? null;
+    }
+
+    return (
+      notifications.find((notification) => {
+        const notificationMetadata =
+          (notification.metadata as Record<string, unknown> | null) ?? {};
+
+        return metadataEntries.every(
+          ([key, value]) => String(notificationMetadata[key] ?? '') === value,
+        );
+      }) ?? null
+    );
   }
 
   markRead(notificationId: string) {
@@ -153,31 +216,9 @@ export class NotificationsRepository {
         postId: data.postId,
         conversationId: data.conversationId,
         actionUrl: data.actionUrl,
-        metadata: this.withEntityMetadata(data) as any,
+        metadata: withNotificationEntityMetadata(data) as any,
       },
     });
-  }
-
-  private withEntityMetadata(data: NotificationInput) {
-    const metadata = { ...(data.metadata ?? {}) };
-
-    if (!metadata.entityType || !metadata.entityId) {
-      if (data.bookingId) {
-        metadata.entityType = 'BOOKING';
-        metadata.entityId = data.bookingId;
-      } else if (data.conversationId) {
-        metadata.entityType = 'CONVERSATION';
-        metadata.entityId = data.conversationId;
-      } else if (data.postId) {
-        metadata.entityType = 'POST';
-        metadata.entityId = data.postId;
-      } else if (data.foodTruckId) {
-        metadata.entityType = 'FOOD_TRUCK';
-        metadata.entityId = data.foodTruckId;
-      }
-    }
-
-    return metadata;
   }
 
   async findFoodTruckUpdateRecipients(

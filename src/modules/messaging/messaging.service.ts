@@ -18,6 +18,7 @@ import { MessagingRealtimeService } from './messaging-realtime.service';
 @Injectable()
 export class MessagingService {
   private readonly logger = new Logger(MessagingService.name);
+  private readonly messageNotificationCooldownMinutes = 5;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -366,6 +367,7 @@ export class MessagingService {
           conversationId,
           actionUrl: `/api/v1/messaging/conversations/${conversationId}`,
           metadata: {
+            eventType: 'MESSAGE_CREATED',
             conversationId,
             messageId: message.id,
             messageType: message.messageType,
@@ -375,6 +377,13 @@ export class MessagingService {
             eventType: 'MESSAGE_CREATED',
             conversationId,
             messageId: message.id,
+          },
+          dedupe: {
+            windowMinutes: this.messageNotificationCooldownMinutes,
+            metadata: {
+              eventType: 'MESSAGE_CREATED',
+              conversationId,
+            },
           },
         });
       } catch (error) {

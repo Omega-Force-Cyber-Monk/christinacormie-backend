@@ -487,6 +487,25 @@ export class VendorsService {
       vendor.id,
     );
 
+    await this.notificationsService.notify({
+      userId: vendor.userId,
+      actorUserId: adminUserId,
+      type: 'GENERAL',
+      title: 'Vendor approved',
+      message: `${vendor.businessName} has been approved.`,
+      actionUrl: `/api/v1/vendors/me`,
+      metadata: {
+        eventType: 'VENDOR_APPROVED',
+        vendorId: vendor.id,
+        status: vendor.status,
+      },
+      pushData: {
+        eventType: 'VENDOR_APPROVED',
+        vendorId: vendor.id,
+        status: vendor.status,
+      },
+    });
+
     return {
       vendor,
       qrCodes,
@@ -499,11 +518,35 @@ export class VendorsService {
     rejectionReason: string,
   ) {
     await this.ensureVendorExists(vendorId);
-    return this.vendorsRepository.reject(
+    const vendor = await this.vendorsRepository.reject(
       vendorId,
       adminUserId,
       rejectionReason,
     );
+
+    await this.notificationsService.notify({
+      userId: vendor.userId,
+      actorUserId: adminUserId,
+      type: 'GENERAL',
+      title: 'Vendor verification needs attention',
+      message:
+        vendor.rejectionReason ??
+        'Your vendor verification was rejected. Please review and resubmit.',
+      actionUrl: `/api/v1/vendors/me`,
+      metadata: {
+        eventType: 'VENDOR_REJECTED',
+        vendorId: vendor.id,
+        status: vendor.status,
+        rejectionReason: vendor.rejectionReason,
+      },
+      pushData: {
+        eventType: 'VENDOR_REJECTED',
+        vendorId: vendor.id,
+        status: vendor.status,
+      },
+    });
+
+    return vendor;
   }
 
   async getMyVendorAnalytics(userId: string) {

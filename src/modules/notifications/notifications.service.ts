@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { FirebaseService } from '../../infrastructure/firebase/firebase.service';
 import { NotificationQueryDto } from './dto/notification-query.dto';
 import { NotificationEventType } from './enums/notification-event-type.enum';
+import { buildNotificationNavigationData } from './notification-navigation.util';
 import {
   NotificationInput,
   NotificationsRepository,
@@ -17,6 +18,10 @@ type NotifyInput = NotificationInput & {
     | 'rewardAlerts'
     | 'checkInAlerts';
   pushData?: Record<string, string>;
+  dedupe?: {
+    windowMinutes: number;
+    metadata?: Record<string, string>;
+  };
 };
 
 type AdminNotifyInput = Omit<NotifyInput, 'userId' | 'type'> & {
@@ -75,6 +80,24 @@ export class NotificationsService {
   }
 
   async notify(data: NotifyInput) {
+    if (data.dedupe) {
+      const recentNotification =
+        await this.notificationsRepository.findRecentForUser({
+          userId: data.userId,
+          type: data.type,
+          bookingId: data.bookingId,
+          conversationId: data.conversationId,
+          foodTruckId: data.foodTruckId,
+          postId: data.postId,
+          since: new Date(Date.now() - data.dedupe.windowMinutes * 60_000),
+          metadata: data.dedupe.metadata,
+        });
+
+      if (recentNotification) {
+        return null;
+      }
+    }
+
     const notification = await this.createNotification(data);
     const preferences = await this.notificationsRepository.getPreferences(
       data.userId,
@@ -98,6 +121,13 @@ export class NotificationsService {
         notificationId: notification.id,
         type: data.type,
         ...(data.pushData ?? {}),
+        ...buildNotificationNavigationData({
+          bookingId: notification.bookingId,
+          conversationId: notification.conversationId,
+          foodTruckId: notification.foodTruckId,
+          postId: notification.postId,
+          metadata: notification.metadata as Record<string, unknown> | null,
+        }),
       },
     });
 

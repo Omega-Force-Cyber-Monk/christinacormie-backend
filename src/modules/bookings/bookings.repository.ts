@@ -589,6 +589,11 @@ export class BookingsRepository {
             vendorId: true,
             foodTruckId: true,
             status: true,
+            vendor: {
+              select: {
+                userId: true,
+              },
+            },
           },
         },
         messages: {
