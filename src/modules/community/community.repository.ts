@@ -11,6 +11,7 @@ import { CreateVendorOfferDto } from './dto/create-vendor-offer.dto';
 import { NewFoodTruckLeadDto } from './dto/new-food-truck-lead.dto';
 import { ReactRequestDto } from './dto/react-request.dto';
 import { RequestMediaDto } from './dto/request-media.dto';
+import { UpdateCommunityRequestDto } from './dto/update-community-request.dto';
 import { calculateQuote } from '../bookings/quote-financials';
 import { communityEventWindow } from './community-event-window';
 
@@ -208,6 +209,99 @@ export class CommunityRepository {
         await tx.$executeRaw`UPDATE community_requests SET location = ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography WHERE id = ${post.id}::uuid`;
       }
       return post;
+    });
+  }
+
+  countVendorOffersForRequest(requestId: string) {
+    return this.prisma.vendorOffer.count({
+      where: { communityRequestId: requestId },
+    });
+  }
+
+  updateRequest(requestId: string, dto: UpdateCommunityRequestDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const request = await tx.communityRequest.update({
+        where: { id: requestId },
+        data: {
+          ...(dto.category !== undefined
+            ? { category: dto.category as any }
+            : {}),
+          ...(dto.spotsOpen !== undefined ? { spotsOpen: dto.spotsOpen } : {}),
+          ...(dto.attendanceMin !== undefined
+            ? { attendanceMin: dto.attendanceMin }
+            : {}),
+          ...(dto.attendanceMax !== undefined
+            ? { attendanceMax: dto.attendanceMax }
+            : {}),
+          ...(dto.requestType !== undefined
+            ? { requestType: dto.requestType as any }
+            : {}),
+          ...(dto.eventType !== undefined
+            ? { eventType: dto.eventType as any }
+            : {}),
+          ...(dto.title !== undefined ? { title: dto.title } : {}),
+          ...(dto.description !== undefined
+            ? { description: dto.description }
+            : {}),
+          ...(dto.eventDate !== undefined
+            ? { eventDate: this.toDateOnly(dto.eventDate) }
+            : {}),
+          ...(dto.startTime !== undefined
+            ? { startTime: this.toTimeDate(dto.startTime) }
+            : {}),
+          ...(dto.endTime !== undefined
+            ? { endTime: this.toTimeDate(dto.endTime) }
+            : {}),
+          ...(dto.eventTimezone !== undefined
+            ? { eventTimezone: dto.eventTimezone }
+            : {}),
+          ...(dto.guestCount !== undefined
+            ? { guestCount: dto.guestCount }
+            : {}),
+          ...(dto.budgetMin !== undefined ? { budgetMin: dto.budgetMin } : {}),
+          ...(dto.budgetMax !== undefined ? { budgetMax: dto.budgetMax } : {}),
+          ...(dto.address !== undefined ? { address: dto.address } : {}),
+          ...(dto.contactPhone !== undefined
+            ? { contactPhone: dto.contactPhone }
+            : {}),
+          ...(dto.preferredCuisines !== undefined
+            ? { preferredCuisines: dto.preferredCuisines as any }
+            : {}),
+          ...(dto.preferredMenuItems !== undefined
+            ? { preferredMenuItems: dto.preferredMenuItems as any }
+            : {}),
+          ...(dto.allowPublicComments !== undefined
+            ? { allowPublicComments: dto.allowPublicComments }
+            : {}),
+          ...(dto.expiresAt !== undefined
+            ? { expiresAt: new Date(dto.expiresAt) }
+            : {}),
+        },
+      });
+
+      if (dto.latitude !== undefined && dto.longitude !== undefined) {
+        await tx.$executeRaw`UPDATE community_requests SET location = ST_SetSRID(ST_MakePoint(${dto.longitude}, ${dto.latitude}), 4326)::geography WHERE id = ${requestId}::uuid`;
+      }
+
+      if (dto.media !== undefined) {
+        await tx.communityRequestMedia.deleteMany({
+          where: { communityRequestId: requestId },
+        });
+        if (dto.media.length) {
+          await tx.communityRequestMedia.createMany({
+            data: dto.media.map((media) => ({
+              communityRequestId: requestId,
+              mediaUrl: media.mediaUrl,
+              mediaType: media.mediaType,
+            })),
+          });
+        }
+      }
+
+      return tx.communityRequest.findUnique({
+        where: { id: request.id },
+        include: this.requestInclude(),
+      });
     });
   }
 

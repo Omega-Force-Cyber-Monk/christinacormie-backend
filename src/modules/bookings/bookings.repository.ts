@@ -1031,6 +1031,7 @@ export class BookingsRepository {
           id: true,
           userId: true,
           businessName: true,
+          businessPhone: true,
           logoUrl: true,
         },
       },

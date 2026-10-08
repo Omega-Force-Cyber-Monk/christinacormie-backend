@@ -153,9 +153,31 @@ export class NotificationsRepository {
         postId: data.postId,
         conversationId: data.conversationId,
         actionUrl: data.actionUrl,
-        metadata: data.metadata as any,
+        metadata: this.withEntityMetadata(data) as any,
       },
     });
+  }
+
+  private withEntityMetadata(data: NotificationInput) {
+    const metadata = { ...(data.metadata ?? {}) };
+
+    if (!metadata.entityType || !metadata.entityId) {
+      if (data.bookingId) {
+        metadata.entityType = 'BOOKING';
+        metadata.entityId = data.bookingId;
+      } else if (data.conversationId) {
+        metadata.entityType = 'CONVERSATION';
+        metadata.entityId = data.conversationId;
+      } else if (data.postId) {
+        metadata.entityType = 'POST';
+        metadata.entityId = data.postId;
+      } else if (data.foodTruckId) {
+        metadata.entityType = 'FOOD_TRUCK';
+        metadata.entityId = data.foodTruckId;
+      }
+    }
+
+    return metadata;
   }
 
   async findFoodTruckUpdateRecipients(

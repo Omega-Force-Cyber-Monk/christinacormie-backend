@@ -98,10 +98,7 @@ export class BookingsService {
     return this.bookingsRepository.listCustomerBookings(userId);
   }
 
-  async listVendorBookings(
-    userId: string,
-    query?: VendorBookingsQueryDto,
-  ) {
+  async listVendorBookings(userId: string, query?: VendorBookingsQueryDto) {
     const vendor = await this.ensureVendor(userId);
     return this.bookingsRepository.listVendorBookingsByVendorId(
       vendor.id,
@@ -122,7 +119,7 @@ export class BookingsService {
     }
 
     if (booking.customerId === userId) {
-      return booking;
+      return this.withVendorPhone(booking);
     }
 
     const vendor = await this.ensureVendor(userId);
@@ -131,7 +128,7 @@ export class BookingsService {
       throw new ForbiddenException('Booking is not visible to this user');
     }
 
-    return booking;
+    return this.withVendorPhone(booking);
   }
 
   async getBookingTracking(user: AuthenticatedUser, bookingId: string) {
@@ -171,7 +168,7 @@ export class BookingsService {
       userId,
     );
 
-    await this.notificationsService.createNotification({
+    await this.notificationsService.notify({
       userId: booking.customerId,
       actorUserId: userId,
       type: 'BOOKING',
@@ -180,6 +177,17 @@ export class BookingsService {
       bookingId,
       foodTruckId: booking.foodTruckId,
       actionUrl: `/api/v1/bookings/${bookingId}/tracking`,
+      metadata: {
+        eventType: 'BOOKING_COMPLETION_REQUESTED',
+        bookingId,
+        foodTruckId: booking.foodTruckId,
+      },
+      pushPreferenceKey: 'bookingAlerts',
+      pushData: {
+        eventType: 'BOOKING_COMPLETION_REQUESTED',
+        bookingId,
+        foodTruckId: booking.foodTruckId,
+      },
     });
 
     return {
@@ -260,7 +268,7 @@ export class BookingsService {
       dto.message,
     );
 
-    await this.notificationsService.createNotification({
+    await this.notificationsService.notify({
       userId: booking.vendor.userId,
       actorUserId: userId,
       type: 'BOOKING',
@@ -269,6 +277,19 @@ export class BookingsService {
       bookingId,
       foodTruckId: booking.foodTruckId,
       actionUrl: `/api/v1/bookings/${bookingId}/issues/${issue.id}/messages`,
+      metadata: {
+        eventType: NotificationEventType.BOOKING_ISSUE_REPORTED,
+        bookingId,
+        issueId: issue.id,
+        foodTruckId: booking.foodTruckId,
+      },
+      pushPreferenceKey: 'bookingAlerts',
+      pushData: {
+        eventType: NotificationEventType.BOOKING_ISSUE_REPORTED,
+        bookingId,
+        issueId: issue.id,
+        foodTruckId: booking.foodTruckId,
+      },
     });
 
     await this.notificationsService.notifyAdmins({
@@ -411,7 +432,7 @@ export class BookingsService {
           paymentReleasedAt,
         );
 
-      await this.notificationsService.createNotification({
+      await this.notificationsService.notify({
         userId: issue.booking.customerId,
         actorUserId: adminUserId,
         type: 'BOOKING',
@@ -420,6 +441,17 @@ export class BookingsService {
           'Your booking issue was reviewed. The booking has been completed and payment released.',
         bookingId,
         actionUrl: `/api/v1/bookings/${bookingId}/tracking`,
+        metadata: {
+          eventType: 'BOOKING_ISSUE_RESOLVED',
+          bookingId,
+          issueId,
+        },
+        pushPreferenceKey: 'bookingAlerts',
+        pushData: {
+          eventType: 'BOOKING_ISSUE_RESOLVED',
+          bookingId,
+          issueId,
+        },
       });
 
       await this.notificationsService.notifyVendorBookingUpdate(
@@ -454,7 +486,7 @@ export class BookingsService {
       dto.resolutionNote ?? 'Admin resolved booking issue with full refund',
     );
 
-    await this.notificationsService.createNotification({
+    await this.notificationsService.notify({
       userId: issue.booking.customerId,
       actorUserId: adminUserId,
       type: 'BOOKING',
@@ -463,6 +495,17 @@ export class BookingsService {
         'Your booking issue was reviewed. A full refund has been started.',
       bookingId,
       actionUrl: `/api/v1/bookings/${bookingId}/tracking`,
+      metadata: {
+        eventType: 'BOOKING_ISSUE_RESOLVED',
+        bookingId,
+        issueId,
+      },
+      pushPreferenceKey: 'bookingAlerts',
+      pushData: {
+        eventType: 'BOOKING_ISSUE_RESOLVED',
+        bookingId,
+        issueId,
+      },
     });
 
     await this.notificationsService.notifyVendorBookingUpdate(
@@ -922,6 +965,15 @@ export class BookingsService {
         'You must agree to the BiteDrop Terms and Conditions',
       );
     }
+  }
+
+  private withVendorPhone<
+    T extends { vendor?: { businessPhone?: string | null } | null },
+  >(booking: T) {
+    return {
+      ...booking,
+      vendorPhone: booking.vendor?.businessPhone ?? null,
+    };
   }
 
   private normalizeCustomMenuItems(items?: string[]) {

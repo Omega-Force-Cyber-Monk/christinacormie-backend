@@ -11,6 +11,7 @@ import { CreateVendorOfferDto } from './dto/create-vendor-offer.dto';
 import { NewFoodTruckLeadDto } from './dto/new-food-truck-lead.dto';
 import { ReactRequestDto } from './dto/react-request.dto';
 import { RequestMediaDto } from './dto/request-media.dto';
+import { UpdateCommunityRequestDto } from './dto/update-community-request.dto';
 import { RewardsService } from '../rewards/rewards.service';
 import { CommunityRepository } from './community.repository';
 import {
@@ -77,6 +78,38 @@ export class CommunityService {
 
   async getRequestDetails(userId: string, requestId: string) {
     return this.ensureRequestVisible(userId, requestId);
+  }
+
+  async updateRequest(
+    userId: string,
+    requestId: string,
+    dto: UpdateCommunityRequestDto,
+  ) {
+    await this.communityRepository.ensurePublisher(userId);
+    const request = await this.ensureRequestExists(requestId);
+
+    if (request.createdById !== userId) {
+      throw new ForbiddenException(
+        'Only the request owner can edit this request',
+      );
+    }
+
+    if (request.status !== 'OPEN') {
+      throw new BadRequestException('Only open requests can be edited');
+    }
+
+    const offerCount =
+      await this.communityRepository.countVendorOffersForRequest(requestId);
+
+    if (offerCount > 0) {
+      throw new BadRequestException(
+        'This request already has vendor offers and cannot be edited',
+      );
+    }
+
+    this.validateCommunityRequestUpdate(dto);
+
+    return this.communityRepository.updateRequest(requestId, dto);
   }
 
   async listRequestOffers(
@@ -352,5 +385,79 @@ export class CommunityService {
     }
 
     return offer;
+  }
+
+  private validateCommunityRequestUpdate(dto: UpdateCommunityRequestDto) {
+    for (const [key, value] of Object.entries(dto)) {
+      if (value === null) {
+        throw new BadRequestException(
+          `${key} cannot be null; omit optional fields instead`,
+        );
+      }
+    }
+
+    dto.title = dto.title?.trim();
+    dto.description = dto.description?.trim();
+    dto.address = dto.address?.trim();
+
+    if ((dto.latitude === undefined) !== (dto.longitude === undefined)) {
+      throw new BadRequestException(
+        'latitude and longitude must be provided together',
+      );
+    }
+
+    if (
+      dto.budgetMin !== undefined &&
+      dto.budgetMax !== undefined &&
+      dto.budgetMin > dto.budgetMax
+    ) {
+      throw new BadRequestException('budgetMin cannot exceed budgetMax');
+    }
+
+    if (
+      dto.attendanceMin !== undefined &&
+      dto.attendanceMax !== undefined &&
+      dto.attendanceMin > dto.attendanceMax
+    ) {
+      throw new BadRequestException(
+        'attendanceMin cannot exceed attendanceMax',
+      );
+    }
+
+    if (dto.startTime && dto.endTime && dto.startTime >= dto.endTime) {
+      throw new BadRequestException('endTime must be later than startTime');
+    }
+
+    if (dto.expiresAt && new Date(dto.expiresAt) <= new Date()) {
+      throw new BadRequestException('expiresAt must be in the future');
+    }
+
+    if (
+      dto.eventDate &&
+      dto.eventDate.slice(0, 10) < new Date().toISOString().slice(0, 10)
+    ) {
+      throw new BadRequestException('eventDate cannot be in the past');
+    }
+
+    if (dto.eventTimezone) {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: dto.eventTimezone });
+      } catch {
+        throw new BadRequestException(
+          'eventTimezone must be a valid IANA time zone, for example America/Chicago',
+        );
+      }
+    }
+
+    if (dto.preferredMenuItems) {
+      if (dto.preferredMenuItems.some((item) => !item.trim())) {
+        throw new BadRequestException('Preferred menu items cannot be blank');
+      }
+      dto.preferredMenuItems = [
+        ...new Set(dto.preferredMenuItems.map((item) => item.trim())),
+      ];
+    }
+
+    validateCommunityMedia(dto.media ?? []);
   }
 }

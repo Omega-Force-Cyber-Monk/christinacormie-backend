@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -22,6 +24,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/authenticated-re
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { PromotionQueryDto } from './dto/promotion-query.dto';
 import { RedeemPromotionDto } from './dto/redeem-promotion.dto';
+import { UpdatePromotionDto } from './dto/update-promotion.dto';
 import { PromotionsService } from './promotions.service';
 
 const errorExample = (
@@ -228,6 +231,60 @@ export class PromotionsController {
     @Query() query: PromotionQueryDto,
   ) {
     return this.promotionsService.listFoodTruckPromotions(foodTruckId, query);
+  }
+
+  @ApiOperation({ summary: 'Update a promotion discount (Vendor)' })
+  @ApiBearerAuth()
+  @ApiResponse({
+    status: 200,
+    description: 'Promotion updated successfully.',
+    schema: { example: promotionExample },
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Request body validation failed, date range is invalid, or percentage value is over 100.',
+    schema: {
+      example: errorExample(
+        400,
+        'Percentage promotion value cannot exceed 100',
+        'Bad Request',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: { example: unauthorizedExample },
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'User is not a vendor, vendor profile is missing/not approved, or promotion belongs to another vendor.',
+    schema: {
+      example: errorExample(
+        403,
+        'Promotion does not belong to this vendor',
+        'Forbidden',
+      ),
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Promotion was not found.',
+    schema: {
+      example: errorExample(404, 'Promotion not found', 'Not Found'),
+    },
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.VENDOR)
+  @Patch(':promotionId')
+  updatePromotion(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('promotionId', ParseUUIDPipe) promotionId: string,
+    @Body() dto: UpdatePromotionDto,
+  ) {
+    return this.promotionsService.updatePromotion(user.sub, promotionId, dto);
   }
 
   @ApiOperation({ summary: 'Redeem a promotion discount (Customer)' })

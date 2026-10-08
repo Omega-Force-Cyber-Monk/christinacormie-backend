@@ -3,6 +3,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { PromotionQueryDto } from './dto/promotion-query.dto';
 import { RedeemPromotionDto } from './dto/redeem-promotion.dto';
+import { UpdatePromotionDto } from './dto/update-promotion.dto';
 
 @Injectable()
 export class PromotionsRepository {
@@ -49,6 +50,40 @@ export class PromotionsRepository {
         startsAt: new Date(dto.startsAt),
         endsAt: new Date(dto.endsAt),
         isActive: dto.isActive ?? true,
+      },
+      include: this.promotionInclude(),
+    });
+  }
+
+  updatePromotion(promotionId: string, dto: UpdatePromotionDto) {
+    return this.prisma.promotion.update({
+      where: { id: promotionId },
+      data: {
+        ...(dto.foodTruckId !== undefined
+          ? { foodTruckId: dto.foodTruckId }
+          : {}),
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description }
+          : {}),
+        ...(dto.type !== undefined ? { type: dto.type as any } : {}),
+        ...(dto.value !== undefined ? { value: dto.value } : {}),
+        ...(dto.couponCode !== undefined ? { couponCode: dto.couponCode } : {}),
+        ...(dto.minimumSpend !== undefined
+          ? { minimumSpend: dto.minimumSpend }
+          : {}),
+        ...(dto.maximumDiscount !== undefined
+          ? { maximumDiscount: dto.maximumDiscount }
+          : {}),
+        ...(dto.isFollowerOnly !== undefined
+          ? { isFollowerOnly: dto.isFollowerOnly }
+          : {}),
+        ...(dto.usageLimit !== undefined ? { usageLimit: dto.usageLimit } : {}),
+        ...(dto.startsAt !== undefined
+          ? { startsAt: new Date(dto.startsAt) }
+          : {}),
+        ...(dto.endsAt !== undefined ? { endsAt: new Date(dto.endsAt) } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
       include: this.promotionInclude(),
     });

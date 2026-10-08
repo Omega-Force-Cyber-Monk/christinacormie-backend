@@ -256,7 +256,7 @@ export class NotificationsService {
       return null;
     }
 
-    return this.createNotification({
+    return this.notify({
       userId: booking.vendor.userId,
       actorUserId,
       type: 'BOOKING',
@@ -265,6 +265,18 @@ export class NotificationsService {
       foodTruckId: booking.foodTruckId,
       bookingId: booking.id,
       actionUrl: `/api/v1/bookings/${booking.id}`,
+      metadata: {
+        eventType: 'BOOKING_UPDATED',
+        bookingId: booking.id,
+        foodTruckId: booking.foodTruckId,
+        status: booking.status,
+      },
+      pushPreferenceKey: 'bookingAlerts',
+      pushData: {
+        eventType: 'BOOKING_UPDATED',
+        bookingId: booking.id,
+        foodTruckId: booking.foodTruckId,
+      },
     });
   }
 

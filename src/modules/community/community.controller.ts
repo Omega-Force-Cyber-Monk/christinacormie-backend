@@ -29,6 +29,7 @@ import { CreateVendorOfferDto } from './dto/create-vendor-offer.dto';
 import { NewFoodTruckLeadDto } from './dto/new-food-truck-lead.dto';
 import { ReactRequestDto } from './dto/react-request.dto';
 import { RequestMediaDto } from './dto/request-media.dto';
+import { UpdateCommunityRequestDto } from './dto/update-community-request.dto';
 import { CommunityService } from './community.service';
 import { CommunityErrorFilter } from './community-error.filter';
 
@@ -153,6 +154,20 @@ export class CommunityController {
     @Param('requestId', ParseUUIDPipe) requestId: string,
   ) {
     return this.communityService.getRequestDetails(user.sub, requestId);
+  }
+
+  @ApiOperation({
+    summary: 'Update a community request created by the authenticated user',
+  })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('requests/:requestId')
+  updateRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: UpdateCommunityRequestDto,
+  ) {
+    return this.communityService.updateRequest(user.sub, requestId, dto);
   }
 
   @ApiOperation({

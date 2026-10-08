@@ -8,6 +8,7 @@ import {
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { PromotionQueryDto } from './dto/promotion-query.dto';
 import { RedeemPromotionDto } from './dto/redeem-promotion.dto';
+import { UpdatePromotionDto } from './dto/update-promotion.dto';
 import { PromotionsRepository } from './promotions.repository';
 
 @Injectable()
@@ -37,6 +38,34 @@ export class PromotionsService {
   async listFoodTruckPromotions(foodTruckId: string, dto: PromotionQueryDto) {
     await this.ensureFoodTruckExists(foodTruckId);
     return this.promotionsRepository.listFoodTruckPromotions(foodTruckId, dto);
+  }
+
+  async updatePromotion(
+    userId: string,
+    promotionId: string,
+    dto: UpdatePromotionDto,
+  ) {
+    const promotion = await this.ensureOwnPromotion(userId, promotionId);
+
+    if (dto.foodTruckId && dto.foodTruckId !== promotion.foodTruckId) {
+      await this.ensureOwnFoodTruck(userId, dto.foodTruckId);
+    }
+
+    const startsAt = dto.startsAt ?? promotion.startsAt.toISOString();
+    const endsAt = dto.endsAt ?? promotion.endsAt.toISOString();
+    this.validatePromotionWindow(startsAt, endsAt);
+
+    const type = dto.type ?? promotion.type;
+    const value =
+      dto.value !== undefined ? dto.value : Number(promotion.value ?? 0);
+
+    if (type === 'PERCENTAGE' && value > 100) {
+      throw new BadRequestException(
+        'Percentage promotion value cannot exceed 100',
+      );
+    }
+
+    return this.promotionsRepository.updatePromotion(promotionId, dto);
   }
 
   async redeemPromotion(
