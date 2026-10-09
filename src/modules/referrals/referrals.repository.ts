@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateReferralCodeDto } from './dto/create-referral-code.dto';
 
@@ -74,10 +74,21 @@ export class ReferralsRepository {
         include: { referralCode: true },
       });
 
-      await tx.referralCode.update({
-        where: { id: referralCode.id },
+      const usageUpdate = await tx.referralCode.updateMany({
+        where: {
+          id: referralCode.id,
+          isActive: true,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          ...(referralCode.maximumUses === null
+            ? {}
+            : { usageCount: { lt: referralCode.maximumUses } }),
+        },
         data: { usageCount: { increment: 1 } },
       });
+
+      if (usageUpdate.count !== 1) {
+        throw new BadRequestException('Referral code usage limit reached');
+      }
 
       return referral;
     });

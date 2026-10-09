@@ -168,7 +168,7 @@ export class AdminService {
       throw new NotFoundException('Vendor not found');
     }
 
-    const nextStatus = existing.isVerified ? 'APPROVED' : 'PENDING_APPROVAL';
+    const nextStatus = 'APPROVED';
     const vendor = await this.adminRepository.updateVendorStatus(
       vendorId,
       nextStatus,

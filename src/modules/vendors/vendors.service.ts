@@ -45,7 +45,7 @@ const STAFF_PIN_SALT_ROUNDS = 12;
 export class VendorsService {
   private readonly logger = new Logger(VendorsService.name);
   private readonly vendorApprovalMessage =
-    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+    'Vendor onboarding must be completed before using this vendor feature.';
 
   constructor(
     private readonly vendorsRepository: VendorsRepository,
@@ -65,6 +65,8 @@ export class VendorsService {
 
     return {
       ...vendor,
+      dashboardAccess: this.getDashboardAccess(vendor),
+      verificationBadge: this.getVerificationBadge(vendor),
       verificationRequirements: this.getVerificationRequirements(vendor),
     };
   }
@@ -397,8 +399,8 @@ export class VendorsService {
   ) {
     const vendor = await this.getMyVendorProfile(userId);
 
-    if (vendor.status === 'APPROVED') {
-      throw new ForbiddenException('Approved vendors are already verified');
+    if (vendor.isVerified) {
+      throw new ForbiddenException('Vendor already has the Bite Drop Verified badge');
     }
 
     const requirements = this.getVerificationRequirements(vendor);
@@ -773,7 +775,9 @@ export class VendorsService {
       requiredDocumentTypes: requirements.map((item) => item.type),
       requiredDocuments: requirements,
       confirmationMessage: VENDOR_DOCUMENT_SUBMISSION_CONFIRMATION,
-      pendingUntilApproved: true,
+      optional: true,
+      purpose: 'Bite Drop Verified badge only',
+      pendingUntilApproved: false,
     };
   }
 
@@ -909,9 +913,56 @@ export class VendorsService {
     status?: string;
     isVerified?: boolean;
   }) {
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (!this.hasVendorPlatformAccess(vendor.status)) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
+  }
+
+  private getDashboardAccess(vendor: { status?: string }) {
+    const allowed = this.hasVendorPlatformAccess(vendor.status);
+
+    return {
+      allowed,
+      status: allowed ? 'AVAILABLE' : 'ONBOARDING_REQUIRED',
+      reason: allowed
+        ? null
+        : 'Complete vendor onboarding to access the vendor dashboard.',
+    };
+  }
+
+  private hasVendorPlatformAccess(status?: string) {
+    return status === 'APPROVED' || status === 'PENDING_APPROVAL';
+  }
+
+  private getVerificationBadge(vendor: {
+    isVerified?: boolean;
+    verificationRequests?: Array<{ status: string; rejectionReason?: string | null }>;
+    rejectionReason?: string | null;
+  }) {
+    const latestRequest = vendor.verificationRequests?.[0] ?? null;
+    const status = vendor.isVerified
+      ? 'VERIFIED'
+      : latestRequest?.status === 'PENDING'
+        ? 'PENDING'
+        : latestRequest?.status === 'REJECTED'
+          ? 'REJECTED'
+          : 'UNVERIFIED';
+
+    return {
+      isVerified: Boolean(vendor.isVerified),
+      status,
+      optional: true,
+      message:
+        status === 'VERIFIED'
+          ? 'Bite Drop Verified badge is active.'
+          : status === 'PENDING'
+            ? 'Verification documents are under review. Dashboard access remains available.'
+            : status === 'REJECTED'
+              ? 'Verification documents need attention. Dashboard access remains available.'
+              : 'Vendor can use the dashboard as an Unverified Vendor.',
+      rejectionReason:
+        latestRequest?.rejectionReason ?? vendor.rejectionReason ?? null,
+    };
   }
 
   private presentCreditAcceptance(vendor: {

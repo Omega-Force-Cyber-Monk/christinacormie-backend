@@ -14,7 +14,7 @@ import { PromotionsRepository } from './promotions.repository';
 @Injectable()
 export class PromotionsService {
   private readonly vendorApprovalMessage =
-    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+    'Vendor onboarding must be completed before using this vendor feature.';
 
   constructor(private readonly promotionsRepository: PromotionsRepository) {}
 
@@ -82,8 +82,8 @@ export class PromotionsService {
 
     if (
       promotion.foodTruck.vendor.deletedAt ||
-      promotion.foodTruck.vendor.status !== 'APPROVED' ||
-      !promotion.foodTruck.vendor.isVerified
+      (promotion.foodTruck.vendor.status !== 'APPROVED' &&
+        promotion.foodTruck.vendor.status !== 'PENDING_APPROVAL')
     ) {
       throw new ForbiddenException('Promotion is not available');
     }
@@ -185,8 +185,8 @@ export class PromotionsService {
 
     if (
       foodTruck.vendor.deletedAt ||
-      foodTruck.vendor.status !== 'APPROVED' ||
-      !foodTruck.vendor.isVerified
+      (foodTruck.vendor.status !== 'APPROVED' &&
+        foodTruck.vendor.status !== 'PENDING_APPROVAL')
     ) {
       throw new ForbiddenException('Food truck promotions are not available');
     }
@@ -201,7 +201,10 @@ export class PromotionsService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
@@ -221,7 +224,10 @@ export class PromotionsService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 

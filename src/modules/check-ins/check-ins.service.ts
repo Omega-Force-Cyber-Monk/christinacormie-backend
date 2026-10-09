@@ -13,7 +13,7 @@ import { CheckInsRepository } from './check-ins.repository';
 @Injectable()
 export class CheckInsService {
   private readonly vendorApprovalMessage =
-    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+    'Vendor onboarding must be completed before using this vendor feature.';
 
   constructor(
     private readonly checkInsRepository: CheckInsRepository,
@@ -251,8 +251,8 @@ export class CheckInsService {
     if (
       qrCode.foodTruck.status !== 'ACTIVE' ||
       qrCode.foodTruck.vendor.deletedAt ||
-      qrCode.foodTruck.vendor.status !== 'APPROVED' ||
-      !qrCode.foodTruck.vendor.isVerified
+      (qrCode.foodTruck.vendor.status !== 'APPROVED' &&
+        qrCode.foodTruck.vendor.status !== 'PENDING_APPROVAL')
     ) {
       throw new ForbiddenException(
         'This food truck QR code is not available until the vendor is approved.',
@@ -280,7 +280,10 @@ export class CheckInsService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 

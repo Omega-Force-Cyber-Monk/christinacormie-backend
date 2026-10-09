@@ -233,7 +233,17 @@ export class AdminRepository {
         where: { deletedAt: null, status: VendorStatus.APPROVED },
       }),
       this.prisma.vendor.count({
-        where: { deletedAt: null, status: VendorStatus.PENDING_APPROVAL },
+        where: {
+          deletedAt: null,
+          OR: [
+            { status: VendorStatus.PENDING_APPROVAL },
+            {
+              verificationRequests: {
+                some: { status: 'PENDING' },
+              },
+            },
+          ],
+        },
       }),
       this.prisma.vendor.count({
         where: { deletedAt: null, status: VendorStatus.SUSPENDED },

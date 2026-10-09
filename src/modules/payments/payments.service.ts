@@ -16,7 +16,7 @@ import { StripeClientService } from './stripe-client.service';
 @Injectable()
 export class PaymentsService {
   private readonly vendorApprovalMessage =
-    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+    'Vendor onboarding must be completed before using this vendor feature.';
 
   constructor(
     private readonly paymentsRepository: PaymentsRepository,
@@ -409,7 +409,10 @@ export class PaymentsService {
       throw new ForbiddenException('Payment is not visible to this user');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
@@ -958,7 +961,10 @@ export class PaymentsService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 

@@ -43,7 +43,7 @@ const forbiddenAdminExample = errorExample(
 );
 const forbiddenVendorApprovalExample = errorExample(
   403,
-  'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.',
+  'Vendor onboarding must be completed before using this vendor feature.',
   'Forbidden',
 );
 

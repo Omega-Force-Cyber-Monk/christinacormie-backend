@@ -89,8 +89,7 @@ export class CheckInsRepository {
       where: {
         vendorId,
         vendor: {
-          status: 'APPROVED',
-          isVerified: true,
+          status: { in: ['APPROVED', 'PENDING_APPROVAL'] },
           deletedAt: null,
         },
         deletedAt: null,

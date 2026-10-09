@@ -724,8 +724,7 @@ export class RewardsRepository {
     return this.prisma.vendor.count({
       where: {
         id: { in: vendorIds },
-        status: 'APPROVED',
-        isVerified: true,
+        status: { in: ['APPROVED', 'PENDING_APPROVAL'] },
         deletedAt: null,
       },
     });

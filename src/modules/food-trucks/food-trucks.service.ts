@@ -30,7 +30,7 @@ import { FoodTrucksRepository } from './food-trucks.repository';
 @Injectable()
 export class FoodTrucksService {
   private readonly vendorApprovalMessage =
-    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+    'Vendor onboarding must be completed before using this vendor feature.';
 
   constructor(private readonly foodTrucksRepository: FoodTrucksRepository) {}
 
@@ -413,7 +413,10 @@ export class FoodTrucksService {
   private async ensureApprovedVendor(userId: string) {
     const vendor = await this.getVendorForUser(userId);
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 

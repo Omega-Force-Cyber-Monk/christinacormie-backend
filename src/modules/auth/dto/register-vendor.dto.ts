@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDate,
   IsEmail,
@@ -81,4 +81,16 @@ export class RegisterVendorDto {
   @IsString()
   @MaxLength(100)
   timezone?: string;
+
+  @ApiPropertyOptional({
+    example: 'FRIEND2026',
+    description: 'Optional referral code entered during vendor signup.',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @MaxLength(50)
+  referralCode?: string;
 }

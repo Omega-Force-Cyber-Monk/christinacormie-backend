@@ -1,8 +1,9 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsDate,
   IsEmail,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
@@ -30,4 +31,16 @@ export class RegisterCustomerDto {
   @Type(() => Date)
   @IsDate()
   dateOfBirth: Date;
+
+  @ApiPropertyOptional({
+    example: 'FRIEND2026',
+    description: 'Optional referral code entered during signup.',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @MaxLength(50)
+  referralCode?: string;
 }

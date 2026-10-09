@@ -37,11 +37,11 @@ export class CommunityRepository {
       roles.includes('VENDOR') &&
       (!user.vendor ||
         user.vendor.deletedAt ||
-        user.vendor.status !== 'APPROVED' ||
-        !user.vendor.isVerified)
+        (user.vendor.status !== 'APPROVED' &&
+          user.vendor.status !== 'PENDING_APPROVAL'))
     ) {
       throw new ForbiddenException(
-        'Vendor account must be approved and verified before publishing Community posts',
+        'Vendor onboarding must be completed before publishing Community posts',
       );
     }
     return user;

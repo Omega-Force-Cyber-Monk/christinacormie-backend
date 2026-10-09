@@ -31,7 +31,7 @@ import { BookingsRepository } from './bookings.repository';
 @Injectable()
 export class BookingsService {
   private readonly vendorApprovalMessage =
-    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+    'Vendor onboarding must be completed before using this vendor feature.';
   private readonly issueMessageNotificationCooldownMinutes = 5;
 
   constructor(
@@ -280,9 +280,12 @@ export class BookingsService {
       actionUrl: `/api/v1/bookings/${bookingId}/issues/${issue.id}/messages`,
       metadata: {
         eventType: NotificationEventType.BOOKING_ISSUE_REPORTED,
+        entityType: 'BOOKING_ISSUE',
+        entityId: issue.id,
         bookingId,
         issueId: issue.id,
         foodTruckId: booking.foodTruckId,
+        foodTruckSlug: booking.foodTruck?.slug,
       },
       pushPreferenceKey: 'bookingAlerts',
       pushData: {
@@ -290,6 +293,7 @@ export class BookingsService {
         bookingId,
         issueId: issue.id,
         foodTruckId: booking.foodTruckId,
+        foodTruckSlug: booking.foodTruck?.slug ?? '',
       },
     });
 
@@ -303,19 +307,45 @@ export class BookingsService {
       priority: 'HIGH',
       metadata: {
         eventType: NotificationEventType.BOOKING_ISSUE_REPORTED,
+        entityType: 'BOOKING_ISSUE',
+        entityId: issue.id,
         bookingId,
         issueId: issue.id,
+        foodTruckId: booking.foodTruckId,
+        foodTruckSlug: booking.foodTruck?.slug,
       },
       pushData: {
         eventType: NotificationEventType.BOOKING_ISSUE_REPORTED,
         bookingId,
         issueId: issue.id,
+        foodTruckId: booking.foodTruckId,
+        foodTruckSlug: booking.foodTruck?.slug ?? '',
       },
     });
 
     return {
       message: 'Issue submitted successfully',
       issue: this.presentIssue(issue),
+    };
+  }
+
+  async listIssues(user: AuthenticatedUser, bookingId: string) {
+    await this.ensureBookingVisible(user, bookingId);
+    const issues = await this.bookingsRepository.findIssuesForBooking(bookingId);
+
+    return {
+      items: issues.map((issue) => {
+        const messages = issue.messages.map((message) =>
+          this.presentIssueMessage(message),
+        );
+
+        return {
+          ...this.presentIssue(issue),
+          messagesCount: messages.length,
+          lastMessage: messages.at(-1) ?? null,
+          messages,
+        };
+      }),
     };
   }
 
@@ -375,12 +405,16 @@ export class BookingsService {
         issueId,
         messageId: message.id,
         senderRole,
+        foodTruckId: issue.booking.foodTruckId,
+        foodTruckSlug: issue.booking.foodTruck?.slug,
       },
       pushData: {
         eventType: NotificationEventType.BOOKING_ISSUE_MESSAGE_CREATED,
         bookingId,
         issueId,
         messageId: message.id,
+        foodTruckId: issue.booking.foodTruckId,
+        foodTruckSlug: issue.booking.foodTruck?.slug ?? '',
       },
       dedupe: {
         windowMinutes: this.issueMessageNotificationCooldownMinutes,
@@ -971,7 +1005,15 @@ export class BookingsService {
 
     return {
       id: message.id,
+      senderUserId: message.senderId ?? message.sender?.id ?? null,
       senderRole: message.senderRole,
+      sender: message.sender
+        ? {
+            id: message.sender.id,
+            email: message.sender.email,
+            displayName,
+          }
+        : null,
       senderName: displayName || message.senderRole,
       message: message.message,
       createdAt: message.createdAt,
@@ -1103,7 +1145,10 @@ export class BookingsService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
@@ -1120,8 +1165,8 @@ export class BookingsService {
 
     if (
       foodTruck.vendor.deletedAt ||
-      foodTruck.vendor.status !== 'APPROVED' ||
-      !foodTruck.vendor.isVerified
+      (foodTruck.vendor.status !== 'APPROVED' &&
+        foodTruck.vendor.status !== 'PENDING_APPROVAL')
     ) {
       throw new ForbiddenException('Food truck is not available for booking');
     }

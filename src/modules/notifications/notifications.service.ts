@@ -197,7 +197,10 @@ export class NotificationsService {
         actionUrl: `/api/v1/food-trucks/profile/${foodTruck.slug}`,
         metadata: {
           eventType: NotificationEventType.TRUCK_POST_PUBLISHED,
+          entityType: 'FOOD_TRUCK',
+          entityId: foodTruck.id,
           foodTruckId: foodTruck.id,
+          foodTruckSlug: foodTruck.slug,
           postId: data.postId,
         },
         pushPreferenceKey:
@@ -207,6 +210,7 @@ export class NotificationsService {
         pushData: {
           eventType: NotificationEventType.TRUCK_POST_PUBLISHED,
           foodTruckId: foodTruck.id,
+          foodTruckSlug: foodTruck.slug,
           postId: data.postId ?? '',
         },
       });
@@ -426,8 +430,11 @@ export class NotificationsService {
       actionUrl: `/api/v1/food-trucks/profile/${checkIn.foodTruck?.slug ?? ''}`,
       metadata: {
         eventType: NotificationEventType.CHECK_IN_VERIFIED,
+        entityType: 'FOOD_TRUCK',
+        entityId: checkIn.foodTruckId,
         checkInId: checkIn.id,
         foodTruckId: checkIn.foodTruckId,
+        foodTruckSlug: checkIn.foodTruck?.slug,
         status: checkIn.status,
       },
       pushPreferenceKey: 'checkInAlerts',
@@ -435,6 +442,7 @@ export class NotificationsService {
         eventType: NotificationEventType.CHECK_IN_VERIFIED,
         checkInId: checkIn.id,
         foodTruckId: checkIn.foodTruckId,
+        foodTruckSlug: checkIn.foodTruck?.slug ?? '',
       },
     });
   }

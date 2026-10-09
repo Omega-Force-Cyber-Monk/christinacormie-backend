@@ -56,7 +56,7 @@ const forbiddenVendorExample = errorExample(
 );
 const vendorApprovalErrorExample = errorExample(
   403,
-  'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.',
+  'Vendor onboarding must be completed before using this vendor feature.',
   'Forbidden',
 );
 
@@ -71,7 +71,7 @@ const vendorProfileExample = {
   logoUrl: 'https://cdn.bitedrop.com/vendors/taco-paradise-logo.png',
   websiteUrl: 'https://tacoparadise.example.com',
   selectedPlan: 'FREE',
-  status: 'PENDING_APPROVAL',
+  status: 'APPROVED',
   isVerified: false,
   verifiedAt: null,
   reliabilityScore: 0,
@@ -94,6 +94,18 @@ const vendorProfileExample = {
   market: null,
   verificationRequests: [],
   foodTrucks: [],
+  dashboardAccess: {
+    allowed: true,
+    status: 'AVAILABLE',
+    reason: null,
+  },
+  verificationBadge: {
+    isVerified: false,
+    status: 'UNVERIFIED',
+    optional: true,
+    message: 'Vendor can use the dashboard as an Unverified Vendor.',
+    rejectionReason: null,
+  },
   verificationRequirements: {
     state: 'TX',
     normalizedState: 'TX',
@@ -103,7 +115,9 @@ const vendorProfileExample = {
       'FOOD_MANAGER_CERTIFICATION',
       'CERTIFICATE_OF_INSURANCE',
     ],
-    pendingUntilApproved: true,
+    optional: true,
+    purpose: 'Bite Drop Verified badge only',
+    pendingUntilApproved: false,
   },
 };
 
@@ -254,7 +268,7 @@ const onboardingResponseExample = {
 const verificationRequestResponseExample = {
   vendor: {
     ...vendorProfileExample,
-    status: 'PENDING_APPROVAL',
+    status: 'APPROVED',
   },
   verificationRequest: {
     id: 'verification-request-id',

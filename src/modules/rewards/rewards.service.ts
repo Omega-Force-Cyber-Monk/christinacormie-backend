@@ -21,7 +21,7 @@ const POINTS_PER_ACTION = [
   { sourceType: 'FOLLOW_TRUCK', action: 'Follow a food truck', points: 5 },
   { sourceType: 'BOOKING', action: 'Make a booking', points: 100 },
   { sourceType: 'COMMUNITY_POST', action: 'Community post', points: 10 },
-  { sourceType: 'REFERRAL_CUSTOMER', action: 'Refer a friend', points: 500 },
+  { sourceType: 'REFERRAL_CUSTOMER', action: 'Refer a friend', points: 100 },
   { sourceType: 'DAILY_STREAK', action: 'Daily app streak', points: 5 },
   {
     sourceType: 'PROFILE_COMPLETION',
@@ -37,7 +37,7 @@ const DEFAULT_POINT_RULES: Record<string, number> = {
   FOLLOW_TRUCK: 5,
   BOOKING: 100,
   COMMUNITY_POST: 10,
-  REFERRAL_CUSTOMER: 500,
+  REFERRAL_CUSTOMER: 100,
   REFERRAL_VENDOR: 100,
   DAILY_STREAK: 5,
   PROFILE_COMPLETION: 50,
@@ -81,7 +81,7 @@ const MAX_REDEEM_PER_VISIT = 5;
 @Injectable()
 export class RewardsService {
   private readonly vendorApprovalMessage =
-    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+    'Vendor onboarding must be completed before using this vendor feature.';
 
   constructor(
     private readonly rewardsRepository: RewardsRepository,
@@ -450,8 +450,8 @@ export class RewardsService {
       if (
         foodTruck.status !== 'ACTIVE' ||
         foodTruck.vendor.deletedAt ||
-        foodTruck.vendor.status !== 'APPROVED' ||
-        !foodTruck.vendor.isVerified
+        (foodTruck.vendor.status !== 'APPROVED' &&
+          foodTruck.vendor.status !== 'PENDING_APPROVAL')
       ) {
           throw new ForbiddenException('Food truck is not available for redemption');
       }
@@ -518,7 +518,10 @@ export class RewardsService {
       );
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
@@ -728,7 +731,10 @@ export class RewardsService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
@@ -1083,7 +1089,7 @@ export class RewardsService {
 
       if (approvedVendorCount !== dto.eligibleVendorIds.length) {
         throw new BadRequestException(
-          'All eligibleVendorIds must be approved and verified vendors',
+          'All eligibleVendorIds must be approved vendors',
         );
       }
     }

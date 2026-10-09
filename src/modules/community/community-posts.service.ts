@@ -80,8 +80,7 @@ export class CommunityPostsService {
     return (
       !!vendor &&
       !vendor.deletedAt &&
-      vendor.status === 'APPROVED' &&
-      vendor.isVerified
+      (vendor.status === 'APPROVED' || vendor.status === 'PENDING_APPROVAL')
     );
   }
 
@@ -380,7 +379,7 @@ export class CommunityPostsService {
     await this.community.getRequestDetails(userId, postId);
     if (type === 'INTEREST' && !(await this.responder(userId)))
       throw new ForbiddenException(
-        'Only approved and verified vendors can send interest',
+        'Vendor onboarding must be completed before sending interest',
       );
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM community_requests WHERE id = ${postId}::uuid FOR UPDATE`;

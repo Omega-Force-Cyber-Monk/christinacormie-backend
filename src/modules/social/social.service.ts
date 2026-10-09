@@ -18,7 +18,7 @@ import { SocialRepository } from './social.repository';
 @Injectable()
 export class SocialService {
   private readonly vendorApprovalMessage =
-    'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.';
+    'Vendor onboarding must be completed before using this vendor feature.';
 
   constructor(
     private readonly socialRepository: SocialRepository,
@@ -241,7 +241,10 @@ export class SocialService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
@@ -277,8 +280,8 @@ export class SocialService {
     if (
       foodTruck.status !== 'ACTIVE' ||
       foodTruck.vendor.deletedAt ||
-      foodTruck.vendor.status !== 'APPROVED' ||
-      !foodTruck.vendor.isVerified
+      (foodTruck.vendor.status !== 'APPROVED' &&
+        foodTruck.vendor.status !== 'PENDING_APPROVAL')
     ) {
       throw new ForbiddenException('Food truck is not available');
     }
@@ -293,7 +296,10 @@ export class SocialService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
@@ -313,7 +319,10 @@ export class SocialService {
       throw new ForbiddenException('Vendor profile is required');
     }
 
-    if (vendor.status !== 'APPROVED' || !vendor.isVerified) {
+    if (
+      vendor.status !== 'APPROVED' &&
+      vendor.status !== 'PENDING_APPROVAL'
+    ) {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 

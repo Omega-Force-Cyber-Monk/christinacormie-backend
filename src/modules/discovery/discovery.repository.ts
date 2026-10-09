@@ -132,7 +132,6 @@ export class DiscoveryRepository {
       `f.status = 'ACTIVE'`,
       `f.deleted_at IS NULL`,
       `v.status = 'APPROVED'`,
-      `v.is_verified = true`,
       `v.deleted_at IS NULL`,
     ];
   }

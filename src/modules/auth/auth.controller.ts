@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { AuthService } from './auth.service';
+import { BecomeVendorDto } from './dto/become-vendor.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { FirebaseAuthDto } from './dto/firebase-auth.dto';
@@ -84,7 +85,7 @@ const vendorAuthResponseExample = {
     id: '12441f40-2dc9-456d-948a-c33135359c70',
     email: 'vendor@example.com',
     displayName: 'Taco Owner',
-    roles: ['VENDOR'],
+    roles: ['CUSTOMER', 'VENDOR'],
     vendor: {
       id: '12441f40-2dc9-456d-948a-c33135359c70',
       businessName: 'Taco Paradise',
@@ -98,6 +99,17 @@ const vendorAuthResponseExample = {
     nextStep: 'PROFILE_SETUP',
     missingFields: ['dateOfBirth', 'businessPhone'],
   },
+};
+
+const becomeVendorResponseExample = {
+  ...vendorAuthResponseExample,
+  user: {
+    ...vendorAuthResponseExample.user,
+    email: 'customer@example.com',
+    displayName: 'John Doe',
+  },
+  authFlow: 'LOGIN',
+  isNewUser: false,
 };
 
 @ApiTags('Auth')
@@ -179,7 +191,7 @@ export class AuthController {
     schema: {
       example: errorExample(
         409,
-        'An account already exists with this phone number',
+        'An account already exists with this email. Please login and continue vendor onboarding from your account.',
         'Conflict',
       ),
     },
@@ -204,6 +216,7 @@ export class AuthController {
           email: 'vendor@example.com',
           phone: '+12025550199',
           password: 'Password123!',
+          referralCode: 'FRIEND2026',
         },
       },
       full: {
@@ -222,6 +235,7 @@ export class AuthController {
           lastName: 'Smith',
           displayName: 'JaneSmith',
           timezone: 'America/New_York',
+          referralCode: 'VENDOR2026',
         },
       },
     },
@@ -590,6 +604,55 @@ export class AuthController {
   @Post('firebase')
   loginWithFirebase(@Body() dto: FirebaseAuthDto) {
     return this.authService.loginWithFirebase(dto);
+  }
+
+  @ApiOperation({
+    summary: 'Add vendor access to the current user account',
+    description:
+      'Use this when an existing Foodie wants to become a Vendor with the same email/account. Returns fresh tokens with updated roles.',
+  })
+  @ApiBearerAuth()
+  @ApiResponse({
+    status: 201,
+    description:
+      'Vendor access added or existing vendor profile returned. Fresh access and refresh tokens are returned.',
+    schema: {
+      example: becomeVendorResponseExample,
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Access token is missing, invalid, or expired.',
+    schema: {
+      example: errorExample(401, 'Unauthorized', 'Unauthorized'),
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Authenticated user no longer exists.',
+    schema: {
+      example: errorExample(404, 'User not found', 'Not Found'),
+    },
+  })
+  @ApiBody({
+    type: BecomeVendorDto,
+    examples: {
+      minimal: {
+        summary: 'Start Vendor Onboarding',
+        value: {
+          businessName: 'Taco Paradise',
+          businessPhone: '+12025550191',
+        },
+      },
+    },
+  })
+  @UseGuards(JwtAuthGuard)
+  @Post('me/become-vendor')
+  becomeVendor(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: BecomeVendorDto,
+  ) {
+    return this.authService.becomeVendor(user.sub, dto);
   }
 
   @ApiOperation({ summary: 'Refresh access token using refresh token' })

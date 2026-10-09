@@ -50,7 +50,7 @@ const forbiddenRoleExample = errorExample(
 );
 const vendorApprovalErrorExample = errorExample(
   403,
-  'Vendor account is not approved yet. Please complete onboarding and submit verification documents for admin review.',
+  'Vendor onboarding must be completed before using this vendor feature.',
   'Forbidden',
 );
 
@@ -796,6 +796,41 @@ export class BookingsController {
   }
 
   @ApiOperation({ summary: 'List booking issue messages' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns the issue and all messages in chronological order. The original issue description is included as the first thread message.',
+    schema: {
+      example: {
+        issue: {
+          id: 'issue-id',
+          bookingId: 'booking-id',
+          status: 'OPEN',
+          message: 'The service was not completed as agreed.',
+          resolutionDecision: null,
+          resolutionNote: null,
+          resolvedById: null,
+          createdAt: '2026-09-08T06:45:00.000Z',
+          resolvedAt: null,
+        },
+        messages: [
+          {
+            id: 'issue-message-id',
+            senderUserId: 'customer-user-id',
+            senderRole: 'CUSTOMER',
+            sender: {
+              id: 'customer-user-id',
+              email: 'customer@example.com',
+              displayName: 'Alex Rivera',
+            },
+            senderName: 'Alex Rivera',
+            message: 'The service was not completed as agreed.',
+            createdAt: '2026-09-08T06:45:00.000Z',
+          },
+        ],
+      },
+    },
+  })
   @UseGuards(JwtAuthGuard)
   @Get(':bookingId/issues/:issueId/messages')
   listIssueMessages(
@@ -804,6 +839,57 @@ export class BookingsController {
     @Param('issueId') issueId: string,
   ) {
     return this.bookingsService.listIssueMessages(user, bookingId, issueId);
+  }
+
+  @ApiOperation({ summary: 'List all issues for a booking' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns all issues for a booking. Useful for showing an Issues section on order details.',
+    schema: {
+      example: {
+        items: [
+          {
+            id: 'issue-id',
+            bookingId: 'booking-id',
+            status: 'OPEN',
+            message: 'The service was not completed as agreed.',
+            resolutionDecision: null,
+            resolutionNote: null,
+            resolvedById: null,
+            createdAt: '2026-09-08T06:45:00.000Z',
+            resolvedAt: null,
+            messagesCount: 1,
+            lastMessage: {
+              id: 'issue-message-id',
+              senderUserId: 'customer-user-id',
+              senderRole: 'CUSTOMER',
+              senderName: 'Alex Rivera',
+              message: 'The service was not completed as agreed.',
+              createdAt: '2026-09-08T06:45:00.000Z',
+            },
+            messages: [
+              {
+                id: 'issue-message-id',
+                senderUserId: 'customer-user-id',
+                senderRole: 'CUSTOMER',
+                senderName: 'Alex Rivera',
+                message: 'The service was not completed as agreed.',
+                createdAt: '2026-09-08T06:45:00.000Z',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get(':bookingId/issues')
+  listIssues(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('bookingId') bookingId: string,
+  ) {
+    return this.bookingsService.listIssues(user, bookingId);
   }
 
   @ApiOperation({ summary: 'Send a booking issue message' })

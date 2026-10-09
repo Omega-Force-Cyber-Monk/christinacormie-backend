@@ -589,6 +589,13 @@ export class BookingsRepository {
             vendorId: true,
             foodTruckId: true,
             status: true,
+            foodTruck: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
             vendor: {
               select: {
                 userId: true,
@@ -596,6 +603,36 @@ export class BookingsRepository {
             },
           },
         },
+        messages: {
+          orderBy: { createdAt: 'asc' as const },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                email: true,
+                profile: {
+                  select: {
+                    displayName: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+                vendor: {
+                  select: { businessName: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  findIssuesForBooking(bookingId: string) {
+    return this.prisma.bookingIssue.findMany({
+      where: { bookingId },
+      orderBy: { createdAt: 'desc' as const },
+      include: {
         messages: {
           orderBy: { createdAt: 'asc' as const },
           include: {

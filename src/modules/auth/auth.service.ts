@@ -17,6 +17,7 @@ import { addDuration } from '../../common/utils/date.util';
 import { MailService } from '../../infrastructure/mail/mail.service';
 import { FirebaseService } from '../../infrastructure/firebase/firebase.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { BecomeVendorDto } from './dto/become-vendor.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { FirebaseAuthDto } from './dto/firebase-auth.dto';
 import { LoginDto } from './dto/login.dto';
@@ -76,6 +77,12 @@ export class AuthService {
         include: this.authUserInclude(),
       });
 
+      await this.applyReferralCodeDuringSignup(
+        tx,
+        createdUser.id,
+        dto.referralCode,
+      );
+
       return createdUser;
     });
 
@@ -84,7 +91,10 @@ export class AuthService {
   }
 
   async registerVendor(dto: RegisterVendorDto) {
-    await this.ensureUniqueAccount(dto.email, dto.phone);
+    await this.ensureUniqueAccount(dto.email, dto.phone, {
+      emailConflictMessage:
+        'An account already exists with this email. Please login and continue vendor onboarding from your account.',
+    });
     const passwordHash = await bcrypt.hash(dto.password, PASSWORD_SALT_ROUNDS);
     const businessName =
       (dto.businessName ??
@@ -100,7 +110,7 @@ export class AuthService {
           passwordHash,
           status: AccountStatus.PENDING,
           userRoles: {
-            create: [{ role: UserRole.VENDOR }],
+            create: [{ role: UserRole.CUSTOMER }, { role: UserRole.VENDOR }],
           },
           profile: {
             create: {
@@ -132,11 +142,49 @@ export class AuthService {
         include: this.authUserInclude(),
       });
 
+      await this.applyReferralCodeDuringSignup(
+        tx,
+        createdUser.id,
+        dto.referralCode,
+      );
+
       return createdUser;
     });
 
     await this.issueEmailVerificationCode(user.id, user.email);
     return this.toPendingVerificationResponse(user.email);
+  }
+
+  async becomeVendor(userId: string, dto: BecomeVendorDto) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: this.authUserInclude(),
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    this.ensureAccountCanAuthenticate(user.status);
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.ensureUserRole(tx, user.id, UserRole.CUSTOMER);
+      await this.ensureUserRole(tx, user.id, UserRole.VENDOR);
+      await this.ensureVendorProfile(tx, user, dto);
+      await this.applyReferralCodeDuringSignup(
+        tx,
+        user.id,
+        dto.referralCode,
+        { skipIfAlreadyReferred: true },
+      );
+    });
+
+    const updatedUser = await this.getAuthUserById(user.id);
+
+    return this.createAuthResponse(updatedUser, {
+      authFlow: 'LOGIN',
+      isNewUser: false,
+    });
   }
 
   async verifyEmailCode(dto: VerifyEmailCodeDto) {
@@ -487,7 +535,10 @@ export class AuthService {
           status: AccountStatus.ACTIVE,
           emailVerifiedAt: email ? new Date() : null,
           userRoles: {
-            create: [{ role: requestedRole }],
+            create:
+              requestedRole === UserRole.VENDOR
+                ? [{ role: UserRole.CUSTOMER }, { role: UserRole.VENDOR }]
+                : [{ role: requestedRole }],
           },
           profile: {
             create: {
@@ -566,6 +617,16 @@ export class AuthService {
           },
         },
       });
+
+      if (dto.role === UserRole.VENDOR) {
+        await this.prisma.$transaction(async (tx) => {
+          await this.ensureUserRole(tx, user!.id, UserRole.CUSTOMER);
+          await this.ensureUserRole(tx, user!.id, UserRole.VENDOR);
+          await this.ensureVendorProfile(tx, user!, {
+            businessName: dto.businessName,
+          });
+        });
+      }
 
       user = await this.prisma.user.findUniqueOrThrow({
         where: { id: user.id },
@@ -663,6 +724,177 @@ export class AuthService {
     return { success: true };
   }
 
+  private async getAuthUserById(userId: string) {
+    return this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      include: this.authUserInclude(),
+    });
+  }
+
+  private async ensureUserRole(tx: any, userId: string, role: UserRole) {
+    return tx.userRoleAssignment.upsert({
+      where: {
+        userId_role: {
+          userId,
+          role,
+        },
+      },
+      create: {
+        userId,
+        role,
+      },
+      update: {},
+    });
+  }
+
+  private async ensureVendorProfile(
+    tx: any,
+    user: any,
+    dto: Partial<BecomeVendorDto>,
+  ) {
+    const businessName =
+      dto.businessName?.trim() ||
+      user.vendor?.businessName ||
+      user.profile?.displayName ||
+      user.email?.split('@')[0] ||
+      'Pending Vendor Profile';
+
+    if (user.vendor) {
+      return tx.vendor.update({
+        where: { userId: user.id },
+        data: {
+          ...(dto.businessName ? { businessName } : {}),
+          ...(dto.businessEmail ? { businessEmail: dto.businessEmail } : {}),
+          ...(dto.businessPhone ? { businessPhone: dto.businessPhone } : {}),
+          ...(dto.description ? { description: dto.description } : {}),
+          ...(dto.websiteUrl ? { websiteUrl: dto.websiteUrl } : {}),
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    return tx.vendor.create({
+      data: {
+        userId: user.id,
+        businessName,
+        businessEmail: dto.businessEmail ?? user.email,
+        businessPhone: dto.businessPhone ?? user.phone,
+        description: dto.description,
+        websiteUrl: dto.websiteUrl,
+        status: 'DRAFT',
+      },
+    });
+  }
+
+  private async applyReferralCodeDuringSignup(
+    tx: any,
+    referredUserId: string,
+    code?: string | null,
+    options: { skipIfAlreadyReferred?: boolean } = {},
+  ) {
+    const normalizedCode = code?.trim().toUpperCase();
+
+    if (!normalizedCode) {
+      return null;
+    }
+
+    const referralCode = await tx.referralCode.findUnique({
+      where: { code: normalizedCode },
+    });
+
+    if (!referralCode || !referralCode.isActive) {
+      throw new NotFoundException('Referral code not found');
+    }
+
+    if (referralCode.ownerUserId === referredUserId) {
+      throw new BadRequestException('You cannot use your own referral code');
+    }
+
+    if (referralCode.expiresAt && referralCode.expiresAt <= new Date()) {
+      throw new BadRequestException('Referral code has expired');
+    }
+
+    if (
+      referralCode.maximumUses !== null &&
+      referralCode.usageCount >= referralCode.maximumUses
+    ) {
+      throw new BadRequestException('Referral code usage limit reached');
+    }
+
+    const existingReferral = await tx.referral.findUnique({
+      where: { referredUserId },
+      select: { id: true },
+    });
+
+    if (existingReferral) {
+      if (options.skipIfAlreadyReferred) {
+        return null;
+      }
+
+      throw new ConflictException('User already has a referral');
+    }
+
+    const referral = await tx.referral.create({
+      data: {
+        referralCodeId: referralCode.id,
+        referrerUserId: referralCode.ownerUserId,
+        referredUserId,
+        programType: referralCode.programType,
+      },
+      include: { referralCode: true },
+    });
+
+    const usageUpdate = await tx.referralCode.updateMany({
+      where: {
+        id: referralCode.id,
+        isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        ...(referralCode.maximumUses === null
+          ? {}
+          : { usageCount: { lt: referralCode.maximumUses } }),
+      },
+      data: { usageCount: { increment: 1 } },
+    });
+
+    if (usageUpdate.count !== 1) {
+      throw new BadRequestException('Referral code usage limit reached');
+    }
+
+    return referral;
+  }
+
+  private async ensureCustomerRoleForVendorUser(user: any) {
+    const roles = this.getRoles(user);
+
+    if (!roles.includes(UserRole.VENDOR) || roles.includes(UserRole.CUSTOMER)) {
+      return;
+    }
+
+    const userRoleAssignment = (this.prisma as any).userRoleAssignment;
+
+    if (userRoleAssignment?.create) {
+      try {
+        await userRoleAssignment.create({
+          data: {
+            userId: user.id,
+            role: UserRole.CUSTOMER,
+          },
+        });
+      } catch (error: any) {
+        if (error?.code !== 'P2002') {
+          throw error;
+        }
+      }
+    }
+
+    user.userRoles = [
+      ...(user.userRoles ?? []),
+      {
+        role: UserRole.CUSTOMER,
+      },
+    ];
+  }
+
   private async createAuthResponse(
     user: any,
     authContext?: {
@@ -670,6 +902,7 @@ export class AuthService {
       isNewUser?: boolean;
     },
   ) {
+    await this.ensureCustomerRoleForVendorUser(user);
     const roles = this.getRoles(user);
     const accessToken = await this.jwtService.signAsync(
       {
@@ -719,7 +952,11 @@ export class AuthService {
     };
   }
 
-  private async ensureUniqueAccount(email: string, phone?: string) {
+  private async ensureUniqueAccount(
+    email: string,
+    phone?: string,
+    options?: { emailConflictMessage?: string },
+  ) {
     const existingUser = await this.prisma.user.findFirst({
       where: {
         OR: [{ email: email.toLowerCase() }, ...(phone ? [{ phone }] : [])],
@@ -731,7 +968,8 @@ export class AuthService {
 
       if (existingUser.email?.toLowerCase() === normalizedEmail) {
         throw new ConflictException(
-          'An account already exists with this email address',
+          options?.emailConflictMessage ??
+            'An account already exists with this email address',
         );
       }
 

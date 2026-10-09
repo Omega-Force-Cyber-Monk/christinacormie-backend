@@ -30,7 +30,14 @@ export class VendorsRepository {
 
     return this.prisma.vendor.findMany({
       where: {
-        status: 'PENDING_APPROVAL',
+        OR: [
+          { status: 'PENDING_APPROVAL' },
+          {
+            verificationRequests: {
+              some: { status: 'PENDING' },
+            },
+          },
+        ],
         deletedAt: null,
         ...(search
           ? {
@@ -156,10 +163,12 @@ export class VendorsRepository {
         await tx.vendor.update({
           where: { id: vendorId },
           data: {
+            status: 'APPROVED',
             selectedPlan,
             businessName: dto.truckName,
             ...(contactEmail ? { businessEmail: contactEmail } : {}),
             ...(contactPhone ? { businessPhone: contactPhone } : {}),
+            rejectionReason: null,
             logoUrl,
             updatedAt: new Date(),
           },
@@ -481,7 +490,6 @@ export class VendorsRepository {
       const vendor = await tx.vendor.update({
         where: { id: vendorId },
         data: {
-          status: 'PENDING_APPROVAL',
           updatedAt: new Date(),
         },
         include: this.vendorInclude(),
@@ -558,10 +566,16 @@ export class VendorsRepository {
         },
       });
 
+      const existingVendor = await tx.vendor.findUnique({
+        where: { id: vendorId },
+        select: { status: true },
+      });
+
       return tx.vendor.update({
         where: { id: vendorId },
         data: {
-          status: 'REJECTED',
+          status:
+            existingVendor?.status === 'SUSPENDED' ? 'SUSPENDED' : 'APPROVED',
           isVerified: false,
           rejectionReason,
           updatedAt: new Date(),

@@ -84,8 +84,7 @@ export class FoodTrucksRepository {
         status: 'ACTIVE',
         deletedAt: null,
         vendor: {
-          status: 'APPROVED',
-          isVerified: true,
+          status: { in: ['APPROVED', 'PENDING_APPROVAL'] },
           deletedAt: null,
         },
       },
@@ -808,7 +807,6 @@ export class FoodTrucksRepository {
         AND f.status = 'ACTIVE'
         AND f.deleted_at IS NULL
         AND v.status = 'APPROVED'
-        AND v.is_verified = true
         AND v.deleted_at IS NULL
         AND ST_DWithin(
           d.location,
@@ -855,7 +853,6 @@ export class FoodTrucksRepository {
         AND f.status = 'ACTIVE'
         AND f.deleted_at IS NULL
         AND v.status = 'APPROVED'
-        AND v.is_verified = true
         AND v.deleted_at IS NULL
       ORDER BY d.starts_at ASC
       LIMIT ${limit}
@@ -909,7 +906,6 @@ export class FoodTrucksRepository {
         AND f.status = 'ACTIVE'
         AND f.deleted_at IS NULL
         AND v.status = 'APPROVED'
-        AND v.is_verified = true
         AND v.deleted_at IS NULL
         AND ST_DWithin(
           d.location,
@@ -1023,8 +1019,7 @@ export class FoodTrucksRepository {
       status: 'ACTIVE' as const,
       deletedAt: null,
       vendor: {
-        status: 'APPROVED' as const,
-        isVerified: true,
+        status: { in: ['APPROVED' as const, 'PENDING_APPROVAL' as const] },
         deletedAt: null,
       },
     };
