@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Query,
@@ -88,6 +89,36 @@ const refundExample = {
 @Controller('api/v1/payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
+
+  @ApiOperation({
+    summary: 'Return vendor to the BiteDrop app after Stripe Connect onboarding',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Mobile-friendly HTML page that opens the BiteDrop Stripe return deep link.',
+    content: { 'text/html': {} },
+  })
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Get('connect/return')
+  getConnectReturnPage(@Query('accountId') accountId?: string) {
+    return this.paymentsService.renderConnectRedirectPage('return', accountId);
+  }
+
+  @ApiOperation({
+    summary: 'Return vendor to the BiteDrop app when Stripe Connect link refreshes',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Mobile-friendly HTML page that opens the BiteDrop Stripe refresh deep link.',
+    content: { 'text/html': {} },
+  })
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Get('connect/refresh')
+  getConnectRefreshPage(@Query('accountId') accountId?: string) {
+    return this.paymentsService.renderConnectRedirectPage('refresh', accountId);
+  }
 
   @ApiOperation({
     summary: 'Create or continue vendor Stripe Connect onboarding',

@@ -3,14 +3,18 @@ import { IsOptional, IsString, IsUrl } from 'class-validator';
 
 export class CreateConnectAccountDto {
   @ApiPropertyOptional({
-    example: 'https://bitedrop.com/vendor/onboarding/refresh',
+    example: 'https://api.bitedropapp.com/api/v1/payments/connect/refresh',
+    description:
+      'Deprecated for mobile app flow. Backend uses STRIPE_CONNECT_REFRESH_URL for Stripe Connect security.',
   })
   @IsOptional()
   @IsUrl()
   refreshUrl?: string;
 
   @ApiPropertyOptional({
-    example: 'https://bitedrop.com/vendor/onboarding/return',
+    example: 'https://api.bitedropapp.com/api/v1/payments/connect/return',
+    description:
+      'Deprecated for mobile app flow. Backend uses STRIPE_CONNECT_RETURN_URL for Stripe Connect security.',
   })
   @IsOptional()
   @IsUrl()

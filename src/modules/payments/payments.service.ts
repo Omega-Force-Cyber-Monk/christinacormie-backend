@@ -54,8 +54,8 @@ export class PaymentsService {
       paymentAccount = await this.refreshPaymentAccountStatus(paymentAccount);
     }
 
-    const refreshUrl = dto.refreshUrl ?? process.env.STRIPE_CONNECT_REFRESH_URL;
-    const returnUrl = dto.returnUrl ?? process.env.STRIPE_CONNECT_RETURN_URL;
+    const refreshUrl = process.env.STRIPE_CONNECT_REFRESH_URL;
+    const returnUrl = process.env.STRIPE_CONNECT_RETURN_URL;
 
     if (!refreshUrl || !returnUrl) {
       throw new BadRequestException(
@@ -73,6 +73,46 @@ export class PaymentsService {
       paymentAccount,
       onboardingUrl: accountLink.url,
     };
+  }
+
+  renderConnectRedirectPage(type: 'return' | 'refresh', accountId?: string) {
+    const defaultDeepLink =
+      type === 'return'
+        ? 'bitedrop://stripe/return'
+        : 'bitedrop://stripe/refresh';
+    const deepLink =
+      type === 'return'
+        ? process.env.STRIPE_CONNECT_APP_RETURN_DEEPLINK || defaultDeepLink
+        : process.env.STRIPE_CONNECT_APP_REFRESH_DEEPLINK || defaultDeepLink;
+    const finalDeepLink = this.appendSafeAccountId(deepLink, accountId);
+    const escapedDeepLink = this.escapeHtml(finalDeepLink);
+    const title =
+      type === 'return' ? 'Payout setup finished' : 'Payout setup needs refresh';
+    const message =
+      type === 'return'
+        ? 'Returning you to the BiteDrop app…'
+        : 'Returning you to BiteDrop so you can continue payout setup…';
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BiteDrop</title>
+  <script>
+    window.location.replace(${JSON.stringify(finalDeepLink)});
+  </script>
+</head>
+<body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff7f2;color:#172033;text-align:center;padding:48px 16px">
+  <main style="max-width:420px;margin:0 auto;background:#fff;border:1px solid #ffd7c9;border-radius:20px;padding:32px 20px;box-shadow:0 10px 30px rgba(23,32,51,.08)">
+    <div style="font-size:28px;font-weight:800;color:#ff5a3d;margin-bottom:8px">BiteDrop</div>
+    <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px">${this.escapeHtml(title)}</h1>
+    <p style="font-size:16px;line-height:1.5;margin:0 0 24px;color:#536176">${this.escapeHtml(message)}</p>
+    <a href="${escapedDeepLink}" style="display:inline-block;padding:14px 24px;background:#ff5a3d;color:#fff;border-radius:12px;text-decoration:none;font-weight:700">Return to BiteDrop</a>
+    <p style="font-size:13px;line-height:1.5;margin:22px 0 0;color:#7a8495">If the app does not open automatically, tap the button above.</p>
+  </main>
+</body>
+</html>`;
   }
 
   async getVendorPaymentAccount(userId: string) {
@@ -167,6 +207,30 @@ export class PaymentsService {
     }
 
     return this.formatMoneyObject(summary);
+  }
+
+  private appendSafeAccountId(deepLink: string, accountId?: string) {
+    if (!accountId || !/^acct_[A-Za-z0-9]+$/.test(accountId)) {
+      return deepLink;
+    }
+
+    try {
+      const url = new URL(deepLink);
+      url.searchParams.set('accountId', accountId);
+      return url.toString();
+    } catch {
+      const separator = deepLink.includes('?') ? '&' : '?';
+      return `${deepLink}${separator}accountId=${encodeURIComponent(accountId)}`;
+    }
+  }
+
+  private escapeHtml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   async getVendorTransactions(
