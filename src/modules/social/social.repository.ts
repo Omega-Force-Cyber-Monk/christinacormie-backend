@@ -10,7 +10,16 @@ import { FeedQueryDto } from './dto/feed-query.dto';
 import { GetCommentsQueryDto } from './dto/get-comments-query.dto';
 import { ToggleFollowNotificationsDto } from './dto/toggle-follow-notifications.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
-import { FavoriteTab, GetFavoritesQueryDto } from './dto/get-favorites-query.dto';
+import {
+  FavoriteTab,
+  GetFavoritesQueryDto,
+} from './dto/get-favorites-query.dto';
+import {
+  ProfileSocialQueryDto,
+  SocialAccountType,
+} from './dto/profile-social-query.dto';
+import { CreatePlaceDto, UpdatePlaceDto } from './dto/place.dto';
+import { PlaceQueryDto } from './dto/place-query.dto';
 
 @Injectable()
 export class SocialRepository {
@@ -23,6 +32,284 @@ export class SocialRepository {
     });
   }
 
+  findAuthorIdentity(userId: string) {
+    return this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null, status: 'ACTIVE' },
+      select: {
+        id: true,
+        profile: true,
+        userRoles: { select: { role: true } },
+        vendor: {
+          select: {
+            id: true,
+            userId: true,
+            status: true,
+            isVerified: true,
+            foodTrucks: {
+              where: { deletedAt: null },
+              take: 2,
+              select: { id: true, status: true },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  findActivePlace(locationId: string) {
+    return this.prisma.place.findFirst({
+      where: { id: locationId, isActive: true },
+      select: { id: true },
+    });
+  }
+
+  countValidTagTargets(authorUserId: string, taggedUserIds: string[]) {
+    return this.prisma.userFollow.count({
+      where: {
+        followerUserId: authorUserId,
+        followedUserId: { in: taggedUserIds },
+        followed: { deletedAt: null, status: 'ACTIVE' },
+      },
+    });
+  }
+
+  hasBlockBetween(firstUserId: string, secondUserId: string) {
+    return this.prisma.userBlock.findFirst({
+      where: {
+        OR: [
+          { blockerUserId: firstUserId, blockedUserId: secondUserId },
+          { blockerUserId: secondUserId, blockedUserId: firstUserId },
+        ],
+      },
+      select: { id: true },
+    });
+  }
+
+  async followUser(followerUserId: string, followedUserId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const follow = await tx.userFollow.upsert({
+        where: {
+          followerUserId_followedUserId: { followerUserId, followedUserId },
+        },
+        create: { followerUserId, followedUserId },
+        update: {},
+      });
+      const truck = await tx.foodTruck.findFirst({
+        where: { vendor: { userId: followedUserId }, deletedAt: null },
+        select: { id: true },
+      });
+      if (truck) {
+        const existingTruckFollow = await tx.foodTruckFollow.findUnique({
+          where: {
+            userId_foodTruckId: {
+              userId: followerUserId,
+              foodTruckId: truck.id,
+            },
+          },
+        });
+        if (!existingTruckFollow) {
+          await tx.foodTruckFollow.create({
+            data: { userId: followerUserId, foodTruckId: truck.id },
+          });
+          await tx.foodTruck.update({
+            where: { id: truck.id },
+            data: { followerCount: { increment: 1 } },
+          });
+        }
+      }
+      return follow;
+    });
+  }
+
+  async unfollowUser(followerUserId: string, followedUserId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.userFollow.deleteMany({
+        where: { followerUserId, followedUserId },
+      });
+      const truck = await tx.foodTruck.findFirst({
+        where: { vendor: { userId: followedUserId }, deletedAt: null },
+        select: { id: true },
+      });
+      if (truck) {
+        const removed = await tx.foodTruckFollow.deleteMany({
+          where: { userId: followerUserId, foodTruckId: truck.id },
+        });
+        if (removed.count) {
+          await tx.$executeRaw`
+            UPDATE food_trucks SET follower_count = GREATEST(follower_count - 1, 0)
+            WHERE id = ${truck.id}::uuid
+          `;
+        }
+      }
+      return result;
+    });
+  }
+
+  async blockUser(blockerUserId: string, blockedUserId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const block = await tx.userBlock.upsert({
+        where: {
+          blockerUserId_blockedUserId: { blockerUserId, blockedUserId },
+        },
+        create: { blockerUserId, blockedUserId },
+        update: {},
+      });
+      await tx.userFollow.deleteMany({
+        where: {
+          OR: [
+            { followerUserId: blockerUserId, followedUserId: blockedUserId },
+            { followerUserId: blockedUserId, followedUserId: blockerUserId },
+          ],
+        },
+      });
+      return block;
+    });
+  }
+
+  unblockUser(blockerUserId: string, blockedUserId: string) {
+    return this.prisma.userBlock.deleteMany({
+      where: { blockerUserId, blockedUserId },
+    });
+  }
+
+  findPublicProfile(userId: string, viewerUserId?: string) {
+    return this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null, status: 'ACTIVE' },
+      select: {
+        id: true,
+        profile: true,
+        vendor: {
+          select: {
+            id: true,
+            businessName: true,
+            logoUrl: true,
+            isVerified: true,
+            foodTrucks: {
+              where: { deletedAt: null },
+              take: 1,
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                profileImageUrl: true,
+                coverImageUrl: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            followers: true,
+            following: true,
+            authoredPosts: {
+              where: { status: 'PUBLISHED', deletedAt: null },
+            },
+          },
+        },
+        followers: viewerUserId
+          ? {
+              where: { followerUserId: viewerUserId },
+              select: { id: true },
+              take: 1,
+            }
+          : false,
+      },
+    });
+  }
+
+  async listFollowers(
+    profileUserId: string,
+    viewerUserId: string,
+    direction: 'followers' | 'following',
+    query: ProfileSocialQueryDto,
+  ) {
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+    const search = query.search?.trim();
+    const relationFilter = this.accountTypeFilter(query.type);
+    const userFilter: any = {
+      deletedAt: null,
+      status: 'ACTIVE',
+      ...relationFilter,
+      ...(search
+        ? {
+            OR: [
+              {
+                profile: {
+                  displayName: { contains: search, mode: 'insensitive' },
+                },
+              },
+              {
+                profile: {
+                  firstName: { contains: search, mode: 'insensitive' },
+                },
+              },
+              {
+                profile: {
+                  lastName: { contains: search, mode: 'insensitive' },
+                },
+              },
+              {
+                vendor: {
+                  businessName: { contains: search, mode: 'insensitive' },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    const where: any =
+      direction === 'followers'
+        ? { followedUserId: profileUserId, follower: userFilter }
+        : { followerUserId: profileUserId, followed: userFilter };
+    const userRelation = direction === 'followers' ? 'follower' : 'followed';
+    const select: any = {
+      id: true,
+      createdAt: true,
+      [userRelation]: { select: this.publicUserSelect(viewerUserId) },
+    };
+
+    const [items, total, customerCount, vendorCount] =
+      await this.prisma.$transaction([
+        this.prisma.userFollow.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+          select,
+        }),
+        this.prisma.userFollow.count({ where }),
+        this.prisma.userFollow.count({
+          where: {
+            ...(direction === 'followers'
+              ? {
+                  followedUserId: profileUserId,
+                  follower: { vendor: { is: null } },
+                }
+              : {
+                  followerUserId: profileUserId,
+                  followed: { vendor: { is: null } },
+                }),
+          },
+        }),
+        this.prisma.userFollow.count({
+          where: {
+            ...(direction === 'followers'
+              ? {
+                  followedUserId: profileUserId,
+                  follower: { vendor: { isNot: null } },
+                }
+              : {
+                  followerUserId: profileUserId,
+                  followed: { vendor: { isNot: null } },
+                }),
+          },
+        }),
+      ]);
+
+    return { items, total, customerCount, vendorCount, offset, limit };
+  }
+
   findFoodTruckById(foodTruckId: string) {
     return this.prisma.foodTruck.findUnique({
       where: { id: foodTruckId },
@@ -33,6 +320,7 @@ export class SocialRepository {
         deletedAt: true,
         vendor: {
           select: {
+            userId: true,
             status: true,
             isVerified: true,
             deletedAt: true,
@@ -168,12 +456,18 @@ export class SocialRepository {
     });
   }
 
-  createPost(vendorId: string, dto: CreatePostDto) {
+  createPost(
+    authorUserId: string,
+    identity: { vendorId?: string; foodTruckId?: string },
+    dto: CreatePostDto,
+  ) {
     const status = dto.status ?? 'PUBLISHED';
     const data: any = {
-      vendorId,
-      foodTruckId: dto.foodTruckId,
-      content: dto.content,
+      authorUserId,
+      vendorId: identity.vendorId,
+      foodTruckId: identity.foodTruckId,
+      locationId: dto.locationId,
+      content: dto.content?.trim() ?? '',
       status: status as any,
       isPromotion: dto.isPromotion ?? false,
       isFollowerOnly: dto.isFollowerOnly ?? false,
@@ -190,6 +484,14 @@ export class SocialRepository {
       };
     }
 
+    if (dto.taggedUserIds?.length) {
+      data.tags = {
+        create: [...new Set(dto.taggedUserIds)].map((taggedUserId) => ({
+          taggedUserId,
+        })),
+      };
+    }
+
     return this.prisma.post.create({
       data,
       include: this.postInclude(),
@@ -200,12 +502,9 @@ export class SocialRepository {
     return this.prisma.post.findUnique({
       where: { id: postId },
       include: {
-        foodTruck: {
-          select: {
-            id: true,
-            vendorId: true,
-          },
-        },
+        foodTruck: { select: { id: true, vendorId: true } },
+        media: true,
+        tags: { select: { taggedUserId: true } },
       },
     });
   }
@@ -216,8 +515,14 @@ export class SocialRepository {
         id: postId,
         deletedAt: null,
         status: 'PUBLISHED',
+        author: {
+          blocksInitiated: { none: { blockedUserId: userId } },
+          blocksReceived: { none: { blockerUserId: userId } },
+        },
         OR: [
           { isFollowerOnly: false },
+          { authorUserId: userId },
+          { author: { followers: { some: { followerUserId: userId } } } },
           {
             foodTruck: {
               follows: {
@@ -227,7 +532,7 @@ export class SocialRepository {
           },
         ],
       },
-      select: { id: true },
+      select: { id: true, authorUserId: true },
     });
   }
 
@@ -235,8 +540,10 @@ export class SocialRepository {
     const data: any = {};
 
     if (dto.content !== undefined) {
-      data.content = dto.content;
+      data.content = dto.content.trim();
     }
+
+    if (dto.locationId !== undefined) data.locationId = dto.locationId;
 
     if (dto.status !== undefined) {
       data.status = dto.status as any;
@@ -264,6 +571,19 @@ export class SocialRepository {
               mediaType: media.mediaType,
               mediaUrl: media.mediaUrl,
               sortOrder: media.sortOrder ?? 0,
+            })),
+          });
+        }
+      }
+
+      if (dto.taggedUserIds !== undefined) {
+        await tx.postTag.deleteMany({ where: { postId } });
+        const taggedUserIds = [...new Set(dto.taggedUserIds)];
+        if (taggedUserIds.length) {
+          await tx.postTag.createMany({
+            data: taggedUserIds.map((taggedUserId) => ({
+              postId,
+              taggedUserId,
             })),
           });
         }
@@ -306,7 +626,12 @@ export class SocialRepository {
       });
 
       if (existing) {
-        return existing;
+        await tx.postLike.delete({ where: { id: existing.id } });
+        await tx.$executeRaw`
+          UPDATE posts SET like_count = GREATEST(like_count - 1, 0)
+          WHERE id = ${postId}::uuid
+        `;
+        return { liked: false };
       }
 
       const like = await tx.postLike.create({
@@ -323,7 +648,7 @@ export class SocialRepository {
         },
       });
 
-      return like;
+      return { ...like, liked: true };
     });
   }
 
@@ -657,10 +982,13 @@ export class SocialRepository {
       where: {
         deletedAt: null,
         status: 'PUBLISHED',
-        foodTruck: {
-          follows: {
-            some: { userId },
-          },
+        OR: [
+          { author: { followers: { some: { followerUserId: userId } } } },
+          { foodTruck: { follows: { some: { userId } } } },
+        ],
+        author: {
+          blocksInitiated: { none: { blockedUserId: userId } },
+          blocksReceived: { none: { blockerUserId: userId } },
         },
       },
       orderBy: {
@@ -695,6 +1023,14 @@ export class SocialRepository {
         deletedAt: null,
         status: 'PUBLISHED',
         isFollowerOnly: false,
+        ...(userId
+          ? {
+              author: {
+                blocksInitiated: { none: { blockedUserId: userId } },
+                blocksReceived: { none: { blockerUserId: userId } },
+              },
+            }
+          : {}),
       },
       orderBy,
       take,
@@ -731,10 +1067,150 @@ export class SocialRepository {
     });
   }
 
+  findMyPosts(userId: string, dto: FeedQueryDto) {
+    return this.prisma.post.findMany({
+      where: { authorUserId: userId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: (dto.limit ?? 20) + 1,
+      ...(dto.cursor ? { cursor: { id: dto.cursor }, skip: 1 } : {}),
+      include: this.postInclude(userId),
+    });
+  }
+
+  findAuthoredPosts(
+    profileUserId: string,
+    viewerUserId: string,
+    dto: FeedQueryDto,
+  ) {
+    return this.findProfilePosts(
+      { authorUserId: profileUserId },
+      viewerUserId,
+      dto,
+    );
+  }
+
+  findTaggedPosts(
+    profileUserId: string,
+    viewerUserId: string,
+    dto: FeedQueryDto,
+  ) {
+    return this.findProfilePosts(
+      { tags: { some: { taggedUserId: profileUserId } } },
+      viewerUserId,
+      dto,
+    );
+  }
+
+  findPostDetail(postId: string, viewerUserId: string) {
+    return this.prisma.post.findFirst({
+      where: {
+        id: postId,
+        deletedAt: null,
+        status: 'PUBLISHED',
+        author: {
+          blocksInitiated: { none: { blockedUserId: viewerUserId } },
+          blocksReceived: { none: { blockerUserId: viewerUserId } },
+        },
+        OR: [
+          { isFollowerOnly: false },
+          { authorUserId: viewerUserId },
+          { author: { followers: { some: { followerUserId: viewerUserId } } } },
+          { foodTruck: { follows: { some: { userId: viewerUserId } } } },
+        ],
+      },
+      include: {
+        ...this.postInclude(viewerUserId),
+        comments: {
+          where: { deletedAt: null, parentCommentId: null },
+          orderBy: { createdAt: 'asc' },
+          take: 3,
+          include: {
+            user: { select: this.publicUserSelect() },
+          },
+        },
+      },
+    });
+  }
+
+  listPlaces(query: PlaceQueryDto, includeInactive = false) {
+    const search = query.search?.trim();
+    return this.prisma.place.findMany({
+      where: {
+        ...(includeInactive ? {} : { isActive: true }),
+        ...(query.marketId ? { marketId: query.marketId } : {}),
+        ...(search
+          ? {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                { address: { contains: search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      take: query.limit ?? 20,
+      skip: query.offset ?? 0,
+      include: { market: { select: { id: true, name: true } } },
+    });
+  }
+
+  createPlace(dto: CreatePlaceDto) {
+    return this.prisma.place.create({ data: dto });
+  }
+
+  updatePlace(placeId: string, dto: UpdatePlaceDto) {
+    return this.prisma.place.update({
+      where: { id: placeId },
+      data: { ...dto, updatedAt: new Date() },
+    });
+  }
+
+  private findProfilePosts(
+    where: Record<string, unknown>,
+    viewerUserId: string,
+    dto: FeedQueryDto,
+  ) {
+    return this.prisma.post.findMany({
+      where: {
+        ...where,
+        deletedAt: null,
+        status: 'PUBLISHED',
+        author: {
+          blocksInitiated: { none: { blockedUserId: viewerUserId } },
+          blocksReceived: { none: { blockerUserId: viewerUserId } },
+        },
+        OR: [
+          { isFollowerOnly: false },
+          { authorUserId: viewerUserId },
+          { author: { followers: { some: { followerUserId: viewerUserId } } } },
+          { foodTruck: { follows: { some: { userId: viewerUserId } } } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: (dto.limit ?? 20) + 1,
+      ...(dto.cursor ? { cursor: { id: dto.cursor }, skip: 1 } : {}),
+      include: this.postInclude(viewerUserId),
+    });
+  }
+
   private postInclude(userId?: string): any {
     const include: any = {
       media: {
         orderBy: { sortOrder: 'asc' as const },
+      },
+      author: { select: this.publicUserSelect() },
+      location: {
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
+      tags: {
+        orderBy: { createdAt: 'asc' as const },
+        include: { taggedUser: { select: this.publicUserSelect() } },
       },
       vendor: {
         select: {
@@ -767,6 +1243,51 @@ export class SocialRepository {
     }
 
     return include;
+  }
+
+  private accountTypeFilter(type?: SocialAccountType): Record<string, unknown> {
+    if (type === SocialAccountType.VENDOR) return { vendor: { isNot: null } };
+    if (type === SocialAccountType.CUSTOMER) return { vendor: { is: null } };
+    return {};
+  }
+
+  private publicUserSelect(viewerUserId?: string): any {
+    return {
+      id: true,
+      profile: {
+        select: {
+          displayName: true,
+          firstName: true,
+          lastName: true,
+          avatarUrl: true,
+          bio: true,
+          city: true,
+          state: true,
+        },
+      },
+      vendor: {
+        select: {
+          id: true,
+          businessName: true,
+          logoUrl: true,
+          isVerified: true,
+          foodTrucks: {
+            where: { deletedAt: null },
+            take: 1,
+            select: { id: true, name: true, slug: true, profileImageUrl: true },
+          },
+        },
+      },
+      ...(viewerUserId
+        ? {
+            followers: {
+              where: { followerUserId: viewerUserId },
+              select: { id: true },
+              take: 1,
+            },
+          }
+        : {}),
+    };
   }
 
   async getFavorites(userId: string, query: GetFavoritesQueryDto) {

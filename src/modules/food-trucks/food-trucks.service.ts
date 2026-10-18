@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AddTruckImageDto } from './dto/add-truck-image.dto';
 import { CreateAvailabilityExceptionDto } from './dto/create-availability-exception.dto';
 import { CreateFoodTruckDropDto } from './dto/create-food-truck-drop.dto';
@@ -123,7 +125,21 @@ export class FoodTrucksService {
 
   async createDraft(userId: string, dto: CreateDraftFoodTruckDto) {
     const vendor = await this.getVendorForUser(userId);
-    return this.foodTrucksRepository.createDraft(vendor.id, dto);
+    const existing = await this.foodTrucksRepository.findMine(vendor.id);
+    if (existing.length) {
+      throw new ConflictException('Vendor already has a food truck');
+    }
+    try {
+      return await this.foodTrucksRepository.createDraft(vendor.id, dto);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Vendor already has a food truck');
+      }
+      throw error;
+    }
   }
 
   async updateDraft(
@@ -152,7 +168,9 @@ export class FoodTrucksService {
       );
 
       if (existingHandle) {
-        throw new BadRequestException('This food truck handle is already taken');
+        throw new BadRequestException(
+          'This food truck handle is already taken',
+        );
       }
     }
 
@@ -413,10 +431,7 @@ export class FoodTrucksService {
   private async ensureApprovedVendor(userId: string) {
     const vendor = await this.getVendorForUser(userId);
 
-    if (
-      vendor.status !== 'APPROVED' &&
-      vendor.status !== 'PENDING_APPROVAL'
-    ) {
+    if (vendor.status !== 'APPROVED' && vendor.status !== 'PENDING_APPROVAL') {
       throw new ForbiddenException(this.vendorApprovalMessage);
     }
 
@@ -438,12 +453,14 @@ export class FoodTrucksService {
     return foodTruck;
   }
 
-  private validateOperatingHours(hours: Array<{
-    dayOfWeek: number;
-    isClosed: boolean;
-    openingTime?: string;
-    closingTime?: string;
-  }>) {
+  private validateOperatingHours(
+    hours: Array<{
+      dayOfWeek: number;
+      isClosed: boolean;
+      openingTime?: string;
+      closingTime?: string;
+    }>,
+  ) {
     const days = new Set<number>();
     for (const hour of hours) {
       if (days.has(hour.dayOfWeek)) {

@@ -23,6 +23,7 @@ import { CreateDirectConversationDto } from './dto/create-direct-conversation.dt
 import { MessagingPaginationDto } from './dto/messaging-query.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { MessagingService } from './messaging.service';
+import { RecipientSearchDto } from './dto/recipient-search.dto';
 
 const errorExample = (
   statusCode: number,
@@ -122,6 +123,22 @@ export class MessagingController {
     return this.messagingService.listConversations(user.sub, query);
   }
 
+  @Get('recipients')
+  searchRecipients(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: RecipientSearchDto,
+  ) {
+    return this.messagingService.searchRecipients(user.sub, query);
+  }
+
+  @Get('requests')
+  listMessageRequests(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: MessagingPaginationDto,
+  ) {
+    return this.messagingService.listMessageRequests(user.sub, query);
+  }
+
   @ApiOperation({
     summary: 'Start or reuse a direct conversation',
     description:
@@ -177,6 +194,30 @@ export class MessagingController {
     @Body() dto: CreateDirectConversationDto,
   ) {
     return this.messagingService.createDirectConversation(user.sub, dto);
+  }
+
+  @Patch('conversations/:conversationId/accept')
+  acceptConversation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
+  ) {
+    return this.messagingService.resolveMessageRequest(
+      user.sub,
+      conversationId,
+      'ACTIVE',
+    );
+  }
+
+  @Patch('conversations/:conversationId/decline')
+  declineConversation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
+  ) {
+    return this.messagingService.resolveMessageRequest(
+      user.sub,
+      conversationId,
+      'DECLINED',
+    );
   }
 
   @ApiOperation({ summary: 'Get one conversation' })

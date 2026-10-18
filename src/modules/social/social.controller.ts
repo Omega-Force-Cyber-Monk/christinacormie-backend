@@ -8,7 +8,10 @@ import {
   Post,
   Query,
   UseGuards,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -16,10 +19,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { CommentPostDto } from './dto/comment-post.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -30,6 +33,9 @@ import { ToggleFollowNotificationsDto } from './dto/toggle-follow-notifications.
 import { UpdatePostDto } from './dto/update-post.dto';
 import { GetFavoritesQueryDto } from './dto/get-favorites-query.dto';
 import { SocialService } from './social.service';
+import { ProfileSocialQueryDto } from './dto/profile-social-query.dto';
+import { CreatePlaceDto, UpdatePlaceDto } from './dto/place.dto';
+import { PlaceQueryDto } from './dto/place-query.dto';
 
 const errorExample = (
   statusCode: number,
@@ -210,6 +216,146 @@ const sharePostExample = {
 @Controller('api/v1/social')
 export class SocialController {
   constructor(private readonly socialService: SocialService) {}
+
+  @Get('places')
+  listPlaces(@Query() query: PlaceQueryDto) {
+    return this.socialService.listPlaces(query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('media/upload')
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      limits: { files: 10, fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  uploadPostMedia(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.socialService.uploadPostMedia(user.sub, files);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('admin/places')
+  listAdminPlaces(@Query() query: PlaceQueryDto) {
+    return this.socialService.listPlaces(query, true);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('admin/places')
+  createPlace(@Body() dto: CreatePlaceDto) {
+    return this.socialService.createPlace(dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Patch('admin/places/:placeId')
+  updatePlace(@Param('placeId') placeId: string, @Body() dto: UpdatePlaceDto) {
+    return this.socialService.updatePlace(placeId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profiles/:userId')
+  getPublicProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.socialService.getPublicProfile(userId, user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('profiles/:userId/follow')
+  followUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.socialService.followUser(user.sub, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('profiles/:userId/follow')
+  unfollowUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.socialService.unfollowUser(user.sub, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('profiles/:userId/block')
+  blockUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.socialService.blockUser(user.sub, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('profiles/:userId/block')
+  unblockUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.socialService.unblockUser(user.sub, userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profiles/:userId/followers')
+  listFollowers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+    @Query() query: ProfileSocialQueryDto,
+  ) {
+    return this.socialService.listFollowers(
+      userId,
+      user.sub,
+      'followers',
+      query,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profiles/:userId/following')
+  listFollowing(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+    @Query() query: ProfileSocialQueryDto,
+  ) {
+    return this.socialService.listFollowers(
+      userId,
+      user.sub,
+      'following',
+      query,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profiles/:userId/posts')
+  getProfilePosts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+    @Query() query: FeedQueryDto,
+  ) {
+    return this.socialService.getProfilePosts(userId, user.sub, 'posts', query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profiles/:userId/tagged-posts')
+  getProfileTaggedPosts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+    @Query() query: FeedQueryDto,
+  ) {
+    return this.socialService.getProfilePosts(
+      userId,
+      user.sub,
+      'tagged',
+      query,
+    );
+  }
 
   @ApiOperation({ summary: 'Follow a food truck' })
   @ApiResponse({
@@ -419,7 +565,7 @@ export class SocialController {
     return this.socialService.getFavorites(user.sub, query);
   }
 
-  @ApiOperation({ summary: 'Create a social post for a food truck (Vendor)' })
+  @ApiOperation({ summary: 'Create a social post as a Foodie or Vendor' })
   @ApiResponse({
     status: 201,
     description:
@@ -449,8 +595,7 @@ export class SocialController {
     description: 'Food truck was not found.',
     schema: { example: errorExample(404, 'Food truck not found', 'Not Found') },
   })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.VENDOR)
+  @UseGuards(JwtAuthGuard)
   @Post('posts')
   createPost(
     @CurrentUser() user: AuthenticatedUser,
@@ -459,7 +604,7 @@ export class SocialController {
     return this.socialService.createPost(user.sub, dto);
   }
 
-  @ApiOperation({ summary: 'Get all social posts for the authenticated vendor' })
+  @ApiOperation({ summary: 'Get my social posts' })
   @ApiResponse({
     status: 200,
     description: 'Authenticated vendor posts returned successfully.',
@@ -476,8 +621,7 @@ export class SocialController {
       'User is not a vendor or vendor profile is missing/not approved.',
     schema: { example: forbiddenRoleExample },
   })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.VENDOR)
+  @UseGuards(JwtAuthGuard)
   @Get('posts/mine')
   getMyPosts(
     @CurrentUser() user: AuthenticatedUser,
@@ -486,7 +630,7 @@ export class SocialController {
     return this.socialService.getMyPosts(user.sub, query);
   }
 
-  @ApiOperation({ summary: 'Update a social post (Vendor)' })
+  @ApiOperation({ summary: 'Update my social post' })
   @ApiResponse({
     status: 200,
     description: 'Social post updated successfully.',
@@ -530,8 +674,7 @@ export class SocialController {
     description: 'Post was not found.',
     schema: { example: errorExample(404, 'Post not found', 'Not Found') },
   })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.VENDOR)
+  @UseGuards(JwtAuthGuard)
   @Patch('posts/:postId')
   updatePost(
     @CurrentUser() user: AuthenticatedUser,
@@ -541,7 +684,7 @@ export class SocialController {
     return this.socialService.updatePost(user.sub, postId, dto);
   }
 
-  @ApiOperation({ summary: 'Delete a social post (Vendor)' })
+  @ApiOperation({ summary: 'Delete my social post' })
   @ApiResponse({
     status: 200,
     description: 'Social post deleted successfully.',
@@ -569,8 +712,7 @@ export class SocialController {
     description: 'Post was not found.',
     schema: { example: errorExample(404, 'Post not found', 'Not Found') },
   })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.VENDOR)
+  @UseGuards(JwtAuthGuard)
   @Delete('posts/:postId')
   deletePost(
     @CurrentUser() user: AuthenticatedUser,
@@ -604,6 +746,15 @@ export class SocialController {
       'Post was not found or is not visible to the authenticated user.',
     schema: { example: errorExample(404, 'Post not found', 'Not Found') },
   })
+  @UseGuards(JwtAuthGuard)
+  @Get('posts/:postId')
+  getPostDetail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('postId') postId: string,
+  ) {
+    return this.socialService.getPostDetail(user.sub, postId);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('posts/:postId/like')
   likePost(

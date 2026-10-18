@@ -21,6 +21,7 @@ model Market {
   leaderboards       Leaderboard[]
   campaigns          Campaign[]
   featuredPlacements FeaturedPlacement[]
+  places             Place[]
 
   @@unique([city, state, country])
   @@map("markets")

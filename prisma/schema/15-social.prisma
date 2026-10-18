@@ -5,6 +5,49 @@ enum PostStatus {
   REMOVED
 }
 
+model UserFollow {
+  id             String   @id @default(uuid()) @db.Uuid
+  followerUserId String   @map("follower_user_id") @db.Uuid
+  followedUserId String   @map("followed_user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  follower       User     @relation("UserFollowing", fields: [followerUserId], references: [id], onDelete: Cascade)
+  followed       User     @relation("UserFollowers", fields: [followedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([followerUserId, followedUserId])
+  @@index([followedUserId, createdAt])
+  @@map("user_follows")
+}
+
+model UserBlock {
+  id            String   @id @default(uuid()) @db.Uuid
+  blockerUserId String   @map("blocker_user_id") @db.Uuid
+  blockedUserId String   @map("blocked_user_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  blocker       User     @relation("UserBlocker", fields: [blockerUserId], references: [id], onDelete: Cascade)
+  blocked       User     @relation("UserBlocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerUserId, blockedUserId])
+  @@index([blockedUserId])
+  @@map("user_blocks")
+}
+
+model Place {
+  id        String   @id @default(uuid()) @db.Uuid
+  marketId  String?  @map("market_id") @db.Uuid
+  name      String   @db.VarChar(180)
+  address   String?
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  market    Market?  @relation(fields: [marketId], references: [id])
+  posts     Post[]
+
+  @@index([isActive, name])
+  @@map("places")
+}
+
 model FoodTruckFollow {
   id                   String    @id @default(uuid()) @db.Uuid
   userId               String    @map("user_id") @db.Uuid
@@ -32,9 +75,11 @@ model FavoriteTruck {
 
 model Post {
   id             String         @id @default(uuid()) @db.Uuid
-  vendorId       String         @map("vendor_id") @db.Uuid
-  foodTruckId    String         @map("food_truck_id") @db.Uuid
-  content        String
+  authorUserId   String?        @map("author_user_id") @db.Uuid
+  vendorId       String?        @map("vendor_id") @db.Uuid
+  foodTruckId    String?        @map("food_truck_id") @db.Uuid
+  locationId     String?        @map("location_id") @db.Uuid
+  content        String         @default("")
   status         PostStatus     @default(PUBLISHED)
   isPromotion    Boolean        @default(false) @map("is_promotion")
   isFollowerOnly Boolean        @default(false) @map("is_follower_only")
@@ -46,15 +91,32 @@ model Post {
   publishedAt    DateTime?      @map("published_at") @db.Timestamptz(6)
   createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz(6)
-  vendor         Vendor         @relation(fields: [vendorId], references: [id])
-  foodTruck      FoodTruck      @relation(fields: [foodTruckId], references: [id])
+  author         User?          @relation("PostAuthor", fields: [authorUserId], references: [id])
+  vendor         Vendor?        @relation(fields: [vendorId], references: [id])
+  foodTruck      FoodTruck?     @relation(fields: [foodTruckId], references: [id])
+  location       Place?         @relation(fields: [locationId], references: [id])
   media          PostMedia[]
+  tags           PostTag[]
   likes          PostLike[]
   comments       PostComment[]
   savedBy        SavedPost[]
   notifications  Notification[]
 
+  @@index([authorUserId, createdAt])
   @@map("posts")
+}
+
+model PostTag {
+  id           String   @id @default(uuid()) @db.Uuid
+  postId       String   @map("post_id") @db.Uuid
+  taggedUserId String   @map("tagged_user_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  taggedUser   User     @relation("PostTaggedUser", fields: [taggedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, taggedUserId])
+  @@index([taggedUserId, createdAt])
+  @@map("post_tags")
 }
 
 model PostMedia {

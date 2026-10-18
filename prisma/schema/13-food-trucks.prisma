@@ -86,6 +86,7 @@ model FoodTruck {
   featuredPlacements      FeaturedPlacement[]
   photoShootRequests      VendorPhotoShootRequest[]
 
+  @@unique([vendorId])
   @@map("food_trucks")
 }
 

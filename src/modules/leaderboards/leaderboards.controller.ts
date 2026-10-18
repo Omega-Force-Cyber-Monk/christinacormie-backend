@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { LeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { LeaderboardsService } from './leaderboards.service';
@@ -188,166 +188,6 @@ export class LeaderboardsController {
     return this.leaderboardsService.getLeaderboardByType('MOST_BOOKED', query);
   }
 
-  @ApiOperation({ summary: 'Get most visited food trucks leaderboard' })
-  @ApiResponse({
-    status: 200,
-    description: 'Most-visited leaderboard returned successfully.',
-    schema: {
-      example: {
-        ...leaderboardExample,
-        title: 'Most Visited Food Trucks',
-        slug: 'most-visited-food-trucks',
-        rule: { ...leaderboardExample.rule, type: 'MOST_VISITED' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Query validation failed.',
-    schema: {
-      example: errorExample(
-        400,
-        ['limit must not be less than 1'],
-        'Bad Request',
-      ),
-    },
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Most-visited leaderboard was not found.',
-    schema: {
-      example: errorExample(
-        404,
-        "Leaderboard for type 'MOST_VISITED' not found",
-        'Not Found',
-      ),
-    },
-  })
-  @Get('most-visited')
-  getMostVisited(@Query() query: LeaderboardQueryDto) {
-    return this.leaderboardsService.getLeaderboardByType('MOST_VISITED', query);
-  }
-
-  @ApiOperation({ summary: 'Get trending food trucks leaderboard' })
-  @ApiResponse({
-    status: 200,
-    description: 'Trending leaderboard returned successfully.',
-    schema: {
-      example: {
-        ...leaderboardExample,
-        title: 'Trending Food Trucks',
-        slug: 'trending-food-trucks',
-        rule: { ...leaderboardExample.rule, type: 'TRENDING' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Query validation failed.',
-    schema: {
-      example: errorExample(
-        400,
-        ['offset must not be less than 0'],
-        'Bad Request',
-      ),
-    },
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Trending leaderboard was not found.',
-    schema: {
-      example: errorExample(
-        404,
-        "Leaderboard for type 'TRENDING' not found",
-        'Not Found',
-      ),
-    },
-  })
-  @Get('trending')
-  getTrending(@Query() query: LeaderboardQueryDto) {
-    return this.leaderboardsService.getLeaderboardByType('TRENDING', query);
-  }
-
-  @ApiOperation({ summary: 'Get most followed food trucks leaderboard' })
-  @ApiResponse({
-    status: 200,
-    description: 'Most-followed leaderboard returned successfully.',
-    schema: {
-      example: {
-        ...leaderboardExample,
-        title: 'Most Followed Food Trucks',
-        slug: 'most-followed-food-trucks',
-        rule: { ...leaderboardExample.rule, type: 'MOST_ENGAGED' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Query validation failed.',
-    schema: {
-      example: errorExample(
-        400,
-        ['limit must not be greater than 100'],
-        'Bad Request',
-      ),
-    },
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Most-followed leaderboard was not found.',
-    schema: {
-      example: errorExample(
-        404,
-        "Leaderboard for type 'MOST_ENGAGED' not found",
-        'Not Found',
-      ),
-    },
-  })
-  @Get('most-followed')
-  getMostFollowed(@Query() query: LeaderboardQueryDto) {
-    return this.leaderboardsService.getLeaderboardByType('MOST_ENGAGED', query);
-  }
-
-  @ApiOperation({ summary: 'Get rising food trucks leaderboard' })
-  @ApiResponse({
-    status: 200,
-    description: 'Rising leaderboard returned successfully.',
-    schema: {
-      example: {
-        ...leaderboardExample,
-        title: 'Rising Food Trucks',
-        slug: 'rising-food-trucks',
-        rule: { ...leaderboardExample.rule, type: 'RISING' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Query validation failed.',
-    schema: {
-      example: errorExample(
-        400,
-        ['period must be a valid enum value'],
-        'Bad Request',
-      ),
-    },
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Rising leaderboard was not found.',
-    schema: {
-      example: errorExample(
-        404,
-        "Leaderboard for type 'RISING' not found",
-        'Not Found',
-      ),
-    },
-  })
-  @Get('rising')
-  getRising(@Query() query: LeaderboardQueryDto) {
-    return this.leaderboardsService.getLeaderboardByType('RISING', query);
-  }
-
   @ApiOperation({ summary: 'Get leaderboard rankings by leaderboard ID' })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'offset', required: false, example: 0 })
@@ -377,7 +217,7 @@ export class LeaderboardsController {
   })
   @Get(':leaderboardId')
   getLeaderboardById(
-    @Param('leaderboardId') leaderboardId: string,
+    @Param('leaderboardId', new ParseUUIDPipe()) leaderboardId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ) {

@@ -10,8 +10,11 @@ export class LeaderboardsRepository {
     return this.prisma.leaderboard.findMany({
       where: {
         isActive: true,
+        rule: {
+          type: { in: ['TOP_RATED', 'MOST_BOOKED'] },
+          ...(query.period ? { period: query.period as any } : {}),
+        },
         ...(query.marketId ? { marketId: query.marketId } : {}),
-        ...(query.period ? { rule: { period: query.period as any } } : {}),
       },
       include: {
         market: { select: this.marketSelect() },

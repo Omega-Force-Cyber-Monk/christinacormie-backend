@@ -7,9 +7,15 @@ import { RewardsModule } from '../rewards/rewards.module';
 import { SocialController } from './social.controller';
 import { SocialRepository } from './social.repository';
 import { SocialService } from './social.service';
+import { CloudinaryModule } from '../../infrastructure/cloudinary/cloudinary.module';
 
 @Module({
-  imports: [JwtModule.register({}), NotificationsModule, RewardsModule],
+  imports: [
+    JwtModule.register({}),
+    NotificationsModule,
+    RewardsModule,
+    CloudinaryModule,
+  ],
   controllers: [SocialController],
   providers: [SocialService, SocialRepository, JwtAuthGuard, RolesGuard],
 })

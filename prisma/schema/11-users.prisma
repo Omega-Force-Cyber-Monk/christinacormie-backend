@@ -41,7 +41,13 @@ model User {
   approvedVendors                    Vendor[]                    @relation("VendorApprovedBy")
   reviewedVendorVerificationRequests VendorVerificationRequest[] @relation("VendorVerificationReviewedBy")
   foodTruckFollows                   FoodTruckFollow[]
+  following                          UserFollow[]                @relation("UserFollowing")
+  followers                          UserFollow[]                @relation("UserFollowers")
+  blocksInitiated                    UserBlock[]                 @relation("UserBlocker")
+  blocksReceived                     UserBlock[]                 @relation("UserBlocked")
   favoriteTrucks                     FavoriteTruck[]
+  authoredPosts                      Post[]                      @relation("PostAuthor")
+  postTags                           PostTag[]                   @relation("PostTaggedUser")
   postLikes                          PostLike[]
   postComments                       PostComment[]
   postCommentLikes                   PostCommentLike[]
@@ -68,6 +74,7 @@ model User {
   reviewReportsFiled                 ReviewReport[]              @relation("ReviewReportReportedBy")
   reviewReportsReviewed              ReviewReport[]              @relation("ReviewReportReviewedBy")
   createdConversations               Conversation[]              @relation("ConversationCreatedBy")
+  requestedConversations             Conversation[]              @relation("ConversationRequestedRecipient")
   conversationParticipants           ConversationParticipant[]
   sentMessages                       Message[]
   notificationPreference             NotificationPreference?

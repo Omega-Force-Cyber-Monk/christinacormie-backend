@@ -13,23 +13,34 @@ enum MessageType {
   OFFER
 }
 
-model Conversation {
-  id                 String                    @id @default(uuid()) @db.Uuid
-  type               ConversationType
-  createdById        String                    @map("created_by") @db.Uuid
-  bookingId          String?                   @map("booking_id") @db.Uuid
-  communityRequestId String?                   @map("community_request_id") @db.Uuid
-  title              String?                   @db.VarChar(255)
-  lastMessageAt      DateTime?                 @map("last_message_at") @db.Timestamptz(6)
-  isClosed           Boolean                   @default(false) @map("is_closed")
-  createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy          User                      @relation("ConversationCreatedBy", fields: [createdById], references: [id])
-  booking            Booking?                  @relation(fields: [bookingId], references: [id])
-  communityRequest   CommunityRequest?         @relation(fields: [communityRequestId], references: [id])
-  participants       ConversationParticipant[]
-  messages           Message[]
-  notifications      Notification[]
+enum DirectConversationStatus {
+  ACTIVE
+  REQUESTED
+  DECLINED
+}
 
+model Conversation {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  type                 ConversationType
+  createdById          String                    @map("created_by") @db.Uuid
+  bookingId            String?                   @map("booking_id") @db.Uuid
+  communityRequestId   String?                   @map("community_request_id") @db.Uuid
+  title                String?                   @db.VarChar(255)
+  directStatus         DirectConversationStatus  @default(ACTIVE) @map("direct_status")
+  requestedRecipientId String?                   @map("requested_recipient_id") @db.Uuid
+  acceptedAt           DateTime?                 @map("accepted_at") @db.Timestamptz(6)
+  lastMessageAt        DateTime?                 @map("last_message_at") @db.Timestamptz(6)
+  isClosed             Boolean                   @default(false) @map("is_closed")
+  createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy            User                      @relation("ConversationCreatedBy", fields: [createdById], references: [id])
+  requestedRecipient   User?                     @relation("ConversationRequestedRecipient", fields: [requestedRecipientId], references: [id])
+  booking              Booking?                  @relation(fields: [bookingId], references: [id])
+  communityRequest     CommunityRequest?         @relation(fields: [communityRequestId], references: [id])
+  participants         ConversationParticipant[]
+  messages             Message[]
+  notifications        Notification[]
+
+  @@index([requestedRecipientId, directStatus])
   @@map("conversations")
 }
 

@@ -14,6 +14,10 @@ import {
   SendMessageDto,
 } from './dto/send-message.dto';
 import { MessagingRealtimeService } from './messaging-realtime.service';
+import {
+  RecipientAccountType,
+  RecipientSearchDto,
+} from './dto/recipient-search.dto';
 
 @Injectable()
 export class MessagingService {
@@ -32,14 +36,26 @@ export class MessagingService {
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
-        where: { participants: { some: { userId } } },
+        where: {
+          participants: { some: { userId } },
+          NOT: {
+            directStatus: 'REQUESTED',
+            requestedRecipientId: userId,
+          },
+        },
         orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
         take: limit,
         skip: offset,
-        include: this.conversationInclude(userId),
+        include: this.conversationInclude(),
       }),
       this.prisma.conversation.count({
-        where: { participants: { some: { userId } } },
+        where: {
+          participants: { some: { userId } },
+          NOT: {
+            directStatus: 'REQUESTED',
+            requestedRecipientId: userId,
+          },
+        },
       }),
     ]);
 
@@ -57,12 +73,111 @@ export class MessagingService {
     };
   }
 
+  async searchRecipients(userId: string, query: RecipientSearchDto) {
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+    const search = query.search?.trim();
+    const where: any = {
+      id: { not: userId },
+      deletedAt: null,
+      status: 'ACTIVE',
+      blocksInitiated: { none: { blockedUserId: userId } },
+      blocksReceived: { none: { blockerUserId: userId } },
+      ...(query.type === RecipientAccountType.VENDOR
+        ? { vendor: { isNot: null } }
+        : query.type === RecipientAccountType.CUSTOMER
+          ? { vendor: { is: null } }
+          : {}),
+      ...(search
+        ? {
+            OR: [
+              {
+                profile: {
+                  displayName: { contains: search, mode: 'insensitive' },
+                },
+              },
+              {
+                profile: {
+                  firstName: { contains: search, mode: 'insensitive' },
+                },
+              },
+              {
+                profile: {
+                  lastName: { contains: search, mode: 'insensitive' },
+                },
+              },
+              {
+                vendor: {
+                  businessName: { contains: search, mode: 'insensitive' },
+                },
+              },
+              {
+                vendor: {
+                  foodTrucks: {
+                    some: { name: { contains: search, mode: 'insensitive' } },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    const [users, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        take: limit,
+        skip: offset,
+        orderBy: { createdAt: 'desc' },
+        select: this.recipientSelect(),
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+    return {
+      items: users.map((user) => {
+        const presented = this.presentUser(user);
+        if (!presented) return null;
+        const { email: _email, ...publicRecipient } = presented;
+        return publicRecipient;
+      }),
+      total,
+      nextOffset: offset + users.length < total ? offset + limit : null,
+    };
+  }
+
+  async listMessageRequests(userId: string, query: MessagingPaginationDto) {
+    const limit = Math.min(query.limit ?? 20, 50);
+    const offset = query.offset ?? 0;
+    const where = {
+      type: 'DIRECT' as const,
+      directStatus: 'REQUESTED' as const,
+      requestedRecipientId: userId,
+      participants: { some: { userId } },
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.conversation.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+        include: this.conversationInclude(),
+      }),
+      this.prisma.conversation.count({ where }),
+    ]);
+    return {
+      items: await Promise.all(
+        items.map((item) => this.presentConversation(item, userId)),
+      ),
+      total,
+      nextOffset: offset + items.length < total ? offset + limit : null,
+    };
+  }
+
   async getConversation(userId: string, conversationId: string) {
     await this.ensureParticipant(userId, conversationId);
 
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
-      include: this.conversationInclude(userId),
+      include: this.conversationInclude(),
     });
 
     if (!conversation) {
@@ -89,6 +204,7 @@ export class MessagingService {
 
     await this.ensureUserCanChat(userId);
     await this.ensureUserCanChat(targetUserId, 'Chat recipient not found');
+    await this.ensureNotBlocked(userId, targetUserId);
 
     const existing = await this.findExistingDirectConversation(
       userId,
@@ -102,22 +218,61 @@ export class MessagingService {
       };
     }
 
+    const recipientFollowsSender = await this.prisma.userFollow.findUnique({
+      where: {
+        followerUserId_followedUserId: {
+          followerUserId: targetUserId,
+          followedUserId: userId,
+        },
+      },
+      select: { id: true },
+    });
+    const isRequest = !recipientFollowsSender;
     const conversation = await this.prisma.conversation.create({
       data: {
         type: 'DIRECT',
         createdById: userId,
         title: dto.title?.trim() || null,
+        directStatus: isRequest ? 'REQUESTED' : 'ACTIVE',
+        requestedRecipientId: isRequest ? targetUserId : null,
+        acceptedAt: isRequest ? null : new Date(),
         participants: {
           create: [{ userId }, { userId: targetUserId }],
         },
       },
-      include: this.conversationInclude(userId),
+      include: this.conversationInclude(),
     });
 
     return {
       message: 'Conversation created successfully',
       conversation: await this.presentConversation(conversation, userId),
     };
+  }
+
+  async resolveMessageRequest(
+    userId: string,
+    conversationId: string,
+    status: 'ACTIVE' | 'DECLINED',
+  ) {
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        type: 'DIRECT',
+        directStatus: 'REQUESTED',
+        requestedRecipientId: userId,
+        participants: { some: { userId } },
+      },
+      select: { id: true },
+    });
+    if (!conversation) throw new NotFoundException('Message request not found');
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        directStatus: status,
+        acceptedAt: status === 'ACTIVE' ? new Date() : null,
+      },
+    });
+    return { conversationId, status };
   }
 
   async listMessages(
@@ -157,9 +312,48 @@ export class MessagingService {
     dto: SendMessageDto,
   ) {
     const conversation = await this.ensureParticipant(userId, conversationId);
+    const otherParticipant =
+      await this.prisma.conversationParticipant.findFirst({
+        where: { conversationId, userId: { not: userId } },
+        select: { userId: true },
+      });
+    if (otherParticipant) {
+      await this.ensureNotBlocked(userId, otherParticipant.userId);
+    }
 
     if (conversation.isClosed) {
       throw new BadRequestException('This conversation is closed');
+    }
+
+    if (conversation.directStatus === 'DECLINED') {
+      throw new ForbiddenException('This message request was declined');
+    }
+
+    if (conversation.directStatus === 'REQUESTED') {
+      if (conversation.requestedRecipientId === userId) {
+        await this.prisma.conversation.update({
+          where: { id: conversationId },
+          data: { directStatus: 'ACTIVE', acceptedAt: new Date() },
+        });
+      } else {
+        const existingCount = await this.prisma.message.count({
+          where: { conversationId, senderId: userId, deletedAt: null },
+        });
+        if (existingCount > 0) {
+          throw new ForbiddenException(
+            'Wait for the recipient to accept your request',
+          );
+        }
+        if (
+          dto.attachmentUrl ||
+          dto.messageType === MessagingMessageTypeDto.IMAGE ||
+          dto.messageType === MessagingMessageTypeDto.FILE
+        ) {
+          throw new ForbiddenException(
+            'Attachments require an accepted conversation',
+          );
+        }
+      }
     }
 
     const messageType = dto.messageType ?? MessagingMessageTypeDto.TEXT;
@@ -291,7 +485,7 @@ export class MessagingService {
         participants: { some: { userId } },
         AND: [{ participants: { some: { userId: targetUserId } } }],
       },
-      include: this.conversationInclude(userId),
+      include: this.conversationInclude(),
     });
 
     return (
@@ -316,6 +510,8 @@ export class MessagingService {
             id: true,
             type: true,
             isClosed: true,
+            directStatus: true,
+            requestedRecipientId: true,
           },
         },
       },
@@ -326,6 +522,22 @@ export class MessagingService {
     }
 
     return participant.conversation;
+  }
+
+  private async ensureNotBlocked(firstUserId: string, secondUserId: string) {
+    const block = await this.prisma.userBlock.findFirst({
+      where: {
+        OR: [
+          { blockerUserId: firstUserId, blockedUserId: secondUserId },
+          { blockerUserId: secondUserId, blockedUserId: firstUserId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (block)
+      throw new ForbiddenException(
+        'Messaging is not available for this account',
+      );
   }
 
   private async ensureUserCanChat(
@@ -394,7 +606,7 @@ export class MessagingService {
     }
   }
 
-  private conversationInclude(currentUserId: string) {
+  private conversationInclude() {
     return {
       participants: {
         include: {
@@ -415,6 +627,16 @@ export class MessagingService {
                   id: true,
                   businessName: true,
                   logoUrl: true,
+                  foodTrucks: {
+                    where: { deletedAt: null },
+                    take: 1,
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      profileImageUrl: true,
+                    },
+                  },
                 },
               },
             },
@@ -454,6 +676,16 @@ export class MessagingService {
               id: true,
               businessName: true,
               logoUrl: true,
+              foodTrucks: {
+                where: { deletedAt: null },
+                take: 1,
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  profileImageUrl: true,
+                },
+              },
             },
           },
         },
@@ -492,6 +724,9 @@ export class MessagingService {
       type: conversation.type,
       title: conversation.title,
       isClosed: conversation.isClosed,
+      directStatus: conversation.directStatus,
+      requestedRecipientId: conversation.requestedRecipientId,
+      acceptedAt: conversation.acceptedAt,
       createdAt: conversation.createdAt,
       lastMessageAt: conversation.lastMessageAt,
       unreadCount,
@@ -523,23 +758,59 @@ export class MessagingService {
       return null;
     }
 
+    const truck = user.vendor?.foodTrucks?.[0];
     return {
       id: user.id,
       email: user.email,
+      accountType: user.vendor ? 'VENDOR' : 'CUSTOMER',
       displayName:
+        truck?.name ??
+        user.vendor?.businessName ??
         user.profile?.displayName ??
         [user.profile?.firstName, user.profile?.lastName]
           .filter(Boolean)
           .join(' ') ??
         null,
-      avatarUrl: user.profile?.avatarUrl ?? user.vendor?.logoUrl ?? null,
+      avatarUrl:
+        truck?.profileImageUrl ??
+        user.vendor?.logoUrl ??
+        user.profile?.avatarUrl ??
+        null,
       vendor: user.vendor
         ? {
             id: user.vendor.id,
             businessName: user.vendor.businessName,
             logoUrl: user.vendor.logoUrl,
+            foodTruck: truck ?? null,
           }
         : null,
+    };
+  }
+
+  private recipientSelect() {
+    return {
+      id: true,
+      email: true,
+      profile: {
+        select: {
+          displayName: true,
+          firstName: true,
+          lastName: true,
+          avatarUrl: true,
+        },
+      },
+      vendor: {
+        select: {
+          id: true,
+          businessName: true,
+          logoUrl: true,
+          foodTrucks: {
+            where: { deletedAt: null },
+            take: 1,
+            select: { id: true, name: true, slug: true, profileImageUrl: true },
+          },
+        },
+      },
     };
   }
 }
