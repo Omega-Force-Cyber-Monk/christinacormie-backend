@@ -1,5 +1,9 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  FoodiePointsLeaderboardResponseDto,
+  FoodiePointsQueryDto,
+} from './dto/foodie-points-query.dto';
 import { LeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { LeaderboardsService } from './leaderboards.service';
 
@@ -186,6 +190,30 @@ export class LeaderboardsController {
   @Get('most-booked')
   getMostBooked(@Query() query: LeaderboardQueryDto) {
     return this.leaderboardsService.getLeaderboardByType('MOST_BOOKED', query);
+  }
+
+  @ApiOperation({
+    summary: 'Get Foodie leaderboard ranked by lifetime earned points',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Foodie points leaderboard returned successfully.',
+    type: FoodiePointsLeaderboardResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Pagination query validation failed.',
+    schema: {
+      example: errorExample(
+        400,
+        ['limit must not be greater than 100'],
+        'Bad Request',
+      ),
+    },
+  })
+  @Get('foodie-points')
+  getFoodiePoints(@Query() query: FoodiePointsQueryDto) {
+    return this.leaderboardsService.getFoodiePoints(query);
   }
 
   @ApiOperation({ summary: 'Get leaderboard rankings by leaderboard ID' })

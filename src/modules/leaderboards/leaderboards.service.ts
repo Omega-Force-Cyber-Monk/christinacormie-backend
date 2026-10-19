@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { FoodiePointsQueryDto } from './dto/foodie-points-query.dto';
 import { LeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { LeaderboardsRepository } from './leaderboards.repository';
 
@@ -7,6 +8,37 @@ export class LeaderboardsService {
   constructor(
     private readonly leaderboardsRepository: LeaderboardsRepository,
   ) {}
+
+  async getFoodiePoints(query: FoodiePointsQueryDto) {
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+    const { items, total } = await this.leaderboardsRepository.findFoodiePoints(
+      limit,
+      offset,
+    );
+
+    return {
+      items: items.map((item, index) => {
+        const profile = item.user.profile;
+        const displayName =
+          profile?.displayName?.trim() ||
+          [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
+          'Foodie';
+
+        return {
+          rank: offset + index + 1,
+          userId: item.userId,
+          displayName,
+          avatarUrl: profile?.avatarUrl ?? null,
+          points: item.lifetimePoints,
+        };
+      }),
+      total,
+      limit,
+      offset,
+      nextOffset: offset + items.length < total ? offset + limit : null,
+    };
+  }
 
   async getLeaderboards(query: LeaderboardQueryDto) {
     const leaderboards =
@@ -22,9 +54,8 @@ export class LeaderboardsService {
     limit?: number,
     offset?: number,
   ) {
-    const leaderboard = await this.leaderboardsRepository.findLeaderboardById(
-      leaderboardId,
-    );
+    const leaderboard =
+      await this.leaderboardsRepository.findLeaderboardById(leaderboardId);
 
     if (!leaderboard) {
       throw new NotFoundException('Leaderboard not found');
