@@ -14,6 +14,8 @@
 - একজন Vendor-এর ঠিক একটি Food Truck থাকবে।
 - "Vendor Profile" বলতে Vendor-এর public Food Truck Profile বোঝাবে।
 - Community question/request অপরিবর্তিত থাকবে এবং social post থেকে আলাদা হবে।
+- Leaderboard-এ Food Truck-এর `Top Rated`, `Most Booked` এবং Customer-এর
+  lifetime earned points-ভিত্তিক `Most Points` থাকবে।
 
 ## ২. Account ও Vendor Identity
 

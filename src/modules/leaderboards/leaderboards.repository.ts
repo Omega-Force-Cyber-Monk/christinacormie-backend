@@ -6,6 +6,51 @@ import { LeaderboardQueryDto } from './dto/leaderboard-query.dto';
 export class LeaderboardsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findFoodiePoints(limit: number, offset: number) {
+    const where = {
+      lifetimePoints: { gt: 0 },
+      user: {
+        status: 'ACTIVE' as const,
+        deletedAt: null,
+        vendor: null,
+        userRoles: { some: { role: 'CUSTOMER' as const } },
+      },
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.loyaltyAccount.findMany({
+        where,
+        take: limit,
+        skip: offset,
+        orderBy: [
+          { lifetimePoints: 'desc' },
+          { availablePoints: 'desc' },
+          { updatedAt: 'asc' },
+          { userId: 'asc' },
+        ],
+        select: {
+          userId: true,
+          lifetimePoints: true,
+          user: {
+            select: {
+              profile: {
+                select: {
+                  displayName: true,
+                  firstName: true,
+                  lastName: true,
+                  avatarUrl: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.loyaltyAccount.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
   findLeaderboards(query: LeaderboardQueryDto) {
     return this.prisma.leaderboard.findMany({
       where: {

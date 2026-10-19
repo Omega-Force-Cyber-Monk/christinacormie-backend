@@ -26,7 +26,7 @@ Content-Type: application/json
 - Follow ছাড়াই message করা যাবে; non-follower message প্রথমে Request হবে।
 - User block/unblock করা যাবে।
 - একজন Vendor-এর একটিই Food Truck থাকবে। Flutter-এ truck selector লাগবে না।
-- Leaderboard screen-এ শুধু `Top Rated` এবং `Most Booked` থাকবে।
+- Leaderboard screen-এ `Top Rated`, `Most Booked` এবং `Most Points` থাকবে।
 - Community question/request module অপরিবর্তিত।
 
 ## 2. Shared account model
@@ -619,12 +619,42 @@ socket event এলে message ID দিয়ে deduplicate করুন।
 
 ## 8. Leaderboard screen
 
-শুধু দুইটি filter/tab রাখুন:
+তিনটি filter/tab রাখুন:
 
 ```http
 GET /api/v1/leaderboards/top-rated
 GET /api/v1/leaderboards/most-booked
+GET /api/v1/leaderboards/foodie-points?limit=20&offset=0
 ```
+
+- `Top Rated`: Food Truck/Vendor ranking by customer rating।
+- `Most Booked`: Food Truck/Vendor ranking by booking count।
+- `Most Points`: Foodie/Customer ranking by lifetime earned loyalty points।
+
+`foodie-points` response:
+
+```json
+{
+  "items": [
+    {
+      "rank": 1,
+      "userId": "customer-user-uuid",
+      "displayName": "Alex Rivera",
+      "avatarUrl": "https://...",
+      "points": 1780
+    }
+  ],
+  "total": 50,
+  "limit": 20,
+  "offset": 0,
+  "nextOffset": 20
+}
+```
+
+Ranking `availablePoints` নয়, `lifetimePoints` দিয়ে হয়। তাই Foodie points redeem
+করলেও তার earned-points rank কমে যাবে না। শুধু active, non-deleted Customer
+account এবং positive lifetime points response-এ আসে। Pagination-এর পরের page-এ
+response-এর `nextOffset` ব্যবহার করুন।
 
 Remove করুন:
 
@@ -715,7 +745,7 @@ State/cache rules:
 - [ ] Separate Message Requests screen/badge।
 - [ ] Accept, decline, block এবং reply-to-accept UI।
 - [ ] `REQUESTED` sender composer restriction।
-- [ ] Leaderboard-এ শুধু Top Rated ও Most Booked।
+- [ ] Leaderboard-এ Top Rated, Most Booked ও Most Points।
 - [ ] Community flows untouched regression test।
 - [ ] 400/401/403/404/409 user-facing error mapping।
 - [ ] Deep link by `postId`।
