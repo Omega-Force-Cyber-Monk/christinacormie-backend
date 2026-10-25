@@ -26,6 +26,8 @@ import { CloudinaryService } from '../../infrastructure/cloudinary/cloudinary.se
 export class SocialService {
   private readonly vendorApprovalMessage =
     'Vendor onboarding must be completed before using this vendor feature.';
+  private readonly truckSetupMessage =
+    'Complete your food truck setup before publishing posts';
 
   constructor(
     private readonly socialRepository: SocialRepository,
@@ -171,6 +173,9 @@ export class SocialService {
   async createPost(userId: string, dto: CreatePostDto) {
     this.ensurePostHasContent(dto.content, dto.media);
     const identity = await this.resolvePostIdentity(userId, dto.foodTruckId);
+    if ((dto.status ?? 'PUBLISHED') === 'PUBLISHED' && identity.foodTruckId) {
+      await this.ensureActivePostFoodTruck(identity.foodTruckId);
+    }
     await this.validatePostRelations(userId, dto.locationId, dto.taggedUserIds);
     const post = await this.socialRepository.createPost(userId, identity, dto);
 
@@ -191,6 +196,9 @@ export class SocialService {
 
   async updatePost(userId: string, postId: string, dto: UpdatePostDto) {
     const existing = await this.ensureOwnPost(userId, postId);
+    if (dto.status === 'PUBLISHED' && existing.foodTruckId) {
+      await this.ensureActivePostFoodTruck(existing.foodTruckId);
+    }
     await this.validatePostRelations(userId, dto.locationId, dto.taggedUserIds);
     if (dto.content !== undefined || dto.media !== undefined) {
       this.ensurePostHasContent(
@@ -461,6 +469,23 @@ export class SocialService {
         foodTruck.vendor.status !== 'PENDING_APPROVAL')
     ) {
       throw new ForbiddenException('Food truck is not available');
+    }
+
+    return foodTruck;
+  }
+
+  private async ensureActivePostFoodTruck(foodTruckId: string) {
+    const foodTruck =
+      await this.socialRepository.findFoodTruckById(foodTruckId);
+
+    if (
+      !foodTruck ||
+      foodTruck.deletedAt ||
+      foodTruck.status !== 'ACTIVE' ||
+      foodTruck.vendor.deletedAt ||
+      !['APPROVED', 'PENDING_APPROVAL'].includes(foodTruck.vendor.status)
+    ) {
+      throw new ForbiddenException(this.truckSetupMessage);
     }
 
     return foodTruck;

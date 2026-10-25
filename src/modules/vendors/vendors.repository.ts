@@ -199,6 +199,7 @@ export class VendorsRepository {
                 profileImageUrl: logoUrl ?? dto.truckImageUrl,
                 coverImageUrl: dto.truckImageUrl,
                 maximumGuestCapacity: 100,
+                status: 'ACTIVE',
                 updatedAt: new Date(),
               },
             })
@@ -214,7 +215,7 @@ export class VendorsRepository {
                 profileImageUrl: logoUrl ?? dto.truckImageUrl,
                 coverImageUrl: dto.truckImageUrl,
                 maximumGuestCapacity: 100,
-                status: 'DRAFT',
+                status: 'ACTIVE',
                 operatingStatus: 'CLOSED',
               },
             });

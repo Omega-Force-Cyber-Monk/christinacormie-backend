@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CommentPostDto } from './dto/comment-post.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -202,7 +203,11 @@ export class SocialRepository {
             followers: true,
             following: true,
             authoredPosts: {
-              where: { status: 'PUBLISHED', deletedAt: null },
+              where: {
+                status: 'PUBLISHED',
+                deletedAt: null,
+                ...this.publicPostEligibilityWhere(),
+              },
             },
           },
         },
@@ -519,16 +524,17 @@ export class SocialRepository {
           blocksInitiated: { none: { blockedUserId: userId } },
           blocksReceived: { none: { blockerUserId: userId } },
         },
-        OR: [
-          { isFollowerOnly: false },
-          { authorUserId: userId },
-          { author: { followers: { some: { followerUserId: userId } } } },
+        AND: [
+          this.publicPostEligibilityWhere(),
           {
-            foodTruck: {
-              follows: {
-                some: { userId },
+            OR: [
+              { isFollowerOnly: false },
+              { authorUserId: userId },
+              {
+                author: { followers: { some: { followerUserId: userId } } },
               },
-            },
+              { foodTruck: { follows: { some: { userId } } } },
+            ],
           },
         ],
       },
@@ -982,9 +988,14 @@ export class SocialRepository {
       where: {
         deletedAt: null,
         status: 'PUBLISHED',
-        OR: [
-          { author: { followers: { some: { followerUserId: userId } } } },
-          { foodTruck: { follows: { some: { userId } } } },
+        AND: [
+          this.publicPostEligibilityWhere(),
+          {
+            OR: [
+              { author: { followers: { some: { followerUserId: userId } } } },
+              { foodTruck: { follows: { some: { userId } } } },
+            ],
+          },
         ],
         author: {
           blocksInitiated: { none: { blockedUserId: userId } },
@@ -1023,6 +1034,7 @@ export class SocialRepository {
         deletedAt: null,
         status: 'PUBLISHED',
         isFollowerOnly: false,
+        ...this.publicPostEligibilityWhere(),
         ...(userId
           ? {
               author: {
@@ -1111,11 +1123,20 @@ export class SocialRepository {
           blocksInitiated: { none: { blockedUserId: viewerUserId } },
           blocksReceived: { none: { blockerUserId: viewerUserId } },
         },
-        OR: [
-          { isFollowerOnly: false },
-          { authorUserId: viewerUserId },
-          { author: { followers: { some: { followerUserId: viewerUserId } } } },
-          { foodTruck: { follows: { some: { userId: viewerUserId } } } },
+        AND: [
+          this.publicPostEligibilityWhere(),
+          {
+            OR: [
+              { isFollowerOnly: false },
+              { authorUserId: viewerUserId },
+              {
+                author: {
+                  followers: { some: { followerUserId: viewerUserId } },
+                },
+              },
+              { foodTruck: { follows: { some: { userId: viewerUserId } } } },
+            ],
+          },
         ],
       },
       include: {
@@ -1179,11 +1200,20 @@ export class SocialRepository {
           blocksInitiated: { none: { blockedUserId: viewerUserId } },
           blocksReceived: { none: { blockerUserId: viewerUserId } },
         },
-        OR: [
-          { isFollowerOnly: false },
-          { authorUserId: viewerUserId },
-          { author: { followers: { some: { followerUserId: viewerUserId } } } },
-          { foodTruck: { follows: { some: { userId: viewerUserId } } } },
+        AND: [
+          this.publicPostEligibilityWhere(),
+          {
+            OR: [
+              { isFollowerOnly: false },
+              { authorUserId: viewerUserId },
+              {
+                author: {
+                  followers: { some: { followerUserId: viewerUserId } },
+                },
+              },
+              { foodTruck: { follows: { some: { userId: viewerUserId } } } },
+            ],
+          },
         ],
       },
       orderBy: { createdAt: 'desc' },
@@ -1243,6 +1273,24 @@ export class SocialRepository {
     }
 
     return include;
+  }
+
+  private publicPostEligibilityWhere(): Prisma.PostWhereInput {
+    return {
+      OR: [
+        { foodTruckId: null },
+        {
+          foodTruck: {
+            status: 'ACTIVE',
+            deletedAt: null,
+            vendor: {
+              status: { in: ['APPROVED', 'PENDING_APPROVAL'] },
+              deletedAt: null,
+            },
+          },
+        },
+      ],
+    };
   }
 
   private accountTypeFilter(type?: SocialAccountType): Record<string, unknown> {
