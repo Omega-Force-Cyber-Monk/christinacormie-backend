@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AccountStatus } from '../../common/enums/account-status.enum';
 import { CloudinaryService } from '../../infrastructure/cloudinary/cloudinary.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -59,52 +60,63 @@ export class UsersService {
     }
 
     const { phone, email, ...profileFields } = dto;
+    const normalizedEmail = email?.trim().toLowerCase();
+    const normalizedPhone = phone?.trim();
+    const changedEmail =
+      normalizedEmail !== undefined &&
+      normalizedEmail !== user.email?.toLowerCase();
+    const changedPhone =
+      normalizedPhone !== undefined && normalizedPhone !== user.phone;
 
-    if (email && email.toLowerCase() !== user.email?.toLowerCase()) {
-      const existingEmail = await this.prisma.user.findFirst({
-        where: {
-          email: email.toLowerCase(),
-          id: { not: userId },
-          deletedAt: null,
-        },
-      });
+    await this.ensureContactInfoAvailable(
+      userId,
+      changedEmail ? normalizedEmail : undefined,
+      changedPhone ? normalizedPhone : undefined,
+    );
 
-      if (existingEmail) {
-        throw new ConflictException(
-          'Email address is already in use by another account',
-        );
-      }
-    }
+    const updatedProfile = await this.prisma
+      .$transaction(async (tx) => {
+        if (changedPhone || changedEmail) {
+          await tx.user.update({
+            where: { id: userId },
+            data: {
+              ...(changedPhone ? { phone: normalizedPhone } : {}),
+              ...(changedEmail ? { email: normalizedEmail } : {}),
+            },
+          });
+        }
 
-    const updatedProfile = await this.prisma.$transaction(async (tx) => {
-      if (
-        phone !== undefined ||
-        (email && email.toLowerCase() !== user.email?.toLowerCase())
-      ) {
-        await tx.user.update({
-          where: { id: userId },
-          data: {
-            ...(phone !== undefined ? { phone } : {}),
-            ...(email ? { email: email.toLowerCase() } : {}),
+        const profile = await tx.userProfile.upsert({
+          where: { userId },
+          create: {
+            userId,
+            ...profileFields,
           },
+          update: profileFields,
         });
-      }
 
-      const profile = await tx.userProfile.upsert({
-        where: { userId },
-        create: {
-          userId,
-          ...profileFields,
-        },
-        update: profileFields,
+        return {
+          ...profile,
+          phone: changedPhone ? normalizedPhone : user.phone,
+          email: changedEmail ? normalizedEmail : user.email,
+        };
+      })
+      .catch(async (error) => {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          await this.ensureContactInfoAvailable(
+            userId,
+            changedEmail ? normalizedEmail : undefined,
+            changedPhone ? normalizedPhone : undefined,
+          );
+          throw new ConflictException(
+            'Email address or phone number is already in use by another account',
+          );
+        }
+        throw error;
       });
-
-      return {
-        ...profile,
-        phone: phone !== undefined ? phone : user.phone,
-        email: email ? email.toLowerCase() : user.email,
-      };
-    });
 
     if (this.isProfileComplete(updatedProfile)) {
       await this.rewardsService.awardPoints(
@@ -119,6 +131,36 @@ export class UsersService {
     }
 
     return updatedProfile;
+  }
+
+  private async ensureContactInfoAvailable(
+    userId: string,
+    email?: string,
+    phone?: string,
+  ) {
+    if (!email && !phone) return;
+
+    const conflict = await this.prisma.user.findFirst({
+      where: {
+        id: { not: userId },
+        OR: [...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])],
+      },
+      select: { email: true, phone: true },
+    });
+
+    if (!conflict) return;
+
+    if (email && conflict.email === email) {
+      throw new ConflictException(
+        'Email address is already in use by another account',
+      );
+    }
+
+    if (phone && conflict.phone === phone) {
+      throw new ConflictException(
+        'Phone number is already in use by another account',
+      );
+    }
   }
 
   async uploadProfileAvatar(userId: string, file?: Express.Multer.File) {

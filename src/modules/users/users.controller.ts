@@ -384,13 +384,24 @@ export class UsersController {
   })
   @ApiResponse({
     status: 409,
-    description: 'Email is already used by another account.',
+    description: 'Email address or phone number is used by another account.',
     schema: {
-      example: errorExample(
-        409,
-        'Email address is already in use by another account',
-        'Conflict',
-      ),
+      examples: {
+        emailConflict: {
+          value: errorExample(
+            409,
+            'Email address is already in use by another account',
+            'Conflict',
+          ),
+        },
+        phoneConflict: {
+          value: errorExample(
+            409,
+            'Phone number is already in use by another account',
+            'Conflict',
+          ),
+        },
+      },
     },
   })
   @UseGuards(JwtAuthGuard, RolesGuard)
