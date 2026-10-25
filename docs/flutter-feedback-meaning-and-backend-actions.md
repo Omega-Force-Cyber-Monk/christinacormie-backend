@@ -29,7 +29,7 @@ Flutter developer-এর দেওয়া feedback অনুযায়ী backend-
 | 3 | FCM token backend-এ যাচ্ছে এবং backend push পাঠাচ্ছে কিনা confirm করতে হবে | Device token API, DB notification, Firebase push service আছে; booking vendor updates/completion/issue notification push path improve করা হয়েছে | Partial | Firebase env server-এ set আছে কিনা এবং real device token দিয়ে end-to-end push test করতে হবে |
 | 4 | Booking detail response-এ vendor/truck phone number দরকার | `GET /bookings/{bookingId}` response-এ top-level `vendorPhone` add করা হয়েছে; vendor object-এ `businessPhone` include করা হয়েছে | Done | App এখন `vendorPhone` দিয়ে Call Truck button চালাতে পারবে |
 | 5 | Promotion edit API দরকার | `PATCH /api/v1/promotions/{promotionId}` add করা হয়েছে | Done | Vendor owner validation + date/percentage validation আছে |
-| 6 | Community request edit API দরকার | `PATCH /api/v1/community/requests/{requestId}` add করা হয়েছে | Done | Only owner + OPEN request + no vendor offers থাকলে edit allowed |
+| 6 | Community request edit API দরকার | Unified route `PATCH /api/v1/community/posts/{postId}` আছে | Done | Only owner + OPEN post + no vendor offers থাকলে edit allowed |
 | 7 | `GET /notifications` response shape Swagger-এ clear দরকার | Swagger example add করা হয়েছে; notification metadata-তে `entityType/entityId` auto add করা হয়েছে | Done | App notification tap করে related screen open করতে পারবে |
 | 8 | Booking create-এ `startsAt/endsAt` UTC ISO পাঠানো যাবে কিনা confirm দরকার | Service already accepts `startsAt/endsAt` together and then `eventDate/eventTime/eventTimezone` required করে না | Done | Flutter app UTC ISO `startsAt/endsAt` পাঠাতে পারবে |
 | 9 | Truck menu item response-এ menu item `id` দরকার | Public truck/menu response `items: true` দিয়ে menu item full object return করে, তাই `id` already included | Done | Existing menu item select করলে app `preferredMenuItemIds` পাঠাতে পারবে |
@@ -305,7 +305,7 @@ percentage discount হলে 100-এর বেশি না
 Customer নিজের community request দেখতে পারে:
 
 ```http
-GET /api/v1/community/requests/{requestId}
+GET /api/v1/community/posts/{postId}
 ```
 
 কিন্তু নিজের request edit করতে পারে না।
@@ -313,7 +313,7 @@ GET /api/v1/community/requests/{requestId}
 Needed route:
 
 ```http
-PATCH /api/v1/community/requests/{requestId}
+PATCH /api/v1/community/posts/{postId}
 ```
 
 ### Backend-এ কী করতে হবে?

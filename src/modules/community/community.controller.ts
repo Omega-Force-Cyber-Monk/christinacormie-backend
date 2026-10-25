@@ -1,11 +1,9 @@
 import {
   Body,
   Controller,
-  Get,
   Param,
   Patch,
   Post,
-  Query,
   UseGuards,
   UseFilters,
   ParseUUIDPipe,
@@ -13,7 +11,6 @@ import {
 import {
   ApiBearerAuth,
   ApiOperation,
-  ApiQuery,
   ApiTags,
   ApiResponse,
 } from '@nestjs/swagger';
@@ -23,13 +20,8 @@ import { UserRole } from '../../common/enums/user-role.enum';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
-import { CommentRequestDto } from './dto/comment-request.dto';
 import { CreateCommunityRequestDto } from './dto/create-community-request.dto';
-import { CreateVendorOfferDto } from './dto/create-vendor-offer.dto';
 import { NewFoodTruckLeadDto } from './dto/new-food-truck-lead.dto';
-import { ReactRequestDto } from './dto/react-request.dto';
-import { RequestMediaDto } from './dto/request-media.dto';
-import { UpdateCommunityRequestDto } from './dto/update-community-request.dto';
 import { CommunityService } from './community.service';
 import { CommunityErrorFilter } from './community-error.filter';
 
@@ -95,37 +87,6 @@ export class CommunityController {
   constructor(private readonly communityService: CommunityService) {}
 
   @ApiOperation({
-    summary: 'List public/open customer requests for vendors to browse',
-  })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Get('requests/open')
-  listOpenRequests() {
-    return this.communityService.listOpenRequests();
-  }
-
-  @ApiOperation({
-    summary: 'List requests created by the authenticated customer',
-  })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Get('requests/mine')
-  listMyRequests(@CurrentUser() user: AuthenticatedUser) {
-    return this.communityService.listMyRequests(user.sub);
-  }
-
-  @ApiOperation({ summary: 'Create a public community food truck request' })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Post('requests')
-  createPublicRequest(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: CreateCommunityRequestDto,
-  ) {
-    return this.communityService.createPublicRequest(user.sub, dto);
-  }
-
-  @ApiOperation({
     summary: 'Create a private request for a specific food truck',
   })
   @ApiBearerAuth()
@@ -140,110 +101,6 @@ export class CommunityController {
       user.sub,
       foodTruckId,
       dto,
-    );
-  }
-
-  @ApiOperation({
-    summary: 'Get a single community request with event/request details',
-  })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Get('requests/:requestId')
-  getRequestDetails(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-  ) {
-    return this.communityService.getRequestDetails(user.sub, requestId);
-  }
-
-  @ApiOperation({
-    summary: 'Update a community request created by the authenticated user',
-  })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Patch('requests/:requestId')
-  updateRequest(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Body() dto: UpdateCommunityRequestDto,
-  ) {
-    return this.communityService.updateRequest(user.sub, requestId, dto);
-  }
-
-  @ApiOperation({
-    summary:
-      'Add an image/PDF to my Community request (maximum five attachments)',
-  })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Post('requests/:requestId/media')
-  addRequestMedia(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Body() dto: RequestMediaDto,
-  ) {
-    return this.communityService.addRequestMedia(user.sub, requestId, dto);
-  }
-
-  @ApiOperation({ summary: 'Add a comment to a community request' })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Post('requests/:requestId/comments')
-  commentOnRequest(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Body() dto: CommentRequestDto,
-  ) {
-    return this.communityService.commentOnRequest(user.sub, requestId, dto);
-  }
-
-  @ApiOperation({ summary: 'React (Like/Upvote) to a community request' })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Post('requests/:requestId/reactions')
-  reactToRequest(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Body() dto: ReactRequestDto,
-  ) {
-    return this.communityService.reactToRequest(user.sub, requestId, dto);
-  }
-
-  @ApiOperation({
-    summary: 'Submit a vendor proposal offer for a community request (Vendor)',
-  })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.VENDOR)
-  @Post('requests/:requestId/offers')
-  createVendorOffer(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Body() dto: CreateVendorOfferDto,
-  ) {
-    return this.communityService.createVendorOffer(user.sub, requestId, dto);
-  }
-
-  @ApiOperation({
-    summary: 'List vendor quotes submitted for a customer request',
-  })
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @ApiQuery({
-    name: 'sort',
-    required: false,
-    enum: ['LOW_PRICE', 'HIGH_RATED', 'RECENT'],
-  })
-  @Get('requests/:requestId/offers')
-  listRequestOffers(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('requestId', ParseUUIDPipe) requestId: string,
-    @Query('sort') sort?: 'LOW_PRICE' | 'HIGH_RATED' | 'RECENT',
-  ) {
-    return this.communityService.listRequestOffers(
-      user.sub,
-      requestId,
-      sort ?? 'RECENT',
     );
   }
 
