@@ -10,6 +10,7 @@ async function bootstrap() {
   const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:3000',
+    'https://bitedropapp.com',
     'https://christinacormie-frontend.vercel.app',
     'https://christinacormie-frontend.vercel.app/',
     ...(process.env.ALLOWED_ORIGINS
